@@ -28,6 +28,12 @@ class MolitCollector:
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or DATA_GO_KR_API_KEY
         if not self.api_key:
+            try:
+                import streamlit as st
+                self.api_key = st.secrets.get("DATA_GO_KR_API_KEY", "")
+            except Exception:
+                pass
+        if not self.api_key:
             raise RuntimeError("DATA_GO_KR_API_KEY 가 설정되지 않았습니다. .env 확인하세요.")
         self.http = HttpClient()
 

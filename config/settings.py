@@ -5,10 +5,23 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
-DATA_GO_KR_API_KEY = os.getenv("DATA_GO_KR_API_KEY", "")
-KAKAO_REST_API_KEY = os.getenv("KAKAO_REST_API_KEY", "")
-VWORLD_API_KEY = os.getenv("VWORLD_API_KEY", "")
-KOSIS_API_KEY = os.getenv("KOSIS_API_KEY", "")
+
+def _get_secret(key: str, default: str = "") -> str:
+    """환경변수 → Streamlit secrets 순서로 키 읽기."""
+    val = os.getenv(key, "")
+    if not val:
+        try:
+            import streamlit as st
+            val = st.secrets.get(key, default)
+        except Exception:
+            val = default
+    return val
+
+
+DATA_GO_KR_API_KEY = _get_secret("DATA_GO_KR_API_KEY")
+KAKAO_REST_API_KEY = _get_secret("KAKAO_REST_API_KEY")
+VWORLD_API_KEY     = _get_secret("VWORLD_API_KEY")
+KOSIS_API_KEY      = _get_secret("KOSIS_API_KEY")
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'processed' / 'realestate.db'}")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
