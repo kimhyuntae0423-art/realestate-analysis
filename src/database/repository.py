@@ -5,7 +5,7 @@ import pandas as pd
 from sqlalchemy import select, and_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from src.database.models import SessionLocal, AptTrade, AptRent, CollectionLog
+from src.database.models import SessionLocal, AptTrade, AptRent, CollectionLog, engine
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -62,20 +62,20 @@ def fetch_trades_df(region_code: str | None = None,
                     date_from: date | None = None,
                     date_to: date | None = None,
                     apt_name: str | None = None) -> pd.DataFrame:
-    with session_scope() as s:
-        q = select(AptTrade)
-        conds = []
-        if region_code:
-            conds.append(AptTrade.region_code == region_code)
-        if date_from:
-            conds.append(AptTrade.deal_date >= date_from)
-        if date_to:
-            conds.append(AptTrade.deal_date <= date_to)
-        if apt_name:
-            conds.append(AptTrade.apt_name.like(f"%{apt_name}%"))
-        if conds:
-            q = q.where(and_(*conds))
-        df = pd.read_sql(q, s.bind)
+    q = select(AptTrade)
+    conds = []
+    if region_code:
+        conds.append(AptTrade.region_code == region_code)
+    if date_from:
+        conds.append(AptTrade.deal_date >= date_from)
+    if date_to:
+        conds.append(AptTrade.deal_date <= date_to)
+    if apt_name:
+        conds.append(AptTrade.apt_name.like(f"%{apt_name}%"))
+    if conds:
+        q = q.where(and_(*conds))
+    with engine.connect() as conn:
+        df = pd.read_sql(q, conn)
     return df
 
 
@@ -84,20 +84,20 @@ def fetch_rents_df(region_code: str | None = None,
                    date_to: date | None = None,
                    apt_name: str | None = None,
                    jeonse_only: bool = False) -> pd.DataFrame:
-    with session_scope() as s:
-        q = select(AptRent)
-        conds = []
-        if region_code:
-            conds.append(AptRent.region_code == region_code)
-        if date_from:
-            conds.append(AptRent.deal_date >= date_from)
-        if date_to:
-            conds.append(AptRent.deal_date <= date_to)
-        if apt_name:
-            conds.append(AptRent.apt_name.like(f"%{apt_name}%"))
-        if jeonse_only:
-            conds.append(AptRent.monthly_rent == 0)
-        if conds:
-            q = q.where(and_(*conds))
-        df = pd.read_sql(q, s.bind)
+    q = select(AptRent)
+    conds = []
+    if region_code:
+        conds.append(AptRent.region_code == region_code)
+    if date_from:
+        conds.append(AptRent.deal_date >= date_from)
+    if date_to:
+        conds.append(AptRent.deal_date <= date_to)
+    if apt_name:
+        conds.append(AptRent.apt_name.like(f"%{apt_name}%"))
+    if jeonse_only:
+        conds.append(AptRent.monthly_rent == 0)
+    if conds:
+        q = q.where(and_(*conds))
+    with engine.connect() as conn:
+        df = pd.read_sql(q, conn)
     return df

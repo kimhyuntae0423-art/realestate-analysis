@@ -8,7 +8,7 @@ data/processed/*.db
 data/processed/*.db-journal
 data/reports/
 logs/
-.streamlit/
+.streamlit/secrets.toml
 .vscode/
 .idea/
 .claude/

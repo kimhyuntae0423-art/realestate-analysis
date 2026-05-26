@@ -139,3 +139,6 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 def init_db():
     Base.metadata.create_all(engine)
+
+
+init_db()
