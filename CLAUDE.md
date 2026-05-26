@@ -130,8 +130,11 @@ python scripts/init_db.py
 # 데이터 수집 (강남구 12개월)
 python scripts/collect_data.py --region 11680 --months 12
 
-# 대시보드
+# 대시보드 (로컬)
 streamlit run src/ui/streamlit_app.py
+
+# 대시보드 (배포)
+# https://realestate-analysis-p6jdtbkpo6u245ekj4cy4d.streamlit.app/
 
 # 엑셀 보고서
 python -m src.reports.excel_report --region 11680 --output report.xlsx
