@@ -1,0 +1,30 @@
+{
+  "name": "부동산 분석 툴",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  "postCreateCommand": "pip install -r requirements.txt && npm install -g @anthropic-ai/claude-code",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+
+  "forwardPorts": [8501],
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit 대시보드",
+      "onAutoForward": "openBrowser"
+    }
+  },
+
+  "secrets": ["ANTHROPIC_API_KEY", "DATA_GO_KR_API_KEY", "KAKAO_REST_API_KEY"]
+}
