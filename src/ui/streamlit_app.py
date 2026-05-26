@@ -578,9 +578,9 @@ def _sidebar_nav() -> str:
                     res = _refresh_recent_data(months=3, do_supply=False,
                                                regions=selected_regions)
                 msg = f"✅ 매매 {res['trade']:,}건 / 전월세 {res['rent']:,}건 신규 upsert"
-                if res["errors"]:
-                    msg += f"\n⚠️ {len(res['errors'])}개 오류"
                 st.success(msg)
+                if res["errors"]:
+                    st.error(f"⚠️ {len(res['errors'])}개 오류:\n" + "\n".join(res["errors"][:5]))
                 st.cache_data.clear()
 
             st.caption(
