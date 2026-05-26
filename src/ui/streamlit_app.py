@@ -558,10 +558,25 @@ def _sidebar_nav() -> str:
                 st.caption(line)
 
             st.markdown("")
-            if st.button("🔄 전체 자동 최신화 (최근 3개월)",
+            # 시/도 선택 (첫 수집 또는 특정 지역만 갱신)
+            sido_options = list(REGIONS.keys())
+            selected_sido = st.multiselect(
+                "수집할 시/도 선택", sido_options, default=[],
+                key="nav_sido_select",
+                help="비워두면 DB에 있는 기존 지역만 갱신. 처음엔 원하는 시/도를 선택하세요.",
+            )
+            selected_regions = None
+            if selected_sido:
+                selected_regions = [
+                    code for s in selected_sido
+                    for code in REGIONS.get(s, {}).keys()
+                ]
+
+            if st.button("🔄 데이터 수집 (최근 3개월)",
                          use_container_width=True, type="primary", key="nav_refresh"):
                 with st.spinner("국토부 실거래 수집 중… 5~10분 소요"):
-                    res = _refresh_recent_data(months=3, do_supply=False)
+                    res = _refresh_recent_data(months=3, do_supply=False,
+                                               regions=selected_regions)
                 msg = f"✅ 매매 {res['trade']:,}건 / 전월세 {res['rent']:,}건 신규 upsert"
                 if res["errors"]:
                     msg += f"\n⚠️ {len(res['errors'])}개 오류"
