@@ -1655,28 +1655,50 @@ def render_recommend_tab(inputs: dict):
     else:
         st.caption("💡 카카오 REST API 키를 .env 에 추가하면 입지점수 기능 활성화됩니다.")
 
+    # 규제/비규제 실제 대출액 + 바인딩 요인 계산
+    _loan_reg = max_buy_reg - seed_man
+    _loan_nonreg = max_buy_nonreg - seed_man
+    # LTV만 적용 시 대출 가능액 (DSR 무시)
+    _ltv_only_reg = seed_man * ltv_규제 / (100 - ltv_규제)
+    _ltv_only_nonreg = seed_man * ltv_비규제 / (100 - ltv_비규제)
+    # 한도 cap (15억 이하 기준 6억, 보수적으로 고정)
+    _cap_reg = 60000  # 만원 단위 6억
+    # 바인딩 요인 판별
+    if dsr_cap_man is not None and _loan_reg <= dsr_cap_man + 100:
+        _bind_reg = f"DSR 한도 {dsr_cap_man/10000:.1f}억"
+    elif _loan_reg <= _ltv_only_reg + 100:
+        _bind_reg = f"LTV {ltv_규제:.0f}% 한도"
+    else:
+        _bind_reg = "대출 한도 cap"
+    if dsr_cap_man is not None and _loan_nonreg <= dsr_cap_man + 100:
+        _bind_nonreg = f"DSR 한도 {dsr_cap_man/10000:.1f}억"
+    else:
+        _bind_nonreg = f"LTV {ltv_비규제:.0f}% 한도"
+
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("매물 후보", f"{len(rec):,} 건")
     c2.metric("단지 수", f"{rec['apt_name'].nunique():,} 개")
     c3.metric("지역 수", f"{rec['region_code'].nunique():,} 개")
     c4.metric("🏙️ 규제지역 최대 매수가", f"{max_buy_reg/10000:.2f} 억",
               help=(
-                  "이 시드와 대출 조건으로 규제지역에서 살 수 있는 이론적 최대 금액.\n\n"
-                  "계산: 시드 + min(LTV 한도, 대출 한도 cap, DSR 한도)\n"
-                  "• LTV: 투기과열지구(강남3구·용산) 40%, 기타 규제지역 50%"
-                  " (생애최초 +10~20%p 우대)\n"
-                  "• 한도 cap: 매매가 15억↓ → 6억 / 15~25억 → 4억 / 25억↑ → 2억\n"
-                  "• DSR 40%: 연소득 기준 감당 가능 대출액 (소득 입력 시 적용)\n"
-                  "실제 대출은 세 한도 중 가장 작은 값이 적용됩니다."
+                  f"【내 조건 기준 계산】\n"
+                  f"시드 {seed_man/10000:.1f}억 + 대출 {_loan_reg/10000:.1f}억 = {max_buy_reg/10000:.1f}억\n"
+                  f"→ 결정 요인: {_bind_reg}\n\n"
+                  "【대출 한도 3가지 중 가장 작은 값 적용】\n"
+                  f"① LTV {ltv_규제:.0f}%: 매매가의 {ltv_규제:.0f}%까지 대출 (시드÷(1-LTV%)=매매가)\n"
+                  "② 한도 cap: 매매가 15억 이하 6억 / 15억 초과 25억 이하 4억 / 25억 초과 2억\n"
+                  f"③ DSR 40%: {f'연소득 기준 최대 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
+                  "※ LTV 기준: 투기과열지구(강남3구·용산) 40%, 기타 규제지역 50%, 생애최초 +10p 우대"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg/10000:.2f} 억",
               help=(
-                  "이 시드와 대출 조건으로 비규제지역에서 살 수 있는 이론적 최대 금액.\n\n"
-                  "계산: 시드 + min(LTV 한도, DSR 한도)\n"
-                  "• LTV: 무주택 70% (생애최초 80%), 1주택 60%, 다주택 50%\n"
-                  "• 한도 cap 없음 → 규제지역보다 대출 한도가 훨씬 큼\n"
-                  "• DSR 40%: 연소득 기준 감당 가능 대출액 (소득 입력 시 적용)\n"
-                  "수도권 외곽·지방 등 비규제지역 검토 시 이 한도를 기준으로 검색합니다."
+                  f"【내 조건 기준 계산】\n"
+                  f"시드 {seed_man/10000:.1f}억 + 대출 {_loan_nonreg/10000:.1f}억 = {max_buy_nonreg/10000:.1f}억\n"
+                  f"→ 결정 요인: {_bind_nonreg}\n\n"
+                  "【대출 한도 2가지 중 가장 작은 값 적용】\n"
+                  f"① LTV {ltv_비규제:.0f}%: 매매가의 {ltv_비규제:.0f}%까지 대출 (규제지역보다 높음)\n"
+                  f"② DSR 40%: {f'연소득 기준 최대 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
+                  "※ 한도 cap 없음. LTV 기준: 무주택 70% (생애최초 80%), 1주택 60%, 다주택 50%"
               ))
     if strategy == "🚀 투자수익":
         c6.metric("최고 예상수익률(자기자본)", f"{rec['expected_roi_%'].max():.2f} %")
