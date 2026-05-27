@@ -1030,13 +1030,14 @@ def page_strategy_backtest():
 
     with st.container(border=True):
         st.markdown("##### ⚙️ 공통 파라미터")
+        st.caption("⚠️ DB 보유 데이터: 약 2024년~현재. 학습 기간 + 검증 기간 합계가 24개월 이하여야 오류 없이 동작합니다.")
         c1, c2, c3, c4 = st.columns(4)
-        train_months = c1.slider("학습 기간 (개월)", 6, 36, 24, key="bt_train",
-                                  help="점수 산출에 사용할 과거 데이터 기간. 길수록 노이즈 감소, 짧을수록 최근 트렌드 반영")
-        test_months  = c2.slider("검증 기간 (개월)", 6, 36, 24, key="bt_test",
-                                  help="점수 산출 후 실제 성과를 측정할 기간. 부동산은 12~24개월 단위가 일반적")
-        min_deals    = c3.slider("최소 거래수", 2, 20, 5, key="bt_min",
-                                  help="단지·평형 집계 최소 거래 건수. 낮으면 표본 많지만 노이즈, 높으면 신뢰도 상승")
+        train_months = c1.slider("학습 기간 (개월)", 6, 24, 12, key="bt_train",
+                                  help="점수 산출에 사용할 과거 데이터 기간. 길수록 노이즈 감소, 짧을수록 최근 트렌드 반영. DB 데이터는 2024년~이므로 학습+검증 합계 24개월 이하 권장")
+        test_months  = c2.slider("검증 기간 (개월)", 6, 18, 12, key="bt_test",
+                                  help="점수 산출 후 실제 성과를 측정할 기간. 학습+검증 합계가 DB 보유 기간을 초과하면 데이터 부족 오류 발생")
+        min_deals    = c3.slider("최소 거래수", 2, 20, 3, key="bt_min",
+                                  help="단지·평형 집계 최소 거래 건수. 낮으면 표본 많지만 노이즈, 높으면 신뢰도 상승. 기간이 짧을수록 3~5 권장")
         fall_thr     = c4.slider("역전세 기준 (%p)", 1.0, 10.0, 3.0, 0.5, key="bt_fall",
                                   help="전세가율이 이 수치 이상 하락하면 역전세 '발생'으로 판정")
 
