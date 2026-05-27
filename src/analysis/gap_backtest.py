@@ -251,8 +251,8 @@ def gap_score_backtest(
         test_months=test_months,
         n=n,
         spearman=round(float(rho), 3),
-        top10_hit=round(_topn_hit(g["score"], g["actual_growth"], 10), 3),
-        top20_hit=round(_topn_hit(g["score"], g["actual_growth"], 20), 3),
+        top10_hit=round(_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)), 3),
+        top20_hit=round(_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)), 3),
         component_corr=component_corr,
         raw=g,
     )
@@ -572,8 +572,8 @@ def rental_yield_backtest(
         test_months=test_months,
         n=n,
         spearman=round(float(rho), 3),
-        top10_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], 10), 3),
-        top20_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], 20), 3),
+        top10_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], max(10, n // 10)), 3),
+        top20_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], max(20, n // 5)), 3),
         component_corr=component_corr,
         raw=g,
     )

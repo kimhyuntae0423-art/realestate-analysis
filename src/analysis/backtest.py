@@ -224,8 +224,8 @@ def region_backtest(
     }
     return BacktestResult(
         scope="region", n=n, spearman=rho,
-        top10_hit=_topn_hit(g["score"], g["actual_growth"], 10),
-        top20_hit=_topn_hit(g["score"], g["actual_growth"], 20),
+        top10_hit=_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)),
+        top20_hit=_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)),
         component_corr=component_corr,
         weights={"catalyst": cw, "tier": tw, "rest": rest},
     )
@@ -341,8 +341,8 @@ def apt_backtest(
     }
     return BacktestResult(
         scope="apt", n=n, spearman=rho,
-        top10_hit=_topn_hit(g["score"], g["actual_growth"], 10),
-        top20_hit=_topn_hit(g["score"], g["actual_growth"], 20),
+        top10_hit=_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)),
+        top20_hit=_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)),
         component_corr=component_corr,
         weights={"catalyst_boost": catalyst_weight, "tier": tw, "prestige": pw, "rest": rest},
     )

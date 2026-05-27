@@ -992,15 +992,51 @@ def page_strategy_backtest():
     st.title("🔬 전략 백테스트")
     st.caption("투자수익·갭투자·임대수익 전략의 점수 예측력을 Spearman ρ로 실증 검증합니다.")
 
+    with st.expander("📖 백테스트란? — 지표 읽는 법", expanded=False):
+        st.markdown("""
+**백테스트 구조**
+
+> 과거 특정 시점에 "지금 이 단지 점수가 높다" → 이후 실제로 더 올랐는가?
+
+- **학습 기간**: 점수를 계산할 때 참고하는 과거 데이터 범위
+- **검증 기간**: 점수 산출 이후, 실제 가격이 얼마나 올랐는지 측정하는 기간
+- 두 기간이 겹치지 않아야 진짜 예측력 검증 (out-of-sample)
+
+---
+
+**Spearman ρ (스피어만 순위 상관계수)**
+
+점수 순위와 실제 상승률 순위가 얼마나 일치하는지를 -1 ~ +1로 표현합니다.
+
+| ρ 범위 | 의미 | 판단 |
+|---|---|---|
+| **+0.5 이상** | 점수 높은 단지가 실제로도 많이 올랐다 | ✅ 강한 예측력 |
+| **+0.3 ~ +0.5** | 어느 정도 예측 가능 | ✅ 유의미 |
+| **-0.3 ~ +0.3** | 점수와 상승률이 무관 | ❌ 예측력 없음 |
+| **-0.3 이하** | 점수 높을수록 오히려 덜 올랐다 | ❌ 역효과 |
+
+ρ = 0.3 선을 넘어야 "이 점수를 믿고 투자 판단에 활용할 수 있다"고 봅니다.
+
+---
+
+**상위10% 적중률**
+
+점수 상위 10% 단지 중 실제 상승률 상위 20%에 포함된 비율입니다.
+
+- **랜덤 기대치: 20%** — 아무렇게나 골라도 상위 20%에 들어갈 확률이 20%
+- **50%** → 랜덤 대비 2.5배 정확하게 좋은 단지를 고른 것
+- **30% 이상**이면 실무에서 참고할 만한 선별력으로 봅니다
+        """)
+
     with st.container(border=True):
         st.markdown("##### ⚙️ 공통 파라미터")
         c1, c2, c3, c4 = st.columns(4)
-        train_months = c1.slider("학습 기간 (개월)", 6, 24, 12, key="bt_train",
-                                  help="점수 산출에 사용할 과거 데이터 기간")
-        test_months  = c2.slider("검증 기간 (개월)", 6, 18, 12, key="bt_test",
-                                  help="점수 산출 후 실제 성과를 측정할 기간")
-        min_deals    = c3.slider("최소 거래수", 1, 20, 3, key="bt_min",
-                                  help="단지·평형 집계 최소 거래 건수")
+        train_months = c1.slider("학습 기간 (개월)", 6, 36, 24, key="bt_train",
+                                  help="점수 산출에 사용할 과거 데이터 기간. 길수록 노이즈 감소, 짧을수록 최근 트렌드 반영")
+        test_months  = c2.slider("검증 기간 (개월)", 6, 36, 24, key="bt_test",
+                                  help="점수 산출 후 실제 성과를 측정할 기간. 부동산은 12~24개월 단위가 일반적")
+        min_deals    = c3.slider("최소 거래수", 2, 20, 5, key="bt_min",
+                                  help="단지·평형 집계 최소 거래 건수. 낮으면 표본 많지만 노이즈, 높으면 신뢰도 상승")
         fall_thr     = c4.slider("역전세 기준 (%p)", 1.0, 10.0, 3.0, 0.5, key="bt_fall",
                                   help="전세가율이 이 수치 이상 하락하면 역전세 '발생'으로 판정")
 
@@ -1014,7 +1050,10 @@ def page_strategy_backtest():
     # ── 전략 비교 ──────────────────────────────────────────────────
     with tab_compare:
         st.markdown("#### 전략별 Spearman ρ 비교")
-        st.caption("세 전략의 종합점수가 실제 매매가 상승률을 얼마나 잘 예측하는지 한눈에 비교합니다. ρ > 0.3 이면 유의미한 예측력.")
+        st.markdown(
+            "세 전략의 종합점수가 실제 매매가 상승률을 얼마나 잘 예측하는지 한눈에 비교합니다.  \n"
+            "**초록 점선(ρ = 0.3)을 넘는 전략만 실제 투자 판단에 활용할 수 있습니다.**"
+        )
 
         st.info(
             "**자가매입 전략은 제외됩니다.**  \n"
@@ -1036,11 +1075,11 @@ def page_strategy_backtest():
                     r = runner()
                     compare_rows.append({
                         "전략": label, "ρ": r.spearman, "표본수": r.n,
-                        "Top10 적중률(%)": round(r.top10_hit * 100, 1),
+                        "상위10% 적중률(%)": round(r.top10_hit * 100, 1),
                     })
                 except Exception as e:
                     compare_rows.append({"전략": label, "ρ": None, "표본수": 0,
-                                         "Top10 적중률(%)": 0, "오류": str(e)})
+                                         "상위10% 적중률(%)": 0, "오류": str(e)})
             col_status.empty()
 
             df_cmp = pd.DataFrame(compare_rows)
@@ -1049,14 +1088,20 @@ def page_strategy_backtest():
             if not valid_cmp.empty:
                 c_m = st.columns(len(valid_cmp))
                 for col, (_, row) in zip(c_m, valid_cmp.iterrows()):
-                    col.metric(row["전략"], f"ρ {row['ρ']:+.3f}",
-                               delta=f"n={row['표본수']:,} · Top10 {row['Top10 적중률(%)']:.1f}%",
-                               delta_color="off")
+                    rho_val = row["ρ"]
+                    hit_val = row["상위10% 적중률(%)"]
+                    rho_label = "✅ 유의미" if rho_val >= 0.3 else ("⚠️ 약함" if rho_val >= 0 else "❌ 역상관")
+                    col.metric(
+                        row["전략"],
+                        f"ρ {rho_val:+.3f}  {rho_label}",
+                        delta=f"표본 {row['표본수']:,}건 · 상위10% 적중 {hit_val:.1f}%",
+                        delta_color="off",
+                    )
 
                 fig_cmp = px.bar(
                     valid_cmp, x="전략", y="ρ",
                     color="ρ", color_continuous_scale="RdYlGn", range_color=[-0.7, 0.7],
-                    text="ρ", title="전략별 종합점수 예측력 (Spearman ρ)", height=400,
+                    text="ρ", title="전략별 종합점수 예측력 (Spearman ρ) — 초록 점선 이상이어야 유의미", height=420,
                 )
                 fig_cmp.add_hline(y=0.3, line_dash="dash", line_color="green",
                                    annotation_text="유의미 기준 (ρ=0.3)")
@@ -1064,7 +1109,25 @@ def page_strategy_backtest():
                 fig_cmp.update_traces(texttemplate="%{text:+.3f}", textposition="outside")
                 fig_cmp.update_layout(coloraxis_showscale=False)
                 st.plotly_chart(fig_cmp, use_container_width=True)
+
+                st.markdown("**결과 요약표** — 상위10% 적중률 기대치(무작위) = 20%")
                 st.dataframe(df_cmp, hide_index=True, use_container_width=True)
+
+                # 결과 자동 해석
+                valid_rhos = valid_cmp[valid_cmp["ρ"].notna()]
+                good = valid_rhos[valid_rhos["ρ"] >= 0.3]["전략"].tolist()
+                bad  = valid_rhos[valid_rhos["ρ"] < 0]["전략"].tolist()
+                msgs = []
+                if good:
+                    msgs.append(f"**{', '.join(good)}** 전략은 ρ ≥ 0.3 — 점수가 실제 상승을 유의미하게 예측합니다.")
+                if bad:
+                    msgs.append(
+                        f"**{', '.join(bad)}** 전략은 ρ < 0 — 점수 높은 곳이 오히려 덜 올랐습니다. "
+                        "이는 해당 점수가 '저렴·수익 좋은 곳'을 높이 평가하기 때문이며, "
+                        "부동산에서는 비싼 곳(인기 지역)이 더 많이 오르는 '마태 효과'와 충돌합니다."
+                    )
+                if msgs:
+                    st.success("  \n".join(msgs))
 
             for _, row in df_cmp[df_cmp["ρ"].isna()].iterrows():
                 st.warning(f"{row['전략']}: {row.get('오류', '알 수 없는 오류')}")
@@ -1072,6 +1135,11 @@ def page_strategy_backtest():
     # ── 투자수익 탭 ────────────────────────────────────────────────
     with tab_invest:
         st.markdown("#### 🚀 투자수익 전략 검증")
+        st.markdown(
+            "**이 전략의 핵심 질문:** 시장 강도(매수 심리)와 단지 명성(prestige)이 높은 곳이 실제로 더 오르는가?  \n"
+            "점수 = `region_score(시장강도+상급지) × 0.6 + prestige × 0.1 + 모멘텀 시그널 × 0.3`  \n"
+            "ρ > 0.3 이면 이 점수가 미래 상승을 예측한다는 것이 통계적으로 입증됩니다."
+        )
 
         with st.expander("📜 백테스트 결론 및 개발 히스토리", expanded=True):
             st.markdown(
@@ -1095,8 +1163,10 @@ def page_strategy_backtest():
             )
 
         c1_inv, c2_inv = st.columns(2)
-        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, 0.1, 0.05, key="bt_inv_cw")
-        tw_inv = c2_inv.slider("상급지 가중치", 0.0, 1.0, 0.3, 0.05, key="bt_inv_tw")
+        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, 0.1, 0.05, key="bt_inv_cw",
+                               help="개발·교통 호재의 점수 반영 강도. 높일수록 호재 지역이 상위권 차지")
+        tw_inv = c2_inv.slider("상급지 가중치", 0.0, 1.0, 0.3, 0.05, key="bt_inv_tw",
+                               help="강남·마포 등 상급지 보너스 강도. 현재 최적값은 0.3~0.6")
 
         if st.button("▶ 투자수익 재실행", key="run_invest"):
             with st.spinner("계산 중..."):
@@ -1111,27 +1181,41 @@ def page_strategy_backtest():
                     )
                     ci1, ci2 = st.columns(2)
                     with ci1:
-                        st.markdown("**단지 단위**")
-                        st.metric("Spearman ρ", f"{ri_apt.spearman:+.3f}")
-                        st.metric("Top10 적중률", f"{ri_apt.top10_hit*100:.1f}%")
+                        st.markdown("**단지 단위** — 개별 아파트 단지 예측력")
+                        st.metric("Spearman ρ", f"{ri_apt.spearman:+.3f}",
+                                  help="점수 순위 ↔ 실제 상승률 순위 일치도")
+                        st.metric("상위10% 적중률", f"{ri_apt.top10_hit*100:.1f}%",
+                                  help="점수 상위 10% 중 실제 상위 20%에 포함된 비율. 랜덤 기대치=20%")
                         st.metric("표본 수", f"{ri_apt.n:,}")
                     with ci2:
-                        st.markdown("**시군구 단위**")
+                        st.markdown("**시군구 단위** — 지역(구·군) 예측력")
                         st.metric("Spearman ρ", f"{ri_reg.spearman:+.3f}")
-                        st.metric("Top10 적중률", f"{ri_reg.top10_hit*100:.1f}%")
+                        st.metric("상위10% 적중률", f"{ri_reg.top10_hit*100:.1f}%")
                         st.metric("표본 수", f"{ri_reg.n:,}")
-                    st.markdown("**요소별 단독 ρ (단지)**")
+                    st.markdown("**요소별 단독 ρ (단지)** — 각 요소가 혼자서 얼마나 예측하는가")
+                    st.caption("ρ가 양수(↑)면 이 요소가 높은 단지가 실제 더 올랐다는 뜻, 음수(↓)면 반대")
                     comp_inv = pd.DataFrame([
-                        {"요소": k, "ρ": v, "방향": "↑ 양" if v > 0 else "↓ 음"}
+                        {"요소": k, "ρ": v,
+                         "방향": "↑ 양 (높을수록 오름)" if v > 0.05 else ("↓ 음 (높을수록 덜 오름)" if v < -0.05 else "→ 중립")}
                         for k, v in ri_apt.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
                     st.dataframe(comp_inv, hide_index=True, use_container_width=True)
+                    st.caption(
+                        f"📌 단지 ρ={ri_apt.spearman:+.3f} / 시군구 ρ={ri_reg.spearman:+.3f}. "
+                        + ("두 단위 모두 유의미 — 점수를 신뢰할 수 있습니다." if min(ri_apt.spearman, ri_reg.spearman) >= 0.3
+                           else "한 단위 이상이 기준 미달 — 가중치 조정을 시도해 보세요.")
+                    )
                 except ValueError as e:
                     st.error(f"계산 실패: {e}")
 
     # ── 갭투자 탭 ──────────────────────────────────────────────────
     with tab_gap:
         st.markdown("#### 🏠 갭투자 전략 백테스트 (4종)")
+        st.markdown(
+            "**갭투자 점수 구성:** 전세가율 품질(25%) + 전세가율 가속도(20%) + 상급지 등급(20%) + 레버리지 배율(20%) + 거래 활성도(15%)  \n"
+            "⚠️ **주의:** 갭투자 점수는 *좋은 갭 조건*을 평가하는 것으로, 매매가 상승 예측 목적이 아닙니다. "
+            "전략 비교에서 ρ가 음수로 나오는 게 정상입니다 (갭이 큰 싼 지역 ≠ 빨리 오르는 지역)."
+        )
 
         inner_a, inner_b, inner_c, inner_d = st.tabs([
             "A. 점수-수익률",
@@ -1141,19 +1225,27 @@ def page_strategy_backtest():
         ])
 
         with inner_a:
-            st.markdown("#### 갭투자 5요소 점수 vs 실제 매매가 상승률")
-            st.caption("점수 산출 시점에서 검증기간 후 실제 평당가 상승률과 Spearman ρ. ρ > 0.3 이면 유의미.")
+            st.markdown("#### A. 갭투자 점수 vs 실제 매매가 상승률")
+            st.markdown(
+                "갭투자 점수가 높은 단지가 실제 매매가도 더 올랐는가?  \n"
+                "ρ가 **음수**여도 괜찮습니다 — 갭투자의 목적은 '싸게 들어가서 레버리지 수익'이지, "
+                "'가장 빨리 오를 곳 고르기'가 아니기 때문입니다. 탭 C의 ROE 시뮬레이션이 더 중요합니다."
+            )
             if st.button("▶ 실행 (A)", key="run_a"):
                 with st.spinner("계산 중..."):
                     try:
                         ra = gap_score_backtest(train_months=train_months, test_months=test_months, min_deals=min_deals)
                         ca1, ca2, ca3 = st.columns(3)
                         ca1.metric("표본 수", f"{ra.n:,}건")
-                        ca2.metric("종합 점수 ρ", f"{ra.spearman:+.3f}")
-                        ca3.metric("Top10 적중률", f"{ra.top10_hit*100:.1f}%")
-                        st.markdown("**요소별 단독 ρ**")
+                        ca2.metric("종합 점수 ρ", f"{ra.spearman:+.3f}",
+                                   help="점수 순위 ↔ 상승률 순위 상관. 음수=점수 높은 곳이 덜 오름 (정상 현상)")
+                        ca3.metric("상위10% 적중률", f"{ra.top10_hit*100:.1f}%",
+                                   help="랜덤 기대치=20%. 이 지표보다 ρ와 탭C ROE가 더 핵심")
+                        st.markdown("**요소별 단독 ρ** — 각 요소가 매매가 상승과 어떤 관계인지")
+                        st.caption("요소가 양의 ρ면 그 요소가 높은 곳이 실제 더 올랐다는 뜻")
                         comp = pd.DataFrame([
-                            {"요소": k, "ρ": v, "방향": "↑ 양" if v > 0 else "↓ 음"}
+                            {"요소": k, "ρ": v,
+                             "방향": "↑ 양 (상승 연관)" if v > 0.05 else ("↓ 음 (역연관)" if v < -0.05 else "→ 중립")}
                             for k, v in ra.component_corr.items()
                         ]).sort_values("ρ", ascending=False)
                         st.dataframe(comp, hide_index=True, use_container_width=True)
@@ -1162,16 +1254,22 @@ def page_strategy_backtest():
                                 ra.raw, x="score", y="actual_growth",
                                 hover_data=["region_code", "apt_name"],
                                 labels={"score": "갭투자 점수", "actual_growth": "실제 상승률 (%)"},
-                                title=f"갭투자 점수 vs 실제 상승률 (ρ={ra.spearman:+.3f})",
+                                title=f"갭투자 점수 vs 실제 매매가 상승률 (ρ={ra.spearman:+.3f})",
                                 trendline="ols",
                             )
                             st.plotly_chart(fig, use_container_width=True)
+                            st.caption("점들이 우상향(/)이면 점수가 상승 예측, 우하향(\\)이면 역상관")
                     except ValueError as e:
                         st.error(f"계산 실패: {e}")
 
         with inner_b:
-            st.markdown("#### 역전세 리스크 레이블 분류 정확도")
-            st.caption(f"⚠️·🔶 레이블이 실제 전세가율 {fall_thr}%p 이상 하락을 얼마나 잘 예측했는지. F1 > 0.5 이면 실용적.")
+            st.markdown("#### B. 역전세 리스크 레이블 분류 정확도")
+            st.markdown(
+                f"갭투자 점수의 ⚠️·🔶 위험 레이블이 실제 전세가율 **{fall_thr}%p 이상 하락**을 얼마나 잘 잡아냈는가?  \n"
+                "**Precision**: 위험 경고 중 실제 위험이었던 비율 (낮으면 헛경보가 많음)  \n"
+                "**Recall**: 실제 위험 중 경고를 발령한 비율 (낮으면 위험을 놓침)  \n"
+                "**F1**: 둘의 조화평균. **0.5 이상**이면 실무에서 참고할 만한 수준"
+            )
             if st.button("▶ 실행 (B)", key="run_b"):
                 with st.spinner("계산 중..."):
                     try:
@@ -1181,9 +1279,12 @@ def page_strategy_backtest():
                         )
                         cb1, cb2, cb3, cb4 = st.columns(4)
                         cb1.metric("표본 수", f"{rb.n:,}건")
-                        cb2.metric("Precision", f"{rb.precision:.3f}")
-                        cb3.metric("Recall", f"{rb.recall:.3f}")
-                        cb4.metric("F1", f"{rb.f1:.3f}")
+                        cb2.metric("Precision", f"{rb.precision:.3f}",
+                                   help="위험 경고 중 실제 역전세 발생 비율. 높을수록 헛경보 少")
+                        cb3.metric("Recall", f"{rb.recall:.3f}",
+                                   help="실제 역전세 중 경고 발령 비율. 높을수록 위험을 놓치지 않음")
+                        cb4.metric("F1", f"{rb.f1:.3f}",
+                                   help="Precision과 Recall의 균형. 0.5 이상=실용적")
                         st.markdown(f"**실제 역전세 발생**: {rb.n_actual_risk}건 / {rb.n}건 ({rb.n_actual_risk/rb.n*100:.1f}%)")
                         c = rb.confusion
                         conf_df = pd.DataFrame({
@@ -1191,19 +1292,25 @@ def page_strategy_backtest():
                             "실제: 위험": [c["TP"], c["FN"]],
                             "실제: 안전": [c["FP"], c["TN"]],
                         }).set_index("")
-                        st.markdown("**Confusion Matrix**")
+                        st.markdown("**혼동 행렬 (Confusion Matrix)**")
+                        st.caption("TP=맞게 위험 경고, FP=헛경보(실제 안전), FN=놓친 위험, TN=맞게 안전 판정")
                         st.dataframe(conf_df, use_container_width=False)
                         st.caption(
-                            f"📌 F1={rb.f1:.3f}. "
-                            + ("실용적" if rb.f1 >= 0.5 else "개선 여지")
+                            f"📌 F1={rb.f1:.3f} → "
+                            + ("실용적 수준 — 역전세 회피에 이 지표를 활용할 수 있습니다." if rb.f1 >= 0.5
+                               else "아직 개선 여지 — 역전세 기준(%p)을 조정해 보세요.")
                             + f" | 역전세 기준: {fall_thr}%p 하락"
                         )
                     except ValueError as e:
                         st.error(f"계산 실패: {e}")
 
         with inner_c:
-            st.markdown("#### 갭투자 TOP-N 수익 시뮬레이션")
-            st.caption("과거 시점에 갭투자 점수 상위 단지 선정 후 보유 → ROE = 매매가 상승 / 초기 갭.")
+            st.markdown("#### C. 갭투자 TOP-N 수익 시뮬레이션")
+            st.markdown(
+                "과거 시점에 갭투자 점수 **상위 N개 단지**를 실제로 매수했다면 얼마나 벌었는가?  \n"
+                "**ROE (자기자본 수익률)** = 매매가 상승액 ÷ 초기 갭(내 실투자금)  \n"
+                "예: 갭 1억에 매수 후 매매가 3천만 오르면 ROE = +30%"
+            )
             top_n_c = st.slider("TOP-N 단지 수", 5, 50, 20, key="top_n_c")
             if st.button("▶ 실행 (C)", key="run_c"):
                 with st.spinner("계산 중..."):
@@ -1241,8 +1348,11 @@ def page_strategy_backtest():
                         st.error(f"계산 실패: {e}")
 
         with inner_d:
-            st.markdown("#### Walk-forward: 여러 시점 반복 검증")
-            st.caption("한 시점에서 운이 좋았을 수도 있습니다. 여러 과거 시점 반복으로 평균 ρ/F1/ROE 안정성 확인.")
+            st.markdown("#### D. Walk-forward: 여러 시점 반복 검증")
+            st.markdown(
+                "한 시점 결과는 운일 수 있습니다. 여러 과거 시점에서 반복 실행해 **평균과 편차**를 확인합니다.  \n"
+                "편차(±)가 작을수록 일관성 있는 전략, 클수록 시점에 따라 들쭉날쭉한 전략입니다."
+            )
             cd1, cd2 = st.columns(2)
             n_windows = cd1.slider("시점 수", 2, 8, 4, key="bt_n_win")
             top_n_d   = cd2.slider("시뮬레이션 TOP-N", 5, 50, 20, key="top_n_d")
@@ -1298,9 +1408,12 @@ def page_strategy_backtest():
     # ── 임대수익 탭 ───────────────────────────────────────────────
     with tab_yield:
         st.markdown("#### 💰 임대수익 전략 백테스트")
-        st.caption(
-            "연수익률(annual_yield_%) vs 실제 매매가 상승률 Spearman ρ. "
-            "수익률 높은 곳(저가 매물)이 오히려 상승률 낮은 역상관 검증 포함."
+        st.markdown(
+            "**이 전략의 핵심 질문:** 월세 수익률(연간 임대료 ÷ 매매가)이 높은 단지가 매매가도 더 오르는가?  \n\n"
+            "**예상 결과:** ρ가 **음수**. 임대 수익률이 높다 = 매매가 대비 임대료가 비싸다 = 상대적으로 저평가된 비인기 지역.  \n"
+            "부동산에서는 비인기 지역이 덜 오르는 경향이 있어, "
+            "수익률 높은 곳이 오히려 매매 차익은 낮습니다.  \n\n"
+            "이 백테스트는 그 역설을 수치로 확인하는 용도입니다."
         )
         if st.button("▶ 실행", key="run_yield"):
             with st.spinner("계산 중..."):
@@ -1311,13 +1424,16 @@ def page_strategy_backtest():
                     cy1, cy2, cy3 = st.columns(3)
                     cy1.metric("표본 수", f"{ry.n:,}건")
                     cy2.metric("수익률 ↔ 상승률 ρ", f"{ry.spearman:+.3f}",
-                               help="음수이면 수익률 높은 곳이 오히려 덜 오름 (저평가 역설)")
-                    cy3.metric("Top10 적중률", f"{ry.top10_hit*100:.1f}%")
+                               help="음수이면 '월세 수익률 높은 곳이 매매가 상승은 낮음' — 예상된 결과")
+                    cy3.metric("상위10% 적중률", f"{ry.top10_hit*100:.1f}%",
+                               help="랜덤 기대치=20%. 임대수익 전략은 매매가 상승 예측 목적이 아니므로 낮아도 정상")
 
-                    st.markdown("**요소별 단독 ρ**")
+                    st.markdown("**요소별 단독 ρ** — 각 요소와 매매가 상승률의 관계")
+                    st.caption("임대수익 관련 요소들이 매매 상승과 역상관이면 '수익형 vs 시세차익형' 분리가 명확히 입증됨")
                     comp_y = pd.DataFrame([
                         {"요소": k, "ρ": v,
-                         "해석": "양의 상관" if v > 0.1 else ("역상관" if v < -0.1 else "중립")}
+                         "해석": "양의 상관 (높을수록 시세도 오름)" if v > 0.1
+                                 else ("역상관 (수익형↑ = 시세차익↓)" if v < -0.1 else "중립")}
                         for k, v in ry.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
                     st.dataframe(comp_y, hide_index=True, use_container_width=True)
@@ -1330,15 +1446,20 @@ def page_strategy_backtest():
                             title=f"임대수익률 vs 실제 매매가 상승률 (ρ={ry.spearman:+.3f})",
                             trendline="ols",
                         )
+                        st.caption("우하향(\\) 추세선이면 임대수익 높은 곳이 덜 올랐다는 것 — 역설 입증")
                         st.plotly_chart(fig_y, use_container_width=True)
 
-                    st.caption(
-                        f"📌 ρ = {ry.spearman:+.3f}. "
-                        + ("임대수익 높은 곳이 상승도 좋음" if ry.spearman >= 0.2
-                           else "임대수익 높은 곳이 오히려 상승 저조 (저평가 역설 재확인)" if ry.spearman <= -0.2
-                           else "임대수익과 상승률 상관 약함")
-                        + f" | n={ry.n:,}"
-                    )
+                    if ry.spearman <= -0.2:
+                        st.info(
+                            f"📌 ρ = {ry.spearman:+.3f} — **수익형·시세차익형 분리 확인**  \n"
+                            "임대 수익률 높은 단지는 매매가 상승이 낮습니다. "
+                            "투자 목적(현금흐름 vs 시세차익)을 명확히 구분해야 합니다.  \n"
+                            "임대수익 추천 단지는 '안정적 현금흐름'용으로만 활용하세요."
+                        )
+                    elif ry.spearman >= 0.2:
+                        st.success(f"📌 ρ = {ry.spearman:+.3f} — 임대수익 높은 곳이 시세도 오름 (이례적 결과)")
+                    else:
+                        st.caption(f"📌 ρ = {ry.spearman:+.3f} — 임대수익과 매매 상승 상관이 약함 | n={ry.n:,}")
                 except ValueError as e:
                     st.error(f"계산 실패: {e}")
 
