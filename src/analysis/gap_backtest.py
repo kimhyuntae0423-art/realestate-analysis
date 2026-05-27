@@ -460,3 +460,91 @@ def gap_walk_forward(
                 result.std_roe_pct = round(float(np.std(vals)), 2)
 
     return result
+
+
+# ── E. 임대수익 전략 백테스트 ──────────────────────────────────────
+
+def rental_yield_backtest(
+    as_of: date | None = None,
+    train_months: int = 12,
+    test_months: int = 12,
+    area_tol: float = 5.0,
+    min_deals: int = 3,
+) -> GapScoreResult:
+    """임대수익 전략: annual_yield_% vs 실제 매매가 상승률 Spearman ρ.
+
+    수익률 높은 곳(저가 매물)이 가격 상승률과 역상관인지 검증.
+    점수 산정: as_of 이전 train_months 월세 데이터
+    정답지: as_of ~ as_of+test_months 평당가 상승률
+    """
+    today = date.today()
+    if as_of is None:
+        as_of = _months_ago(today, test_months)
+
+    train_start = _months_ago(as_of, train_months)
+    df_t = fetch_trades_df(date_from=train_start, date_to=as_of)
+    df_r = fetch_rents_df(date_from=train_start, date_to=as_of)
+    if df_t.empty or df_r.empty:
+        raise ValueError(f"[임대] {as_of} 학습 데이터 부족")
+
+    # 월세 거래만 (deposit+monthly_rent 구조)
+    df_r_monthly = df_r[df_r["monthly_rent"] > 0].copy()
+    if df_r_monthly.empty:
+        raise ValueError(f"[임대] {as_of} 월세 데이터 없음 (월세 거래 0건)")
+
+    df_t = _bucketize(df_t, area_tol)
+    df_r_monthly = _bucketize(df_r_monthly, area_tol)
+    keys = ["region_code", "apt_name", "area_bucket"]
+
+    t_agg = df_t.groupby(keys).agg(
+        trade_median=("deal_amount", "median"),
+        trade_count=("deal_amount", "count"),
+    ).reset_index()
+    r_agg = df_r_monthly.groupby(keys).agg(
+        deposit_median=("deposit", "median"),
+        monthly_median=("monthly_rent", "median"),
+        rent_count=("monthly_rent", "count"),
+    ).reset_index()
+
+    g = t_agg.merge(r_agg, on=keys, how="inner")
+    g = g[(g["trade_count"] >= min_deals) & (g["rent_count"] >= min_deals)].copy()
+    if g.empty:
+        raise ValueError(f"[임대] {as_of} 거래수 필터 후 데이터 없음 (min={min_deals})")
+
+    g["invest"] = g["trade_median"] - g["deposit_median"]
+    g = g[g["invest"] > 0].copy()
+    g["annual_yield_%"] = (g["monthly_median"] * 12 / g["invest"] * 100).round(2)
+
+    if len(g) < 5:
+        raise ValueError(f"[임대] {as_of} 유효 수익률 데이터 부족: {len(g)}건")
+
+    test_end = min(today, as_of + timedelta(days=30 * test_months))
+    test_mid = as_of + timedelta(days=30 * (test_months // 2))
+    actual = _apt_price_growth(as_of, test_mid, test_end, area_tol=area_tol, min_deals=min_deals)
+    if actual.empty:
+        raise ValueError(f"[임대] {as_of} 검증 데이터 부족")
+
+    actual = actual.rename(columns={"growth_%": "actual_growth"})
+    g = g.merge(actual[keys + ["actual_growth"]], on=keys, how="inner")
+    if len(g) < 5:
+        raise ValueError(f"[임대] 매칭 데이터 부족: {len(g)}건")
+
+    n = len(g)
+    rho = _spearman(g["annual_yield_%"], g["actual_growth"])
+    component_corr = {
+        "annual_yield_%": round(float(rho), 3),
+        "trade_median":   round(float(_spearman(g["trade_median"],   g["actual_growth"])), 3),
+        "monthly_median": round(float(_spearman(g["monthly_median"], g["actual_growth"])), 3),
+    }
+
+    return GapScoreResult(
+        as_of=as_of,
+        train_months=train_months,
+        test_months=test_months,
+        n=n,
+        spearman=round(float(rho), 3),
+        top10_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], 10), 3),
+        top20_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], 20), 3),
+        component_corr=component_corr,
+        raw=g,
+    )

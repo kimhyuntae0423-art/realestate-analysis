@@ -525,7 +525,7 @@ def _sidebar_nav() -> str:
                 "📊 지역 분석",
                 "🗺️ 지도",
                 "🚦 시장 진단",
-                "🔬 갭 백테스트",
+                "🔬 전략 백테스트",
             ],
             label_visibility="collapsed",
             key="nav_page",
@@ -639,7 +639,8 @@ def _sidebar_nav() -> str:
             "🚀 추천 = 매물 검색\n"
             "📊 지역 = 단일 시군구 시계열\n"
             "🗺️ 지도 = 전국 시각화\n"
-            "🚦 진단 = 시장 환경"
+            "🚦 진단 = 시장 환경\n"
+            "🔬 백테스트 = 전략별 예측력 검증"
         )
     return page
 
@@ -979,250 +980,367 @@ def chart_monthly_ppp(monthly: pd.DataFrame):
     return fig
 
 
-def page_gap_backtest():
-    """🔬 갭 백테스트 — 갭투자 점수 시스템 4종 검증."""
+def page_strategy_backtest():
+    """🔬 전략 백테스트 — 투자수익·갭투자·임대수익 예측력 비교."""
     from src.analysis.gap_backtest import (
         gap_score_backtest, jeonse_risk_backtest,
         gap_simulation_backtest, gap_walk_forward,
+        rental_yield_backtest,
     )
+    from src.analysis.backtest import apt_backtest, region_backtest
 
-    st.title("🔬 갭투자 백테스트")
-    st.caption("갭투자 점수 시스템의 실제 예측력을 4가지 방법으로 검증합니다.")
+    st.title("🔬 전략 백테스트")
+    st.caption("투자수익·갭투자·임대수익 전략의 점수 예측력을 Spearman ρ로 실증 검증합니다.")
 
-    # ── 파라미터 ──────────────────────────────────────────────────
     with st.container(border=True):
         st.markdown("##### ⚙️ 공통 파라미터")
         c1, c2, c3, c4 = st.columns(4)
-        train_months = c1.slider("학습 기간 (개월)", 6, 24, 12,
+        train_months = c1.slider("학습 기간 (개월)", 6, 24, 12, key="bt_train",
                                   help="점수 산출에 사용할 과거 데이터 기간")
-        test_months  = c2.slider("검증 기간 (개월)", 6, 18, 12,
+        test_months  = c2.slider("검증 기간 (개월)", 6, 18, 12, key="bt_test",
                                   help="점수 산출 후 실제 성과를 측정할 기간")
-        min_deals    = c3.slider("최소 거래수", 1, 20, 3,
+        min_deals    = c3.slider("최소 거래수", 1, 20, 3, key="bt_min",
                                   help="단지·평형 집계 최소 거래 건수")
-        fall_thr     = c4.slider("역전세 기준 (%p)", 1.0, 10.0, 3.0, 0.5,
+        fall_thr     = c4.slider("역전세 기준 (%p)", 1.0, 10.0, 3.0, 0.5, key="bt_fall",
                                   help="전세가율이 이 수치 이상 하락하면 역전세 '발생'으로 판정")
 
-    tab_a, tab_b, tab_c, tab_d = st.tabs([
-        "A. 점수-수익률 상관관계",
-        "B. 역전세 리스크 분류",
-        "C. 수익 시뮬레이션",
-        "D. Walk-forward",
+    tab_compare, tab_invest, tab_gap, tab_yield = st.tabs([
+        "📊 전략 비교",
+        "🚀 투자수익",
+        "🏠 갭투자",
+        "💰 임대수익",
     ])
 
-    # ── TAB A ──────────────────────────────────────────────────────
-    with tab_a:
-        st.markdown("#### 갭투자 5요소 점수 vs 실제 매매가 상승률")
-        st.caption(
-            f"점수 산출 시점에서 {test_months}개월 후 실제 단지 평당가 상승률과 Spearman ρ를 측정합니다. "
-            "ρ > 0.3 이면 유의미한 예측력."
+    # ── 전략 비교 ──────────────────────────────────────────────────
+    with tab_compare:
+        st.markdown("#### 전략별 Spearman ρ 비교")
+        st.caption("세 전략의 종합점수가 실제 매매가 상승률을 얼마나 잘 예측하는지 한눈에 비교합니다. ρ > 0.3 이면 유의미한 예측력.")
+
+        st.info(
+            "**자가매입 전략은 제외됩니다.**  \n"
+            "저평가 가설(평당가 낮은 곳이 더 오른다)을 다중 시점 백테스트로 검증: **ρ = −0.61** — 음의 상관.  \n"
+            "비싼 지역·대장 단지가 더 오르는 '마태 효과' 확인. 자가매입 기준은 투자수익(market+prestige) 점수로 흡수됨."
         )
-        if st.button("▶ 실행 (A)", key="run_a"):
+
+        if st.button("▶ 3전략 전체 실행", key="run_compare", type="primary"):
+            compare_rows = []
+            col_status = st.empty()
+
+            for label, runner in [
+                ("🚀 투자수익", lambda: apt_backtest(train_months=train_months, test_months=test_months)),
+                ("🏠 갭투자",   lambda: gap_score_backtest(train_months=train_months, test_months=test_months, min_deals=min_deals)),
+                ("💰 임대수익", lambda: rental_yield_backtest(train_months=train_months, test_months=test_months, min_deals=min_deals)),
+            ]:
+                col_status.text(f"{label} 계산 중...")
+                try:
+                    r = runner()
+                    compare_rows.append({
+                        "전략": label, "ρ": r.spearman, "표본수": r.n,
+                        "Top10 적중률(%)": round(r.top10_hit * 100, 1),
+                    })
+                except Exception as e:
+                    compare_rows.append({"전략": label, "ρ": None, "표본수": 0,
+                                         "Top10 적중률(%)": 0, "오류": str(e)})
+            col_status.empty()
+
+            df_cmp = pd.DataFrame(compare_rows)
+            valid_cmp = df_cmp[df_cmp["ρ"].notna()].copy()
+
+            if not valid_cmp.empty:
+                c_m = st.columns(len(valid_cmp))
+                for col, (_, row) in zip(c_m, valid_cmp.iterrows()):
+                    col.metric(row["전략"], f"ρ {row['ρ']:+.3f}",
+                               delta=f"n={row['표본수']:,} · Top10 {row['Top10 적중률(%)']:.1f}%",
+                               delta_color="off")
+
+                fig_cmp = px.bar(
+                    valid_cmp, x="전략", y="ρ",
+                    color="ρ", color_continuous_scale="RdYlGn", range_color=[-0.7, 0.7],
+                    text="ρ", title="전략별 종합점수 예측력 (Spearman ρ)", height=400,
+                )
+                fig_cmp.add_hline(y=0.3, line_dash="dash", line_color="green",
+                                   annotation_text="유의미 기준 (ρ=0.3)")
+                fig_cmp.add_hline(y=0, line_dash="solid", line_color="gray")
+                fig_cmp.update_traces(texttemplate="%{text:+.3f}", textposition="outside")
+                fig_cmp.update_layout(coloraxis_showscale=False)
+                st.plotly_chart(fig_cmp, use_container_width=True)
+                st.dataframe(df_cmp, hide_index=True, use_container_width=True)
+
+            for _, row in df_cmp[df_cmp["ρ"].isna()].iterrows():
+                st.warning(f"{row['전략']}: {row.get('오류', '알 수 없는 오류')}")
+
+    # ── 투자수익 탭 ────────────────────────────────────────────────
+    with tab_invest:
+        st.markdown("#### 🚀 투자수익 전략 검증")
+
+        with st.expander("📜 백테스트 결론 및 개발 히스토리", expanded=True):
+            st.markdown(
+                """
+**결론 (2026-05 다중시점 백테스트)**
+
+| 모델 / 요소 | Spearman ρ | 채택 |
+|-------------|-----------|------|
+| **market×0.7 + prestige×0.3 (단지)** | **+0.62** | ✅ |
+| **market×0.7 + prestige×0.3 (시군구)** | **+0.62** | ✅ |
+| 저평가 점수 (자가매입 기준) | −0.61 | ❌ 기각 |
+| tier만 (규제해제 순서) | 약함 | 보조만 |
+| jeonse_accel | 역상관 | ❌ |
+| population 순유입 | 역상관 | ❌ |
+| supply_pressure | 효과 없음 | ❌ |
+
+**자가매입 전략 제외 이유:** 저평가 가설 데이터로 기각 (ρ −0.61).
+"싼 곳이 더 오른다"는 반대 — 비싼 지역·대장 단지가 더 오르는 **마태 효과** 확인.
+자가매입 추천은 투자수익 점수(market+prestige)로 통합되어 별도 백테스트 불필요.
+                """
+            )
+
+        c1_inv, c2_inv = st.columns(2)
+        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, 0.1, 0.05, key="bt_inv_cw")
+        tw_inv = c2_inv.slider("상급지 가중치", 0.0, 1.0, 0.3, 0.05, key="bt_inv_tw")
+
+        if st.button("▶ 투자수익 재실행", key="run_invest"):
             with st.spinner("계산 중..."):
                 try:
-                    ra = gap_score_backtest(
-                        train_months=train_months,
-                        test_months=test_months,
-                        min_deals=min_deals,
+                    ri_apt = apt_backtest(
+                        train_months=train_months, test_months=test_months,
+                        catalyst_weight=cw_inv, tier_weight=tw_inv,
                     )
-                    ca1, ca2, ca3 = st.columns(3)
-                    ca1.metric("표본 수", f"{ra.n:,}건")
-                    ca2.metric("종합 점수 ρ", f"{ra.spearman:+.3f}",
-                               help="1에 가까울수록 점수 순서 = 실제 상승 순서")
-                    ca3.metric("Top10 적중률", f"{ra.top10_hit*100:.1f}%",
-                               help="점수 상위 10개 중 실제 상위 20%에 포함된 비율")
-
-                    st.markdown("**요소별 단독 예측력 (Spearman ρ)**")
-                    comp = pd.DataFrame([
-                        {"요소": k, "ρ": v, "방향": "↑ 양의 상관" if v > 0 else "↓ 음의 상관"}
-                        for k, v in ra.component_corr.items()
+                    ri_reg = region_backtest(
+                        train_months=train_months, test_months=test_months,
+                        catalyst_weight=cw_inv, tier_weight=tw_inv,
+                    )
+                    ci1, ci2 = st.columns(2)
+                    with ci1:
+                        st.markdown("**단지 단위**")
+                        st.metric("Spearman ρ", f"{ri_apt.spearman:+.3f}")
+                        st.metric("Top10 적중률", f"{ri_apt.top10_hit*100:.1f}%")
+                        st.metric("표본 수", f"{ri_apt.n:,}")
+                    with ci2:
+                        st.markdown("**시군구 단위**")
+                        st.metric("Spearman ρ", f"{ri_reg.spearman:+.3f}")
+                        st.metric("Top10 적중률", f"{ri_reg.top10_hit*100:.1f}%")
+                        st.metric("표본 수", f"{ri_reg.n:,}")
+                    st.markdown("**요소별 단독 ρ (단지)**")
+                    comp_inv = pd.DataFrame([
+                        {"요소": k, "ρ": v, "방향": "↑ 양" if v > 0 else "↓ 음"}
+                        for k, v in ri_apt.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
-                    st.dataframe(comp, hide_index=True, use_container_width=True)
+                    st.dataframe(comp_inv, hide_index=True, use_container_width=True)
+                except ValueError as e:
+                    st.error(f"계산 실패: {e}")
 
-                    if not ra.raw.empty:
-                        fig = px.scatter(
-                            ra.raw, x="score", y="actual_growth",
-                            hover_data=["region_code", "apt_name", "area_bucket"],
-                            labels={"score": "갭투자 점수", "actual_growth": "실제 상승률 (%)"},
-                            title=f"갭투자 점수 vs 실제 상승률 (ρ={ra.spearman:+.3f})",
+    # ── 갭투자 탭 ──────────────────────────────────────────────────
+    with tab_gap:
+        st.markdown("#### 🏠 갭투자 전략 백테스트 (4종)")
+
+        inner_a, inner_b, inner_c, inner_d = st.tabs([
+            "A. 점수-수익률",
+            "B. 역전세 리스크",
+            "C. 수익 시뮬",
+            "D. Walk-forward",
+        ])
+
+        with inner_a:
+            st.markdown("#### 갭투자 5요소 점수 vs 실제 매매가 상승률")
+            st.caption("점수 산출 시점에서 검증기간 후 실제 평당가 상승률과 Spearman ρ. ρ > 0.3 이면 유의미.")
+            if st.button("▶ 실행 (A)", key="run_a"):
+                with st.spinner("계산 중..."):
+                    try:
+                        ra = gap_score_backtest(train_months=train_months, test_months=test_months, min_deals=min_deals)
+                        ca1, ca2, ca3 = st.columns(3)
+                        ca1.metric("표본 수", f"{ra.n:,}건")
+                        ca2.metric("종합 점수 ρ", f"{ra.spearman:+.3f}")
+                        ca3.metric("Top10 적중률", f"{ra.top10_hit*100:.1f}%")
+                        st.markdown("**요소별 단독 ρ**")
+                        comp = pd.DataFrame([
+                            {"요소": k, "ρ": v, "방향": "↑ 양" if v > 0 else "↓ 음"}
+                            for k, v in ra.component_corr.items()
+                        ]).sort_values("ρ", ascending=False)
+                        st.dataframe(comp, hide_index=True, use_container_width=True)
+                        if not ra.raw.empty:
+                            fig = px.scatter(
+                                ra.raw, x="score", y="actual_growth",
+                                hover_data=["region_code", "apt_name"],
+                                labels={"score": "갭투자 점수", "actual_growth": "실제 상승률 (%)"},
+                                title=f"갭투자 점수 vs 실제 상승률 (ρ={ra.spearman:+.3f})",
+                                trendline="ols",
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+                    except ValueError as e:
+                        st.error(f"계산 실패: {e}")
+
+        with inner_b:
+            st.markdown("#### 역전세 리스크 레이블 분류 정확도")
+            st.caption(f"⚠️·🔶 레이블이 실제 전세가율 {fall_thr}%p 이상 하락을 얼마나 잘 예측했는지. F1 > 0.5 이면 실용적.")
+            if st.button("▶ 실행 (B)", key="run_b"):
+                with st.spinner("계산 중..."):
+                    try:
+                        rb = jeonse_risk_backtest(
+                            train_months=train_months, test_months=test_months,
+                            min_deals=min_deals, fall_threshold_pct=fall_thr,
+                        )
+                        cb1, cb2, cb3, cb4 = st.columns(4)
+                        cb1.metric("표본 수", f"{rb.n:,}건")
+                        cb2.metric("Precision", f"{rb.precision:.3f}")
+                        cb3.metric("Recall", f"{rb.recall:.3f}")
+                        cb4.metric("F1", f"{rb.f1:.3f}")
+                        st.markdown(f"**실제 역전세 발생**: {rb.n_actual_risk}건 / {rb.n}건 ({rb.n_actual_risk/rb.n*100:.1f}%)")
+                        c = rb.confusion
+                        conf_df = pd.DataFrame({
+                            "": ["예측: 위험", "예측: 안전"],
+                            "실제: 위험": [c["TP"], c["FN"]],
+                            "실제: 안전": [c["FP"], c["TN"]],
+                        }).set_index("")
+                        st.markdown("**Confusion Matrix**")
+                        st.dataframe(conf_df, use_container_width=False)
+                        st.caption(
+                            f"📌 F1={rb.f1:.3f}. "
+                            + ("실용적" if rb.f1 >= 0.5 else "개선 여지")
+                            + f" | 역전세 기준: {fall_thr}%p 하락"
+                        )
+                    except ValueError as e:
+                        st.error(f"계산 실패: {e}")
+
+        with inner_c:
+            st.markdown("#### 갭투자 TOP-N 수익 시뮬레이션")
+            st.caption("과거 시점에 갭투자 점수 상위 단지 선정 후 보유 → ROE = 매매가 상승 / 초기 갭.")
+            top_n_c = st.slider("TOP-N 단지 수", 5, 50, 20, key="top_n_c")
+            if st.button("▶ 실행 (C)", key="run_c"):
+                with st.spinner("계산 중..."):
+                    try:
+                        rc = gap_simulation_backtest(
+                            train_months=train_months, hold_months=test_months,
+                            top_n=top_n_c, min_deals=min_deals,
+                        )
+                        cc1, cc2, cc3, cc4 = st.columns(4)
+                        cc1.metric("매칭 단지", f"{rc.n_matched}건")
+                        cc2.metric("평균 매매가 상승", f"{rc.avg_price_growth_pct:+.2f}%")
+                        cc3.metric("평균 ROE", f"{rc.avg_roe_pct:+.2f}%",
+                                   help="자기자본(갭) 대비 매매가 상승 수익률")
+                        cc4.metric("중앙값 ROE", f"{rc.median_roe_pct:+.2f}%")
+                        if not rc.raw.empty:
+                            show = rc.raw[["apt_name", "region_code", "gap",
+                                            "price_growth_%", "roe_%", "score"]].copy()
+                            show["gap_억"] = (show["gap"] / 10000).round(2)
+                            show = show.drop(columns="gap").sort_values("roe_%", ascending=False)
+                            show.insert(0, "rank", range(1, len(show) + 1))
+                            fig_roe = px.bar(
+                                show.head(top_n_c), x="apt_name", y="roe_%",
+                                color="roe_%", color_continuous_scale="RdYlGn",
+                                labels={"apt_name": "단지명", "roe_%": "ROE (%)"},
+                                title=f"TOP-{top_n_c} 자기자본 수익률",
+                            )
+                            fig_roe.update_xaxes(tickangle=45)
+                            st.plotly_chart(fig_roe, use_container_width=True)
+                            st.dataframe(show, hide_index=True, use_container_width=True)
+                        st.caption(
+                            f"📌 갭 1억으로 ROE {rc.avg_roe_pct:+.2f}% = "
+                            f"평균 {abs(rc.avg_roe_pct)/100:.2f}억 수익. 보유 {rc.hold_months}개월."
+                        )
+                    except ValueError as e:
+                        st.error(f"계산 실패: {e}")
+
+        with inner_d:
+            st.markdown("#### Walk-forward: 여러 시점 반복 검증")
+            st.caption("한 시점에서 운이 좋았을 수도 있습니다. 여러 과거 시점 반복으로 평균 ρ/F1/ROE 안정성 확인.")
+            cd1, cd2 = st.columns(2)
+            n_windows = cd1.slider("시점 수", 2, 8, 4, key="bt_n_win")
+            top_n_d   = cd2.slider("시뮬레이션 TOP-N", 5, 50, 20, key="top_n_d")
+            if st.button("▶ 실행 (D — 시간 오래 걸림)", key="run_d"):
+                progress = st.progress(0, text="Walk-forward 실행 중...")
+                wf_results = {}
+                methods = [("score", "A. 점수-수익률"), ("risk", "B. 역전세 리스크"),
+                           ("simulation", "C. 수익 시뮬레이션")]
+                for idx, (mkey, mlabel) in enumerate(methods):
+                    progress.progress((idx + 1) / len(methods), text=f"{mlabel} 계산 중...")
+                    try:
+                        rd = gap_walk_forward(
+                            n_windows=n_windows, test_months=test_months, train_months=train_months,
+                            method=mkey, min_deals=min_deals,
+                            fall_threshold_pct=fall_thr, top_n=top_n_d,
+                        )
+                        wf_results[mkey] = rd
+                    except Exception as e:
+                        st.warning(f"{mlabel} 실패: {e}")
+                progress.empty()
+                if "score" in wf_results:
+                    rd = wf_results["score"]
+                    st.markdown("**A. 점수-수익률 walk-forward**")
+                    st.metric("평균 ρ", f"{rd.avg_spearman:+.3f}", delta=f"±{rd.std_spearman:.3f}")
+                    if not rd.summary.empty and "spearman" in rd.summary.columns:
+                        valid_s = rd.summary[rd.summary["spearman"].notna()]
+                        if not valid_s.empty:
+                            fig_a = px.bar(valid_s, x="as_of", y="spearman",
+                                            labels={"as_of": "기준 시점", "spearman": "ρ"}, title="시점별 ρ")
+                            fig_a.add_hline(y=0, line_dash="dash", line_color="gray")
+                            st.plotly_chart(fig_a, use_container_width=True)
+                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+                if "risk" in wf_results:
+                    rd = wf_results["risk"]
+                    st.markdown("**B. 역전세 리스크 walk-forward**")
+                    st.metric("평균 F1", f"{rd.avg_f1:.3f}", delta=f"±{rd.std_f1:.3f}")
+                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+                if "simulation" in wf_results:
+                    rd = wf_results["simulation"]
+                    st.markdown("**C. 수익 시뮬레이션 walk-forward**")
+                    st.metric("평균 ROE", f"{rd.avg_roe_pct:+.2f}%", delta=f"±{rd.std_roe_pct:.2f}%")
+                    if not rd.summary.empty and "avg_roe_%" in rd.summary.columns:
+                        fig_c = px.bar(
+                            rd.summary[rd.summary["avg_roe_%"].notna()],
+                            x="as_of", y="avg_roe_%",
+                            labels={"as_of": "기준 시점", "avg_roe_%": "평균 ROE (%)"},
+                            title="시점별 평균 ROE",
+                        )
+                        fig_c.add_hline(y=0, line_dash="dash", line_color="gray")
+                        st.plotly_chart(fig_c, use_container_width=True)
+                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+
+    # ── 임대수익 탭 ───────────────────────────────────────────────
+    with tab_yield:
+        st.markdown("#### 💰 임대수익 전략 백테스트")
+        st.caption(
+            "연수익률(annual_yield_%) vs 실제 매매가 상승률 Spearman ρ. "
+            "수익률 높은 곳(저가 매물)이 오히려 상승률 낮은 역상관 검증 포함."
+        )
+        if st.button("▶ 실행", key="run_yield"):
+            with st.spinner("계산 중..."):
+                try:
+                    ry = rental_yield_backtest(
+                        train_months=train_months, test_months=test_months, min_deals=min_deals,
+                    )
+                    cy1, cy2, cy3 = st.columns(3)
+                    cy1.metric("표본 수", f"{ry.n:,}건")
+                    cy2.metric("수익률 ↔ 상승률 ρ", f"{ry.spearman:+.3f}",
+                               help="음수이면 수익률 높은 곳이 오히려 덜 오름 (저평가 역설)")
+                    cy3.metric("Top10 적중률", f"{ry.top10_hit*100:.1f}%")
+
+                    st.markdown("**요소별 단독 ρ**")
+                    comp_y = pd.DataFrame([
+                        {"요소": k, "ρ": v,
+                         "해석": "양의 상관" if v > 0.1 else ("역상관" if v < -0.1 else "중립")}
+                        for k, v in ry.component_corr.items()
+                    ]).sort_values("ρ", ascending=False)
+                    st.dataframe(comp_y, hide_index=True, use_container_width=True)
+
+                    if not ry.raw.empty and "annual_yield_%" in ry.raw.columns:
+                        fig_y = px.scatter(
+                            ry.raw, x="annual_yield_%", y="actual_growth",
+                            hover_data=["region_code", "apt_name"],
+                            labels={"annual_yield_%": "연수익률 (%)", "actual_growth": "실제 상승률 (%)"},
+                            title=f"임대수익률 vs 실제 매매가 상승률 (ρ={ry.spearman:+.3f})",
                             trendline="ols",
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig_y, use_container_width=True)
 
                     st.caption(
-                        f"📌 해석: ρ = {ra.spearman:+.3f}. "
-                        + ("유의미한 예측력" if abs(ra.spearman) >= 0.3 else "예측력 약함")
-                        + " | "
-                        + " / ".join(f"{k}: {v:+.3f}" for k, v in list(ra.component_corr.items())[:3])
+                        f"📌 ρ = {ry.spearman:+.3f}. "
+                        + ("임대수익 높은 곳이 상승도 좋음" if ry.spearman >= 0.2
+                           else "임대수익 높은 곳이 오히려 상승 저조 (저평가 역설 재확인)" if ry.spearman <= -0.2
+                           else "임대수익과 상승률 상관 약함")
+                        + f" | n={ry.n:,}"
                     )
                 except ValueError as e:
                     st.error(f"계산 실패: {e}")
-
-    # ── TAB B ──────────────────────────────────────────────────────
-    with tab_b:
-        st.markdown("#### 역전세 리스크 레이블 분류 정확도")
-        st.caption(
-            f"⚠️·🔶 레이블이 실제 전세가율 {fall_thr}%p 이상 하락을 얼마나 잘 예측했는지 측정합니다. "
-            "F1 > 0.5 이면 실용적."
-        )
-        if st.button("▶ 실행 (B)", key="run_b"):
-            with st.spinner("계산 중..."):
-                try:
-                    rb = jeonse_risk_backtest(
-                        train_months=train_months,
-                        test_months=test_months,
-                        min_deals=min_deals,
-                        fall_threshold_pct=fall_thr,
-                    )
-                    cb1, cb2, cb3, cb4 = st.columns(4)
-                    cb1.metric("표본 수", f"{rb.n:,}건")
-                    cb2.metric("Precision", f"{rb.precision:.3f}",
-                               help="리스크 예측 중 실제 발생한 비율")
-                    cb3.metric("Recall", f"{rb.recall:.3f}",
-                               help="실제 역전세 중 예측한 비율")
-                    cb4.metric("F1", f"{rb.f1:.3f}")
-
-                    st.markdown(f"**실제 역전세 발생 건수**: {rb.n_actual_risk}건 / {rb.n}건 "
-                                f"({rb.n_actual_risk/rb.n*100:.1f}%)")
-
-                    c = rb.confusion
-                    conf_df = pd.DataFrame({
-                        "": ["예측: 위험", "예측: 안전"],
-                        "실제: 위험": [c["TP"], c["FN"]],
-                        "실제: 안전": [c["FP"], c["TN"]],
-                    }).set_index("")
-                    st.markdown("**Confusion Matrix**")
-                    st.dataframe(conf_df, use_container_width=False)
-
-                    st.caption(
-                        f"📌 해석: F1={rb.f1:.3f}. "
-                        + ("실용적 수준" if rb.f1 >= 0.5 else "개선 여지 있음")
-                        + f" | 역전세 기준: {fall_thr}%p 하락"
-                    )
-                except ValueError as e:
-                    st.error(f"계산 실패: {e}")
-
-    # ── TAB C ──────────────────────────────────────────────────────
-    with tab_c:
-        st.markdown("#### 갭투자 TOP-N 수익 시뮬레이션")
-        st.caption(
-            f"과거 시점에 갭투자 점수 상위 단지를 선정해 {test_months}개월 보유 시 "
-            "자기자본 수익률(ROE = 매매가 상승 / 초기 갭)을 측정합니다."
-        )
-        top_n_c = st.slider("TOP-N 단지 수", 5, 50, 20, key="top_n_c")
-        if st.button("▶ 실행 (C)", key="run_c"):
-            with st.spinner("계산 중..."):
-                try:
-                    rc = gap_simulation_backtest(
-                        train_months=train_months,
-                        hold_months=test_months,
-                        top_n=top_n_c,
-                        min_deals=min_deals,
-                    )
-                    cc1, cc2, cc3, cc4 = st.columns(4)
-                    cc1.metric("매칭 단지", f"{rc.n_matched}건")
-                    cc2.metric("평균 매매가 상승", f"{rc.avg_price_growth_pct:+.2f}%")
-                    cc3.metric("평균 ROE", f"{rc.avg_roe_pct:+.2f}%",
-                               help="자기자본(갭) 대비 매매가 상승 수익률")
-                    cc4.metric("중앙값 ROE", f"{rc.median_roe_pct:+.2f}%")
-
-                    if not rc.raw.empty:
-                        show = rc.raw[["apt_name", "region_code", "gap",
-                                        "price_growth_%", "roe_%", "score"]].copy()
-                        show["gap_억"] = (show["gap"] / 10000).round(2)
-                        show = show.drop(columns="gap").sort_values("roe_%", ascending=False)
-                        show.insert(0, "rank", range(1, len(show) + 1))
-
-                        fig_roe = px.bar(
-                            show.head(top_n_c), x="apt_name", y="roe_%",
-                            color="roe_%", color_continuous_scale="RdYlGn",
-                            labels={"apt_name": "단지명", "roe_%": "ROE (%)"},
-                            title=f"TOP-{top_n_c} 자기자본 수익률",
-                        )
-                        fig_roe.update_xaxes(tickangle=45)
-                        st.plotly_chart(fig_roe, use_container_width=True)
-                        st.dataframe(show, hide_index=True, use_container_width=True)
-
-                    st.caption(
-                        f"📌 해석: 갭 1억으로 ROE {rc.avg_roe_pct:+.2f}% = "
-                        f"평균 {abs(rc.avg_roe_pct)/100:.2f}억 수익 (레버리지 효과). "
-                        f"보유 {rc.hold_months}개월 기준."
-                    )
-                except ValueError as e:
-                    st.error(f"계산 실패: {e}")
-
-    # ── TAB D ──────────────────────────────────────────────────────
-    with tab_d:
-        st.markdown("#### Walk-forward: 여러 시점 반복 검증")
-        st.caption(
-            "한 시점에서 운이 좋았을 수도 있습니다. "
-            "여러 과거 시점에서 반복해 평균 ρ / F1 / ROE의 안정성을 확인합니다."
-        )
-        cd1, cd2 = st.columns(2)
-        n_windows = cd1.slider("시점 수", 2, 8, 4, help="과거로 몇 개 시점에서 반복할지")
-        top_n_d   = cd2.slider("시뮬레이션 TOP-N", 5, 50, 20, key="top_n_d")
-
-        if st.button("▶ 실행 (D — 시간 오래 걸림)", key="run_d"):
-            progress = st.progress(0, text="Walk-forward 실행 중...")
-
-            wf_results = {}
-            methods = [("score", "A. 점수-수익률"), ("risk", "B. 역전세 리스크"),
-                       ("simulation", "C. 수익 시뮬레이션")]
-            for idx, (mkey, mlabel) in enumerate(methods):
-                progress.progress((idx + 1) / len(methods),
-                                   text=f"{mlabel} walk-forward 계산 중...")
-                try:
-                    rd = gap_walk_forward(
-                        n_windows=n_windows,
-                        test_months=test_months,
-                        train_months=train_months,
-                        method=mkey,
-                        min_deals=min_deals,
-                        fall_threshold_pct=fall_thr,
-                        top_n=top_n_d,
-                    )
-                    wf_results[mkey] = rd
-                except Exception as e:
-                    st.warning(f"{mlabel} 실패: {e}")
-
-            progress.empty()
-
-            if "score" in wf_results:
-                rd = wf_results["score"]
-                st.markdown("**A. 점수-수익률 walk-forward**")
-                st.metric("평균 ρ", f"{rd.avg_spearman:+.3f}",
-                           delta=f"±{rd.std_spearman:.3f} (표준편차)")
-                if not rd.summary.empty:
-                    valid = rd.summary[~rd.summary.get("spearman", pd.Series()).isna()]
-                    if not valid.empty and "spearman" in valid.columns:
-                        fig_a = px.bar(valid, x="as_of", y="spearman",
-                                        labels={"as_of": "기준 시점", "spearman": "Spearman ρ"},
-                                        title="시점별 ρ")
-                        fig_a.add_hline(y=0, line_dash="dash", line_color="gray")
-                        st.plotly_chart(fig_a, use_container_width=True)
-                st.dataframe(rd.summary, hide_index=True, use_container_width=True)
-
-            if "risk" in wf_results:
-                rd = wf_results["risk"]
-                st.markdown("**B. 역전세 리스크 walk-forward**")
-                st.metric("평균 F1", f"{rd.avg_f1:.3f}",
-                           delta=f"±{rd.std_f1:.3f} (표준편차)")
-                st.dataframe(rd.summary, hide_index=True, use_container_width=True)
-
-            if "simulation" in wf_results:
-                rd = wf_results["simulation"]
-                st.markdown("**C. 수익 시뮬레이션 walk-forward**")
-                st.metric("평균 ROE", f"{rd.avg_roe_pct:+.2f}%",
-                           delta=f"±{rd.std_roe_pct:.2f}% (표준편차)")
-                if not rd.summary.empty and "avg_roe_%" in rd.summary.columns:
-                    fig_c = px.bar(
-                        rd.summary[rd.summary["avg_roe_%"].notna()],
-                        x="as_of", y="avg_roe_%",
-                        labels={"as_of": "기준 시점", "avg_roe_%": "평균 ROE (%)"},
-                        title="시점별 평균 ROE",
-                    )
-                    fig_c.add_hline(y=0, line_dash="dash", line_color="gray")
-                    st.plotly_chart(fig_c, use_container_width=True)
-                st.dataframe(rd.summary, hide_index=True, use_container_width=True)
 
 
 def main():
@@ -1239,7 +1357,7 @@ def main():
     elif page.startswith("🚦"):
         page_market_signals()
     elif page.startswith("🔬"):
-        page_gap_backtest()
+        page_strategy_backtest()
     else:
         page_my_capacity()
 
