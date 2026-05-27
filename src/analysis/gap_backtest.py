@@ -20,6 +20,36 @@ from src.analysis.backtest import _bucketize, _spearman, _topn_hit, _apt_price_g
 from src.analysis.forward_signals import jeonse_ratio_acceleration
 
 
+# ── 갭투자 스코어링 헬퍼 (recommend.py 의존 제거) ─────────────────────
+
+def _jeonse_quality_score(ratio: float) -> float:
+    """전세가율(%) → 갭투자 적정구간 점수 (0~100, 역U자형). 65~78%가 최적."""
+    if ratio < 50:
+        return ratio
+    elif ratio <= 65:
+        return 50.0 + (ratio - 50) * (50.0 / 15)
+    elif ratio <= 78:
+        return 100.0
+    elif ratio <= 87:
+        return 100.0 - (ratio - 78) * (50.0 / 9)
+    elif ratio <= 93:
+        return 50.0 - (ratio - 87) * (40.0 / 6)
+    else:
+        return max(0.0, 10.0 - (ratio - 93) * 2)
+
+
+def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
+    """전세가율 + 추세로 역전세 리스크 레벨 산출."""
+    if ratio >= 90:
+        return "⚠️ 역전세위험"
+    elif ratio >= 83 or (ratio >= 78 and accel < -2):
+        return "🔶 주의"
+    elif ratio >= 65:
+        return "✅ 적정"
+    else:
+        return "🟢 갭여유"
+
+
 # ── 결과 데이터클래스 ──────────────────────────────────────────────
 
 @dataclass
@@ -85,7 +115,7 @@ class WalkForwardResult:
 def _gap_scores_at(as_of: date, train_months: int,
                    area_tol: float = 5.0, min_deals: int = 3) -> pd.DataFrame:
     """as_of 시점 기준 갭투자 5요소 점수 산출 (point-in-time)."""
-    from src.analysis.recommend import _jeonse_quality_score, _jeonse_risk_label, region_tier_score
+    from src.analysis.recommend import region_tier_score
     train_start = _months_ago(as_of, train_months)
     df_t = fetch_trades_df(date_from=train_start, date_to=as_of)
     df_r = fetch_rents_df(date_from=train_start, date_to=as_of)
