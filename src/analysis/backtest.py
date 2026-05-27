@@ -26,6 +26,7 @@ from config.settings import ROOT
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import (
     manual_catalyst_score, region_tier_score, _bucketize,
+    _apply_gap_scores, _apply_rental_scores,
 )
 from src.analysis.forward_signals import (
     apt_relative_strength, jeonse_ratio_acceleration,

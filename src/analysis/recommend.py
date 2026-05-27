@@ -283,6 +283,73 @@ def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
         return "🟢 갭여유"
 
 
+def _apply_gap_scores(
+    df: pd.DataFrame,
+    jeonse_accel_df: pd.DataFrame | None = None,
+    mkt_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """갭투자 종합점수 산출 — recommend_gap_investment + _gap_scores_at 공용.
+
+    공식: 상승예상(tier+시장강도) 45% + 갭효율성(낮은갭=높은레버리지) 30% + 전세안전구간 25%
+    입력 df 필수 컬럼: trade_median, gap, tier_score, jeonse_quality_score
+    """
+    df = df.copy()
+    # 시장강도 병합
+    if mkt_df is not None and not mkt_df.empty:
+        df = df.merge(mkt_df[["region_code", "market_score"]], on="region_code", how="left")
+    if "market_score" not in df.columns:
+        df["market_score"] = 50.0
+    df["market_score"] = df["market_score"].fillna(50.0)
+    # 전세가율 추세 병합 (역전세 판정용 — 점수에서는 제외)
+    if jeonse_accel_df is not None and not jeonse_accel_df.empty:
+        keys = ["region_code", "apt_name", "area_bucket"]
+        cols = [c for c in keys + ["jeonse_accel_%p", "jeonse_accel_score"]
+                if c in jeonse_accel_df.columns]
+        df = df.merge(jeonse_accel_df[cols], on=keys, how="left")
+    if "jeonse_accel_%p" not in df.columns:
+        df["jeonse_accel_%p"] = 0.0
+    if "jeonse_accel_score" not in df.columns:
+        df["jeonse_accel_score"] = 50.0
+    df["jeonse_accel_%p"] = df["jeonse_accel_%p"].fillna(0.0)
+    df["jeonse_accel_score"] = df["jeonse_accel_score"].fillna(50.0)
+    # 갭 레버리지 배수 (매매가/갭 — 높을수록 소액으로 큰 자산)
+    df["leverage_mult"] = (df["trade_median"] / df["gap"].clip(lower=1)).round(1)
+    # 상승 예상력: 상급지(입지) 60% + 시장강도(매수세) 40%
+    df["appreciation_score"] = (df["tier_score"] * 0.6 + df["market_score"] * 0.4).clip(0, 100)
+    # 종합점수
+    df["score"] = (
+        df["appreciation_score"].rank(pct=True) * 0.45
+        + df["leverage_mult"].rank(pct=True) * 0.30
+        + df["jeonse_quality_score"].rank(pct=True) * 0.25
+    ) * 100
+    df["score"] = df["score"].round(1)
+    return df
+
+
+def _apply_rental_scores(
+    df: pd.DataFrame,
+    mkt_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """임대수익 종합점수 산출 — recommend_rental_yield + rental_yield_backtest 공용.
+
+    공식: 임대수익률 50% + 상승예상(tier+시장강도) 50%
+    입력 df 필수 컬럼: annual_yield_%, tier_score
+    """
+    df = df.copy()
+    if mkt_df is not None and not mkt_df.empty:
+        df = df.merge(mkt_df[["region_code", "market_score"]], on="region_code", how="left")
+    if "market_score" not in df.columns:
+        df["market_score"] = 50.0
+    df["market_score"] = df["market_score"].fillna(50.0)
+    df["appreciation_score"] = (df["tier_score"] * 0.6 + df["market_score"] * 0.4).clip(0, 100)
+    df["score"] = (
+        df["annual_yield_%"].rank(pct=True) * 0.50
+        + df["appreciation_score"].rank(pct=True) * 0.50
+    ) * 100
+    df["score"] = df["score"].round(1)
+    return df
+
+
 def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5.0,
                               min_trade_deals: int = 50, min_rent_deals: int = 50,
                               max_jeonse_ratio: float = 1.0,
@@ -339,40 +406,24 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
     j["loan_capacity"] = 0
     j["max_buy_price"] = j["trade_median"]
 
-    # 갭 레버리지 배수 (매매가/갭: 높을수록 소액으로 큰 자산 보유)
-    j["leverage_mult"] = (j["trade_median"] / j["gap"].clip(lower=1)).round(1)
-
     # 전세가율 적정구간 점수 (역U자형: 65~78% 최적)
     j["jeonse_quality_score"] = j["jeonse_ratio"].apply(_jeonse_quality_score).round(1)
-
-    # 전세가율 추세 (선행지표)
-    keys = ["region_code", "apt_name", "area_bucket"]
-    jr = jeonse_ratio_acceleration(months=months, area_tol=area_tol)
-    if not jr.empty:
-        j = j.merge(jr[keys + ["jeonse_accel_%p", "jeonse_accel_score"]], on=keys, how="left")
-    j["jeonse_accel_%p"] = j.get(
-        "jeonse_accel_%p", pd.Series(0.0, index=j.index)).fillna(0.0)
-    j["jeonse_accel_score"] = j.get(
-        "jeonse_accel_score", pd.Series(50.0, index=j.index)).fillna(50.0)
 
     # 상급지 등급
     j["tier_score"] = j["region_code"].apply(region_tier_score)
     j["tier_label"] = j["region_code"].apply(region_tier_label)
 
-    # 역전세 리스크 레벨
+    # 전세가율 추세 + 시장강도 — 공용 함수에서 병합·점수 산출
+    keys = ["region_code", "apt_name", "area_bucket"]
+    jr = jeonse_ratio_acceleration(months=months, area_tol=area_tol)
+    mkt_df = region_market_score(months=months)
+    j = _apply_gap_scores(j, jeonse_accel_df=jr, mkt_df=mkt_df)
+
+    # 역전세 리스크 레벨 (jeonse_accel_%p는 _apply_gap_scores에서 병합됨)
     j["jeonse_risk"] = j.apply(
         lambda r: _jeonse_risk_label(r["jeonse_ratio"], r["jeonse_accel_%p"]), axis=1
     )
 
-    # 종합 점수 (5개 요소)
-    j["score"] = (
-        j["jeonse_quality_score"].rank(pct=True) * 0.25
-        + j["jeonse_accel_score"].rank(pct=True) * 0.20
-        + j["tier_score"].rank(pct=True) * 0.20
-        + j["leverage_mult"].rank(pct=True) * 0.20
-        + j["activity"].rank(pct=True) * 0.15
-    ) * 100
-    j["score"] = j["score"].round(1)
     j = j.sort_values("score", ascending=False).reset_index(drop=True)
     return j
 
@@ -434,11 +485,13 @@ def recommend_rental_yield(seed_man: int, months: int = 12, area_tol: float = 5.
 
     j["annual_yield_%"] = (j["monthly_median"] * 12 / j["required_equity"] * 100).round(2)
     j["activity"] = j["trade_count"] + j["rent_count"]
-    j["score"] = (
-        j["annual_yield_%"].rank(pct=True) * 0.8
-        + j["activity"].rank(pct=True) * 0.2
-    ) * 100
-    j["score"] = j["score"].round(1)
+
+    # 상급지 등급 + 시장강도 — 공용 함수에서 상승예상 포함 점수 산출
+    j["tier_score"] = j["region_code"].apply(region_tier_score)
+    j["tier_label"] = j["region_code"].apply(region_tier_label)
+    mkt_df = region_market_score(months=months)
+    j = _apply_rental_scores(j, mkt_df=mkt_df)
+
     j = j.sort_values("score", ascending=False).reset_index(drop=True)
     return j
 

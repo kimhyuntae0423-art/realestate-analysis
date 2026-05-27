@@ -16,8 +16,11 @@ from scipy.stats import spearmanr
 
 from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
-from src.analysis.backtest import _bucketize, _spearman, _topn_hit, _apt_price_growth, _months_ago, region_tier_score
-from src.analysis.forward_signals import jeonse_ratio_acceleration
+from src.analysis.backtest import (
+    _bucketize, _spearman, _topn_hit, _apt_price_growth, _months_ago,
+    region_tier_score, _apply_gap_scores, _apply_rental_scores,
+)
+from src.analysis.forward_signals import jeonse_ratio_acceleration, region_market_score
 
 
 # ── 갭투자 스코어링 헬퍼 (recommend.py 의존 제거) ─────────────────────
@@ -146,27 +149,16 @@ def _gap_scores_at(as_of: date, train_months: int,
         return g
 
     g["jeonse_quality_score"] = g["jeonse_ratio"].apply(_jeonse_quality_score)
-    g["leverage_mult"] = (g["trade_median"] / g["gap"].clip(lower=1))
     g["tier_score"] = g["region_code"].apply(region_tier_score)
-    g["activity"] = g["trade_count"] + g["rent_count"]
 
+    # recommend.py의 _apply_gap_scores와 동일 수식 — 수식 변경은 recommend.py 한 곳만 수정
     jr = jeonse_ratio_acceleration(as_of=as_of, months=train_months, area_tol=area_tol)
-    if not jr.empty:
-        g = g.merge(jr[keys + ["jeonse_accel_%p", "jeonse_accel_score"]], on=keys, how="left")
-    g["jeonse_accel_%p"] = g.get("jeonse_accel_%p", pd.Series(0.0, index=g.index)).fillna(0.0)
-    g["jeonse_accel_score"] = g.get("jeonse_accel_score", pd.Series(50.0, index=g.index)).fillna(50.0)
+    mkt_df = region_market_score(months=train_months)
+    g = _apply_gap_scores(g, jeonse_accel_df=jr, mkt_df=mkt_df)
 
     g["jeonse_risk"] = g.apply(
         lambda r: _jeonse_risk_label(r["jeonse_ratio"], r["jeonse_accel_%p"]), axis=1
     )
-
-    g["score"] = (
-        g["jeonse_quality_score"].rank(pct=True) * 0.25
-        + g["jeonse_accel_score"].rank(pct=True) * 0.20
-        + g["tier_score"].rank(pct=True) * 0.20
-        + g["leverage_mult"].rank(pct=True) * 0.20
-        + g["activity"].rank(pct=True) * 0.15
-    ) * 100
 
     return g
 
@@ -543,9 +535,14 @@ def rental_yield_backtest(
     g["invest"] = g["trade_median"] - g["deposit_median"]
     g = g[g["invest"] > 0].copy()
     g["annual_yield_%"] = (g["monthly_median"] * 12 / g["invest"] * 100).round(2)
+    g["tier_score"] = g["region_code"].apply(region_tier_score)
 
     if len(g) < 5:
         raise ValueError(f"[임대] {as_of} 유효 수익률 데이터 부족: {len(g)}건")
+
+    # recommend.py의 _apply_rental_scores와 동일 수식
+    mkt_df = region_market_score(months=train_months)
+    g = _apply_rental_scores(g, mkt_df=mkt_df)
 
     test_end = min(today, as_of + timedelta(days=30 * test_months))
     test_mid = as_of + timedelta(days=30 * (test_months // 2))
@@ -559,11 +556,14 @@ def rental_yield_backtest(
         raise ValueError(f"[임대] 매칭 데이터 부족: {len(g)}건")
 
     n = len(g)
-    rho = _spearman(g["annual_yield_%"], g["actual_growth"])
+    rho = _spearman(g["score"], g["actual_growth"])
     component_corr = {
-        "annual_yield_%": round(float(rho), 3),
-        "trade_median":   round(float(_spearman(g["trade_median"],   g["actual_growth"])), 3),
-        "monthly_median": round(float(_spearman(g["monthly_median"], g["actual_growth"])), 3),
+        "annual_yield_%":     round(float(_spearman(g["annual_yield_%"],     g["actual_growth"])), 3),
+        "appreciation_score": round(float(_spearman(g["appreciation_score"], g["actual_growth"])), 3),
+        "tier_score":         round(float(_spearman(g["tier_score"],         g["actual_growth"])), 3),
+        "market_score":       round(float(_spearman(g["market_score"],       g["actual_growth"])), 3),
+        "trade_median":       round(float(_spearman(g["trade_median"],       g["actual_growth"])), 3),
+        "monthly_median":     round(float(_spearman(g["monthly_median"],     g["actual_growth"])), 3),
     }
 
     return GapScoreResult(
@@ -572,8 +572,8 @@ def rental_yield_backtest(
         test_months=test_months,
         n=n,
         spearman=round(float(rho), 3),
-        top10_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], max(10, n // 10)), 3),
-        top20_hit=round(_topn_hit(g["annual_yield_%"], g["actual_growth"], max(20, n // 5)), 3),
+        top10_hit=round(_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)), 3),
+        top20_hit=round(_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)), 3),
         component_corr=component_corr,
         raw=g,
     )

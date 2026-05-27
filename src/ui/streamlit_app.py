@@ -1087,48 +1087,45 @@ def page_strategy_backtest():
             valid_cmp = df_cmp[df_cmp["ρ"].notna()].copy()
 
             if not valid_cmp.empty:
+                # ── 신뢰도 판정 ──
+                def _reliability(rho, hit):
+                    if rho >= 0.5:   return "🟢 높음", f"점수가 실제 상승을 잘 예측합니다 (상위10% 중 {hit:.0f}% 적중)"
+                    if rho >= 0.3:   return "🟡 보통", f"어느 정도 예측 가능합니다 (상위10% 중 {hit:.0f}% 적중)"
+                    if rho >= 0.0:   return "🔴 낮음", f"예측력이 약합니다 (점수와 상승률 거의 무관)"
+                    return "🔴 역방향", f"점수 높은 곳이 오히려 덜 올랐습니다 (점수 의미 재확인 필요)"
+
                 c_m = st.columns(len(valid_cmp))
                 for col, (_, row) in zip(c_m, valid_cmp.iterrows()):
-                    rho_val = row["ρ"]
-                    hit_val = row["상위10% 적중률(%)"]
-                    rho_label = "✅ 유의미" if rho_val >= 0.3 else ("⚠️ 약함" if rho_val >= 0 else "❌ 역상관")
-                    col.metric(
-                        row["전략"],
-                        f"ρ {rho_val:+.3f}  {rho_label}",
-                        delta=f"표본 {row['표본수']:,}건 · 상위10% 적중 {hit_val:.1f}%",
-                        delta_color="off",
-                    )
+                    badge, desc = _reliability(row["ρ"], row["상위10% 적중률(%)"])
+                    col.markdown(f"**{row['전략']}**")
+                    col.markdown(f"### {badge}")
+                    col.caption(desc)
+                    col.caption(f"표본 {row['표본수']:,}건 | 상위10% 적중 {row['상위10% 적중률(%)']:.0f}% (랜덤 기대치 20%)")
 
+                st.markdown("---")
+
+                # ── 차트: ρ 값은 참고용으로만 표시 ──
+                valid_cmp["신뢰도"] = valid_cmp.apply(
+                    lambda r: _reliability(r["ρ"], r["상위10% 적중률(%)"])[0], axis=1)
                 fig_cmp = px.bar(
                     valid_cmp, x="전략", y="ρ",
                     color="ρ", color_continuous_scale="RdYlGn", range_color=[-0.7, 0.7],
-                    text="ρ", title="전략별 종합점수 예측력 (Spearman ρ) — 초록 점선 이상이어야 유의미", height=420,
+                    text="신뢰도",
+                    title="전략별 점수 예측력 — 초록 점선(0.3) 이상이어야 믿을 수 있음",
+                    height=400,
                 )
                 fig_cmp.add_hline(y=0.3, line_dash="dash", line_color="green",
-                                   annotation_text="유의미 기준 (ρ=0.3)")
+                                   annotation_text="신뢰 기준선")
                 fig_cmp.add_hline(y=0, line_dash="solid", line_color="gray")
-                fig_cmp.update_traces(texttemplate="%{text:+.3f}", textposition="outside")
-                fig_cmp.update_layout(coloraxis_showscale=False)
+                fig_cmp.update_traces(textposition="outside")
+                fig_cmp.update_layout(coloraxis_showscale=False,
+                                       yaxis_title="예측력 (Spearman ρ, 참고용)")
                 st.plotly_chart(fig_cmp, use_container_width=True)
 
-                st.markdown("**결과 요약표** — 상위10% 적중률 기대치(무작위) = 20%")
-                st.dataframe(df_cmp, hide_index=True, use_container_width=True)
-
-                # 결과 자동 해석
-                valid_rhos = valid_cmp[valid_cmp["ρ"].notna()]
-                good = valid_rhos[valid_rhos["ρ"] >= 0.3]["전략"].tolist()
-                bad  = valid_rhos[valid_rhos["ρ"] < 0]["전략"].tolist()
-                msgs = []
-                if good:
-                    msgs.append(f"**{', '.join(good)}** 전략은 ρ ≥ 0.3 — 점수가 실제 상승을 유의미하게 예측합니다.")
-                if bad:
-                    msgs.append(
-                        f"**{', '.join(bad)}** 전략은 ρ < 0 — 점수 높은 곳이 오히려 덜 올랐습니다. "
-                        "이는 해당 점수가 '저렴·수익 좋은 곳'을 높이 평가하기 때문이며, "
-                        "부동산에서는 비싼 곳(인기 지역)이 더 많이 오르는 '마태 효과'와 충돌합니다."
-                    )
-                if msgs:
-                    st.success("  \n".join(msgs))
+                st.markdown("**수치 상세** — 상위10% 적중률 랜덤 기대치 = **20%**, 30% 이상이면 활용 가능")
+                display_cmp = valid_cmp[["전략", "신뢰도", "표본수", "상위10% 적중률(%)", "ρ"]].copy()
+                display_cmp["ρ"] = display_cmp["ρ"].apply(lambda v: f"{v:+.3f}")
+                st.dataframe(display_cmp, hide_index=True, use_container_width=True)
 
             for _, row in df_cmp[df_cmp["ρ"].isna()].iterrows():
                 st.warning(f"{row['전략']}: {row.get('오류', '알 수 없는 오류')}")
