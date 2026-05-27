@@ -1519,6 +1519,24 @@ def render_recommend_tab(inputs: dict):
     # 규제·비규제 별 실제 최대 매수가 (시드 + LTV + cap + DSR 다 반영)
     max_buy_reg = max_purchase_man(seed_man, "11680", ownership, first_time, dsr_cap_man) if use_loan else seed_man
     max_buy_nonreg = max_purchase_man(seed_man, "99999", ownership, first_time, dsr_cap_man) if use_loan else seed_man
+
+    # 부대비용 포함 실제 최대 매수가 (격자 탐색 1000만원 단위)
+    from src.analysis.costs import total_acquisition_cost_man as _tacm
+    from src.analysis.loan import loan_capacity_man as _lcm
+    def _max_buy_net(seed, rc, own, ft, dsr, loan_ok):
+        best = 0
+        for p in range(1000, 300000, 1000):
+            lv = _lcm(p, rc, own, ft, dsr) if loan_ok else 0
+            eq = p - lv
+            if eq > seed:
+                break
+            if eq + _tacm(p, own, ft)["total"] <= seed:
+                best = p
+        return best
+    max_buy_reg_net    = _max_buy_net(seed_man, "11680", ownership, first_time, dsr_cap_man, use_loan)
+    max_buy_nonreg_net = _max_buy_net(seed_man, "99999", ownership, first_time, dsr_cap_man, use_loan)
+    costs_reg    = _tacm(max_buy_reg_net,    ownership, first_time)
+    costs_nonreg = _tacm(max_buy_nonreg_net, ownership, first_time)
     header = (
         f"**조건:** 시드 {seed_eok}억 · {ownership}"
         f"{' · 생애최초' if first_time else ''}"
@@ -1608,11 +1626,17 @@ def render_recommend_tab(inputs: dict):
         )
         return
 
-    # 🛡️ 안전망: 추천 함수에서 이미 시드 필터되지만 한 번 더 강제 (캐시 잔여 매물 대비)
+    # 부대비용 컬럼 추가 (모든 필터에 공통 사용)
+    rec["_acq_cost"] = rec["trade_median"].apply(
+        lambda p: _tacm(p, ownership, first_time)["total"]
+    )
+    # 🛡️ 안전망: 부대비용 포함 실제 현금(자기자본+부대비용) ≤ 시드
     if "required_equity" in rec.columns:
-        rec = rec[(rec["required_equity"] > 0) & (rec["required_equity"] <= seed_man)].reset_index(drop=True)
+        rec = rec[(rec["required_equity"] > 0)
+                  & (rec["required_equity"] + rec["_acq_cost"] <= seed_man)].reset_index(drop=True)
     elif "gap" in rec.columns:
-        rec = rec[(rec["gap"] > 0) & (rec["gap"] <= seed_man)].reset_index(drop=True)
+        rec = rec[(rec["gap"] > 0)
+                  & (rec["gap"] + rec["_acq_cost"] <= seed_man)].reset_index(drop=True)
 
     # 평형/준공연도 사용자 필터
     if area_range and "area_bucket" in rec.columns:
@@ -1681,30 +1705,34 @@ def render_recommend_tab(inputs: dict):
     c1.metric("매물 후보", f"{len(rec):,} 건")
     c2.metric("단지 수", f"{rec['apt_name'].nunique():,} 개")
     c3.metric("지역 수", f"{rec['region_code'].nunique():,} 개")
-    c4.metric("🏙️ 규제지역 최대 매수가", f"{max_buy_reg/10000:.2f} 억",
+    c4.metric("🏙️ 규제지역 최대 매수가", f"{max_buy_reg_net/10000:.2f} 억",
               help=(
-                  f"【내 조건 기준 계산】\n"
-                  f"시드 {seed_man/10000:.1f}억 + 대출 {_loan_reg/10000:.1f}억 = {max_buy_reg/10000:.1f}억\n"
-                  f"→ 결정 요인: {_bind_reg}\n\n"
-                  "【대출 한도 3가지 중 가장 작은 값 적용】\n"
-                  f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.1f}억\n"
-                  f"   (매매가의 {ltv_규제:.0f}%까지만 대출 → 시드={seed_man/10000:.1f}억이면 매매가 최대 {seed_man/10000:.1f}÷{(100-ltv_규제)/100:.1f}={max_buy_reg/10000:.1f}억)\n"
-                  f"② 한도 cap: 이 매매가({max_buy_reg/10000:.1f}억)에 {_cap_reg//10000}억 적용\n"
-                  f"   (15억 이하 6억 / 15억 초과 25억 이하 4억 / 25억 초과 2억)\n"
-                  f"③ DSR 40%: {f'허용 대출 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n"
-                  f"   {'→ DSR이 LTV보다 크므로 LTV가 먼저 binding' if dsr_cap_man and dsr_cap_man > _ltv_loan_reg else ('→ DSR이 binding 요인' if dsr_cap_man else '')}\n\n"
-                  "※ DSR은 소득 기준 절대 한도. LTV는 매매가 비례 한도. 시드가 적으면 LTV가 먼저 binding됨.\n"
-                  "※ LTV 기준: 투기과열지구(강남3구·용산) 40%, 기타 규제지역 50%, 생애최초 +10p 우대"
+                  f"【부대비용 포함 실제 한도】\n"
+                  f"매수가 {max_buy_reg_net/10000:.2f}억 = "
+                  f"자기자본 {(max_buy_reg_net - _lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man))/10000:.2f}억 "
+                  f"+ 대출 {_lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man)/10000:.2f}억\n"
+                  f"부대비용 {costs_reg['total']/10000:.2f}억 포함 총 현금 = {(max_buy_reg_net - _lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man) + costs_reg['total'])/10000:.2f}억 ≤ 시드 {seed_man/10000:.1f}억\n"
+                  f"  · 취득세 {costs_reg['acquisition_tax']:,}만 / 중개 {costs_reg['broker_fee']:,}만 / 등기 {costs_reg['registration_etc']:,}만\n\n"
+                  f"【대출 결정 요인: {_bind_reg}】\n"
+                  f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.2f}억\n"
+                  f"② 한도 cap: {_cap_reg//10000}억 (매매가 {max_buy_reg_net/10000:.1f}억 기준)\n"
+                  f"③ DSR: {f'{dsr_cap_man/10000:.2f}억' if dsr_cap_man else '미적용'}\n\n"
+                  f"※ 부대비용 미포함 이론 한도 {max_buy_reg/10000:.2f}억 → 포함 시 {max_buy_reg_net/10000:.2f}억\n"
+                  "※ LTV: 강남3구·용산 40% / 기타 규제 50% / 생애최초 +10%p"
               ))
-    c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg/10000:.2f} 억",
+    c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg_net/10000:.2f} 억",
               help=(
-                  f"【내 조건 기준 계산】\n"
-                  f"시드 {seed_man/10000:.1f}억 + 대출 {_loan_nonreg/10000:.1f}억 = {max_buy_nonreg/10000:.1f}억\n"
-                  f"→ 결정 요인: {_bind_nonreg}\n\n"
-                  "【대출 한도 2가지 중 가장 작은 값 적용】\n"
-                  f"① LTV {ltv_비규제:.0f}%: 매매가의 {ltv_비규제:.0f}%까지 대출 (규제지역보다 높음)\n"
-                  f"② DSR 40%: {f'연소득 기준 최대 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
-                  "※ 한도 cap 없음. LTV 기준: 무주택 70% (생애최초 80%), 1주택 60%, 다주택 50%"
+                  f"【부대비용 포함 실제 한도】\n"
+                  f"매수가 {max_buy_nonreg_net/10000:.2f}억 = "
+                  f"자기자본 {(max_buy_nonreg_net - _lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man))/10000:.2f}억 "
+                  f"+ 대출 {_lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man)/10000:.2f}억\n"
+                  f"부대비용 {costs_nonreg['total']/10000:.2f}억 포함 총 현금 = {(max_buy_nonreg_net - _lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man) + costs_nonreg['total'])/10000:.2f}억 ≤ 시드 {seed_man/10000:.1f}억\n"
+                  f"  · 취득세 {costs_nonreg['acquisition_tax']:,}만 / 중개 {costs_nonreg['broker_fee']:,}만 / 등기 {costs_nonreg['registration_etc']:,}만\n\n"
+                  f"【대출 결정 요인: {_bind_nonreg}】\n"
+                  f"① LTV {ltv_비규제:.0f}%: 허용 대출 {_ltv_loan_nonreg/10000:.2f}억\n"
+                  f"② DSR: {f'{dsr_cap_man/10000:.2f}억' if dsr_cap_man else '미적용'}\n\n"
+                  f"※ 부대비용 미포함 이론 한도 {max_buy_nonreg/10000:.2f}억 → 포함 시 {max_buy_nonreg_net/10000:.2f}억\n"
+                  "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 50%, 한도 cap 없음"
               ))
     if strategy == "🚀 투자수익":
         c6.metric("최고 예상수익률(자기자본)", f"{rec['expected_roi_%'].max():.2f} %")
@@ -1718,10 +1746,10 @@ def render_recommend_tab(inputs: dict):
     if strategy == "🚀 투자수익":
         st.markdown("### 🏆 지역 추천순위")
         st.caption(
-            f"✅ 시드 {seed_eok}억 기준 · "
-            f"규제지역 최대 **{max_buy_reg/10000:.2f}억** (LTV {ltv_규제:.0f}%+한도cap+DSR) / "
-            f"비규제지역 최대 **{max_buy_nonreg/10000:.2f}억** (LTV {ltv_비규제:.0f}%+DSR) 이내 매물이 "
-            "1건 이상 있는 지역만 표시. (서울·경기 규제지역은 한도cap으로 대출이 줄어 매수가능 매물이 적음)"
+            f"✅ 시드 {seed_eok}억 기준 (부대비용 포함) · "
+            f"규제지역 최대 **{max_buy_reg_net/10000:.2f}억** / "
+            f"비규제지역 최대 **{max_buy_nonreg_net/10000:.2f}억** 이내 매물이 "
+            "1건 이상 있는 지역만 표시."
         )
         st.caption(
             f"종합점수 = 매수심리×{int((1-tier_weight)*60)}% + 상급지등급×{int(tier_weight*100)}% + 호재×{int((1-tier_weight)*40)}%. "
@@ -1733,7 +1761,7 @@ def render_recommend_tab(inputs: dict):
         from src.analysis.loan import max_purchase_man
 
         # 매수가능 매물 (시드 통과 + UI 한도 컷 반영)
-        buyable_rec = rec[rec["required_equity"] <= seed_man].copy()
+        buyable_rec = rec[(rec["required_equity"] + rec["_acq_cost"] <= seed_man)].copy()
         # 지역별 매매가 한도 컷 (단지 추천표와 동일 규칙 적용 — 일관성)
         if not buyable_rec.empty:
             mb_map = {
@@ -1909,16 +1937,16 @@ def render_recommend_tab(inputs: dict):
     }
     if "required_equity" in rec_disp.columns:
         before = len(rec_disp)
-        # (1) 자기자본 ≤ 시드, (2) 매매가 ≤ 지역별 매수 한도 — 두 조건 모두 통과해야 표시
+        # (1) 자기자본+부대비용 ≤ 시드, (2) 매매가 ≤ 지역별 매수 한도
         rec_disp["_max_buy"] = rec_disp["region_code"].map(max_buy_by_region)
         rec_disp = rec_disp[
             (rec_disp["required_equity"] > 0)
-            & (rec_disp["required_equity"] <= seed_man)
+            & (rec_disp["required_equity"] + rec_disp["_acq_cost"] <= seed_man)
             & (rec_disp["trade_median"] <= rec_disp["_max_buy"])
-        ].drop(columns="_max_buy").reset_index(drop=True)
+        ].drop(columns=["_max_buy", "_acq_cost"]).reset_index(drop=True)
         dropped = before - len(rec_disp)
         if dropped > 0:
-            st.caption(f"⚠️ 시드+대출한도({seed_eok}억+α) 초과 매물 {dropped}건 제외됨")
+            st.caption(f"⚠️ 시드+대출한도+부대비용({seed_eok}억 기준) 초과 매물 {dropped}건 제외됨")
     if rec_disp.empty:
         st.warning(
             f"시드 {seed_eok}억 + 대출(LTV·DSR 반영)로 매수 가능한 매물이 없습니다. "
