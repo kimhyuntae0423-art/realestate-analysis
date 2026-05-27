@@ -362,7 +362,7 @@ def render_table(df: pd.DataFrame, height: int | None = None):
         if col_cfg is not None:
             cfg[label] = col_cfg
     out = out.rename(columns=rename)
-    kwargs = {"use_container_width": True, "column_config": cfg}
+    kwargs = {"width": "stretch", "column_config": cfg}
     if height is not None:
         kwargs["height"] = height
     st.dataframe(out, **kwargs)
@@ -1081,7 +1081,7 @@ def page_region():
             st.dataframe(
                 fc_only[["ds", "가격(억원)", "하한(억원)", "상한(억원)"]]
                 .rename(columns={"ds": "년월"}),
-                use_container_width=True, hide_index=True,
+                width='stretch', hide_index=True,
             )
 
     with tab2:
@@ -1296,7 +1296,7 @@ def _render_stress_test(inputs: dict, selected_row: dict):
                 "매도 시 자기자본(억)": round(s["equity_at_exit_man"] / 10000, 2),
                 "연환산 수익률(%)": s["roi_annual_pct"],
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
 
 
 def page_map():
@@ -1419,7 +1419,7 @@ def render_map_tab(months: int):
 
     st.markdown("### 지역 요약 (테이블)")
     show = map_df.drop(columns=["lat", "lon", "region_code"]).sort_values("평당가(만원/평)", ascending=False)
-    st.dataframe(show, use_container_width=True, hide_index=True, height=400)
+    st.dataframe(show, width='stretch', hide_index=True, height=400)
 
 
 def _render_region_detail(region_code: str, rec_df: pd.DataFrame | None = None,
@@ -1589,7 +1589,7 @@ def render_recommend_tab(inputs: dict):
                             "내용": c.get("name", ""),
                             "점수": c.get("score", 0),
                         })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, height=400)
+                st.dataframe(pd.DataFrame(rows), width='stretch', height=400)
             st.caption("호재 추가/수정: `config/catalysts.json` 직접 편집. 저장 후 사이드바 [🔄 캐시 비우기].")
     elif strategy == "갭투자":
         st.info(
