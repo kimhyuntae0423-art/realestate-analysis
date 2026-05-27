@@ -252,6 +252,37 @@ def _compute_growth_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame:
     return g.reset_index()
 
 
+def _jeonse_quality_score(ratio: float) -> float:
+    """전세가율(%) → 갭투자 적정구간 점수 (0~100, 역U자형).
+
+    65~78%: 최적(100점). 너무 낮으면 갭 커서 시드 부담, 너무 높으면 역전세 위험.
+    """
+    if ratio < 50:
+        return ratio
+    elif ratio <= 65:
+        return 50.0 + (ratio - 50) * (50.0 / 15)
+    elif ratio <= 78:
+        return 100.0
+    elif ratio <= 87:
+        return 100.0 - (ratio - 78) * (50.0 / 9)
+    elif ratio <= 93:
+        return 50.0 - (ratio - 87) * (40.0 / 6)
+    else:
+        return max(0.0, 10.0 - (ratio - 93) * 2)
+
+
+def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
+    """전세가율 수준 + 추세로 역전세 리스크 레벨 산출."""
+    if ratio >= 90:
+        return "⚠️ 역전세위험"
+    elif ratio >= 83 or (ratio >= 78 and accel < -2):
+        return "🔶 주의"
+    elif ratio >= 65:
+        return "✅ 적정"
+    else:
+        return "🟢 갭여유"
+
+
 def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5.0,
                               min_trade_deals: int = 50, min_rent_deals: int = 50,
                               max_jeonse_ratio: float = 1.0,
@@ -262,6 +293,13 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
 
     갭투자는 일반적으로 전세 보증금이 임차인 부담분이므로 LTV 대출은 받지 않음.
     필요자기자본 = 갭 = trade - rent. → gap ≤ 시드 조건.
+
+    종합점수 (5개 요소):
+      - 전세가율 적정구간 (25%): 65~78% 최적, 역U자형
+      - 전세가율 상승 추세  (20%): 갭이 줄어드는 방향 = 매매전환 신호
+      - 상급지 등급         (20%): 나중에 팔기 쉬운 지역
+      - 갭 레버리지 배수    (20%): 매매가/갭 (적은 돈으로 큰 자산)
+      - 거래 활성도         (15%): 유동성
     """
     df_t, df_r = _load_recent(months)
     if df_t.empty or df_r.empty:
@@ -300,9 +338,39 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
     j["required_equity"] = j["gap"]
     j["loan_capacity"] = 0
     j["max_buy_price"] = j["trade_median"]
+
+    # 갭 레버리지 배수 (매매가/갭: 높을수록 소액으로 큰 자산 보유)
+    j["leverage_mult"] = (j["trade_median"] / j["gap"].clip(lower=1)).round(1)
+
+    # 전세가율 적정구간 점수 (역U자형: 65~78% 최적)
+    j["jeonse_quality_score"] = j["jeonse_ratio"].apply(_jeonse_quality_score).round(1)
+
+    # 전세가율 추세 (선행지표)
+    keys = ["region_code", "apt_name", "area_bucket"]
+    jr = jeonse_ratio_acceleration(months=months, area_tol=area_tol)
+    if not jr.empty:
+        j = j.merge(jr[keys + ["jeonse_accel_%p", "jeonse_accel_score"]], on=keys, how="left")
+    j["jeonse_accel_%p"] = j.get(
+        "jeonse_accel_%p", pd.Series(0.0, index=j.index)).fillna(0.0)
+    j["jeonse_accel_score"] = j.get(
+        "jeonse_accel_score", pd.Series(50.0, index=j.index)).fillna(50.0)
+
+    # 상급지 등급
+    j["tier_score"] = j["region_code"].apply(region_tier_score)
+    j["tier_label"] = j["region_code"].apply(region_tier_label)
+
+    # 역전세 리스크 레벨
+    j["jeonse_risk"] = j.apply(
+        lambda r: _jeonse_risk_label(r["jeonse_ratio"], r["jeonse_accel_%p"]), axis=1
+    )
+
+    # 종합 점수 (5개 요소)
     j["score"] = (
-        j["jeonse_ratio"].rank(pct=True) * 0.7
-        + j["activity"].rank(pct=True) * 0.3
+        j["jeonse_quality_score"].rank(pct=True) * 0.25
+        + j["jeonse_accel_score"].rank(pct=True) * 0.20
+        + j["tier_score"].rank(pct=True) * 0.20
+        + j["leverage_mult"].rank(pct=True) * 0.20
+        + j["activity"].rank(pct=True) * 0.15
     ) * 100
     j["score"] = j["score"].round(1)
     j = j.sort_values("score", ascending=False).reset_index(drop=True)

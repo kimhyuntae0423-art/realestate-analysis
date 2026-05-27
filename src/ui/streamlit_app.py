@@ -220,6 +220,9 @@ COL_SPEC = {
     "rs_score":            ("단지상대강도점수", "pct"),
     "jeonse_accel_score":  ("전세가율가속도점수", "pct"),
     "jeonse_accel_%p":     ("전세가율가속도(%p)", "pct"),
+    "jeonse_quality_score": ("전세가율적정점수", "pct"),
+    "jeonse_risk":          ("역전세리스크", "txt"),
+    "leverage_mult":        ("갭레버리지(배)", "pct"),
     "supply_pressure_score": ("입주물량점수(역)", "pct"),
     "supply_units_12mo":   ("12개월입주물량(호)", "raw_int"),
     "population_score":    ("인구순유입점수", "pct"),
@@ -1595,10 +1598,14 @@ def render_recommend_tab(inputs: dict):
         st.info(
             f"💡 **갭투자 전략** — 전세 끼고 매수, 차익 노림수\n\n"
             f"- 자금구조: 자기자본 {seed_eok}억 = **매매가 − 전세보증금(갭)**\n"
-            f"- 대출 X (전세보증금이 임차인 부담분)\n"
-            f"- 매월 이자 부담 없음 (캐시플로우 0)\n"
-            f"- 종합점수 = 전세가율(70%) + 거래활성도(30%)\n"
-            f"- 전세가율↑ → 갭↓ → 적은 시드로 많이 살 수 있음"
+            f"- 대출 X (전세보증금이 임차인 부담분) · 매월 이자 부담 없음\n\n"
+            f"**종합점수 구성**\n"
+            f"- 전세가율 적정구간 25% — 65~78%가 최적(역U자형). 너무 높으면 역전세 위험\n"
+            f"- 전세가율 상승 추세 20% — 갭이 줄어드는 방향 = 매매전환 신호\n"
+            f"- 상급지 등급 20% — 나중에 팔기 쉬운 지역\n"
+            f"- 갭 레버리지 배수 20% — 매매가÷갭 (적은 돈으로 큰 자산)\n"
+            f"- 거래 활성도 15% — 유동성\n\n"
+            f"⚠️ **역전세 리스크**: 전세가율 90%↑ 위험 · 83%↑ 또는 전세가 하락 추세 주의"
         )
         rec = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
         metric_col = "gap"
@@ -1931,6 +1938,58 @@ def render_recommend_tab(inputs: dict):
                     if isinstance(cat_text, str) and cat_text:
                         st.caption(f"📌 등록호재: {cat_text}")
 
+    elif strategy == "갭투자":
+        st.markdown("### 🏆 지역별 갭투자 요약")
+        st.caption("역전세 리스크 낮고 상급지인 지역 우선. 최고점수 내림차순.")
+
+        gap_rec = rec[(rec["gap"] > 0) & (rec["gap"] + rec["_acq_cost"] <= seed_man)].copy()
+        if not gap_rec.empty:
+            # 역전세 리스크 분포
+            risk_dist = gap_rec["jeonse_risk"].value_counts().reset_index()
+            risk_dist.columns = ["리스크레벨", "건수"]
+
+            rc1, rc2 = st.columns([1, 3])
+            with rc1:
+                st.markdown("**역전세 리스크 분포**")
+                st.dataframe(risk_dist, hide_index=True, use_container_width=True)
+
+            # 지역별 요약 집계
+            rg = gap_rec.groupby("region_code").agg(
+                n_opp=("apt_name", "count"),
+                n_apts=("apt_name", "nunique"),
+                min_gap=("gap", "min"),
+                avg_ratio=("jeonse_ratio", "mean"),
+                avg_leverage=("leverage_mult", "mean"),
+                avg_accel=("jeonse_accel_%p", "mean"),
+                max_score=("score", "max"),
+            ).reset_index()
+            rg["region"] = rg["region_code"].map(REGION_MAP).fillna(rg["region_code"])
+            rg["safe_n"] = gap_rec.groupby("region_code")["jeonse_risk"].apply(
+                lambda x: ((x == "✅ 적정") | (x == "🟢 갭여유")).sum()
+            ).values
+            rg["risk_n"] = gap_rec.groupby("region_code")["jeonse_risk"].apply(
+                lambda x: (x == "⚠️ 역전세위험").sum()
+            ).values
+            rg = rg.sort_values("max_score", ascending=False).reset_index(drop=True)
+            rg.insert(0, "rank", range(1, len(rg) + 1))
+            rg["최저갭(억)"] = (rg["min_gap"] / 10000).round(2)
+            rg["평균전세가율(%)"] = rg["avg_ratio"].round(1)
+            rg["전세가율추세(%p)"] = rg["avg_accel"].round(2)
+            rg["평균레버리지(배)"] = rg["avg_leverage"].round(1)
+            rg["최고점수"] = rg["max_score"].round(1)
+
+            show_cols = ["rank", "region", "n_opp", "최저갭(억)",
+                         "평균전세가율(%)", "전세가율추세(%p)",
+                         "safe_n", "risk_n",
+                         "평균레버리지(배)", "최고점수"]
+            rg_show = rg[show_cols].rename(columns={
+                "n_opp": "기회수",
+                "safe_n": "안전·적정",
+                "risk_n": "역전세위험",
+            })
+            with rc2:
+                st.dataframe(rg_show, hide_index=True, use_container_width=True, height=380)
+
     st.markdown(f"### 🎯 단지·평형 추천 TOP {top_n}")
     # 🛡️ 시드 안전망 + 매매가 한도 안전망 (지역별 max_purchase 계산해서 매매가 자체도 컷)
     from src.analysis.loan import max_purchase_man
@@ -1971,10 +2030,14 @@ def render_recommend_tab(inputs: dict):
                       "price_growth_%", "expected_roi_%",
                       "catalysts", "score"]
     elif strategy == "갭투자":
-        cols_order = ["naver_url", "rank", "region", "apt_name", "trade_median", "rent_median", "gap",
-                      "required_equity",
+        cols_order = ["naver_url", "rank", "region", "apt_name",
+                      "trade_median", "rent_median", "gap", "required_equity",
+                      "jeonse_risk",
+                      "jeonse_ratio", "jeonse_accel_%p",
+                      "leverage_mult",
+                      "tier_label",
                       "area_bucket", "build_year",
-                      "jeonse_ratio", "trade_count", "rent_count", "score"]
+                      "trade_count", "rent_count", "score"]
     elif strategy == "임대수익":
         cols_order = ["naver_url", "rank", "region", "apt_name", "trade_median", "required_equity",
                       "area_bucket", "build_year",
