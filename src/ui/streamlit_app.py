@@ -1701,6 +1701,15 @@ def render_recommend_tab(inputs: dict):
         _limits_nonreg.append((dsr_cap_man, f"DSR 한도 {dsr_cap_man/10000:.1f}억"))
     _bind_nonreg = min(_limits_nonreg, key=lambda x: x[0])[1]
 
+    # 툴팁용 값 미리 계산
+    _loan_reg_net    = _lcm(max_buy_reg_net,    "11680", ownership, first_time, dsr_cap_man)
+    _loan_nonreg_net = _lcm(max_buy_nonreg_net, "99999", ownership, first_time, dsr_cap_man)
+    _eq_reg_net    = (max_buy_reg_net    - _loan_reg_net)    / 10000
+    _eq_nonreg_net = (max_buy_nonreg_net - _loan_nonreg_net) / 10000
+    _cash_reg    = (_eq_reg_net    + costs_reg["total"]    / 10000)
+    _cash_nonreg = (_eq_nonreg_net + costs_nonreg["total"] / 10000)
+    _dsr_str = f"{dsr_cap_man/10000:.2f}억" if dsr_cap_man else "미적용"
+
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("매물 후보", f"{len(rec):,} 건")
     c2.metric("단지 수", f"{rec['apt_name'].nunique():,} 개")
@@ -1708,30 +1717,26 @@ def render_recommend_tab(inputs: dict):
     c4.metric("🏙️ 규제지역 최대 매수가", f"{max_buy_reg_net/10000:.2f} 억",
               help=(
                   f"【부대비용 포함 실제 한도】\n"
-                  f"매수가 {max_buy_reg_net/10000:.2f}억 = "
-                  f"자기자본 {(max_buy_reg_net - _lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man))/10000:.2f}억 "
-                  f"+ 대출 {_lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man)/10000:.2f}억\n"
-                  f"부대비용 {costs_reg['total']/10000:.2f}억 포함 총 현금 = {(max_buy_reg_net - _lcm(max_buy_reg_net,'11680',ownership,first_time,dsr_cap_man) + costs_reg['total'])/10000:.2f}억 ≤ 시드 {seed_man/10000:.1f}억\n"
+                  f"매수가 {max_buy_reg_net/10000:.2f}억 = 자기자본 {_eq_reg_net:.2f}억 + 대출 {_loan_reg_net/10000:.2f}억\n"
+                  f"총 필요 현금: 자기자본 {_eq_reg_net:.2f}억 + 부대비용 {costs_reg['total']/10000:.2f}억 = {_cash_reg:.2f}억 (시드 {seed_man/10000:.1f}억 이내)\n"
                   f"  · 취득세 {costs_reg['acquisition_tax']:,}만 / 중개 {costs_reg['broker_fee']:,}만 / 등기 {costs_reg['registration_etc']:,}만\n\n"
                   f"【대출 결정 요인: {_bind_reg}】\n"
                   f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.2f}억\n"
                   f"② 한도 cap: {_cap_reg//10000}억 (매매가 {max_buy_reg_net/10000:.1f}억 기준)\n"
-                  f"③ DSR: {f'{dsr_cap_man/10000:.2f}억' if dsr_cap_man else '미적용'}\n\n"
-                  f"※ 부대비용 미포함 이론 한도 {max_buy_reg/10000:.2f}억 → 포함 시 {max_buy_reg_net/10000:.2f}억\n"
+                  f"③ DSR: {_dsr_str}\n\n"
+                  f"※ 부대비용 전 이론 한도 {max_buy_reg/10000:.2f}억 → 포함 시 {max_buy_reg_net/10000:.2f}억\n"
                   "※ LTV: 강남3구·용산 40% / 기타 규제 50% / 생애최초 +10%p"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg_net/10000:.2f} 억",
               help=(
                   f"【부대비용 포함 실제 한도】\n"
-                  f"매수가 {max_buy_nonreg_net/10000:.2f}억 = "
-                  f"자기자본 {(max_buy_nonreg_net - _lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man))/10000:.2f}억 "
-                  f"+ 대출 {_lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man)/10000:.2f}억\n"
-                  f"부대비용 {costs_nonreg['total']/10000:.2f}억 포함 총 현금 = {(max_buy_nonreg_net - _lcm(max_buy_nonreg_net,'99999',ownership,first_time,dsr_cap_man) + costs_nonreg['total'])/10000:.2f}억 ≤ 시드 {seed_man/10000:.1f}억\n"
+                  f"매수가 {max_buy_nonreg_net/10000:.2f}억 = 자기자본 {_eq_nonreg_net:.2f}억 + 대출 {_loan_nonreg_net/10000:.2f}억\n"
+                  f"총 필요 현금: 자기자본 {_eq_nonreg_net:.2f}억 + 부대비용 {costs_nonreg['total']/10000:.2f}억 = {_cash_nonreg:.2f}억 (시드 {seed_man/10000:.1f}억 이내)\n"
                   f"  · 취득세 {costs_nonreg['acquisition_tax']:,}만 / 중개 {costs_nonreg['broker_fee']:,}만 / 등기 {costs_nonreg['registration_etc']:,}만\n\n"
                   f"【대출 결정 요인: {_bind_nonreg}】\n"
                   f"① LTV {ltv_비규제:.0f}%: 허용 대출 {_ltv_loan_nonreg/10000:.2f}억\n"
-                  f"② DSR: {f'{dsr_cap_man/10000:.2f}억' if dsr_cap_man else '미적용'}\n\n"
-                  f"※ 부대비용 미포함 이론 한도 {max_buy_nonreg/10000:.2f}억 → 포함 시 {max_buy_nonreg_net/10000:.2f}억\n"
+                  f"② DSR: {_dsr_str}\n\n"
+                  f"※ 부대비용 전 이론 한도 {max_buy_nonreg/10000:.2f}억 → 포함 시 {max_buy_nonreg_net/10000:.2f}억\n"
                   "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 50%, 한도 cap 없음"
               ))
     if strategy == "🚀 투자수익":
