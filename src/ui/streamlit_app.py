@@ -1715,8 +1715,10 @@ def render_recommend_tab(inputs: dict):
     if strategy == "🚀 투자수익":
         st.markdown("### 🏆 지역 추천순위")
         st.caption(
-            f"✅ **자기자본 {seed_eok}억 + 규제별 LTV·한도cap·DSR 모두 반영해 매수 가능한 매물이 1건 이상 있는 지역만** 표시. "
-            "(서울·경기 일부는 규제로 대출이 줄어 실제 매수 가능 매물이 적음)"
+            f"✅ 시드 {seed_eok}억 기준 · "
+            f"규제지역 최대 **{max_buy_reg/10000:.2f}억** (LTV {ltv_규제:.0f}%+한도cap+DSR) / "
+            f"비규제지역 최대 **{max_buy_nonreg/10000:.2f}억** (LTV {ltv_비규제:.0f}%+DSR) 이내 매물이 "
+            "1건 이상 있는 지역만 표시. (서울·경기 규제지역은 한도cap으로 대출이 줄어 매수가능 매물이 적음)"
         )
         st.caption(
             f"종합점수 = 매수심리×{int((1-tier_weight)*60)}% + 상급지등급×{int(tier_weight*100)}% + 호재×{int((1-tier_weight)*40)}%. "
