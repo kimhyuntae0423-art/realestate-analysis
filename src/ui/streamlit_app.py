@@ -1688,9 +1688,12 @@ def render_recommend_tab(inputs: dict):
                   f"→ 결정 요인: {_bind_reg}\n\n"
                   "【대출 한도 3가지 중 가장 작은 값 적용】\n"
                   f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.1f}억\n"
+                  f"   (매매가의 {ltv_규제:.0f}%까지만 대출 → 시드={seed_man/10000:.1f}억이면 매매가 최대 {seed_man/10000:.1f}÷{(100-ltv_규제)/100:.1f}={max_buy_reg/10000:.1f}억)\n"
                   f"② 한도 cap: 이 매매가({max_buy_reg/10000:.1f}억)에 {_cap_reg//10000}억 적용\n"
                   f"   (15억 이하 6억 / 15억 초과 25억 이하 4억 / 25억 초과 2억)\n"
-                  f"③ DSR 40%: {f'허용 대출 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
+                  f"③ DSR 40%: {f'허용 대출 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n"
+                  f"   {'→ DSR이 LTV보다 크므로 LTV가 먼저 binding' if dsr_cap_man and dsr_cap_man > _ltv_loan_reg else ('→ DSR이 binding 요인' if dsr_cap_man else '')}\n\n"
+                  "※ DSR은 소득 기준 절대 한도. LTV는 매매가 비례 한도. 시드가 적으면 LTV가 먼저 binding됨.\n"
                   "※ LTV 기준: 투기과열지구(강남3구·용산) 40%, 기타 규제지역 50%, 생애최초 +10p 우대"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg/10000:.2f} 억",
