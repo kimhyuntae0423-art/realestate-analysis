@@ -18,7 +18,6 @@ from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.backtest import _bucketize, _spearman, _topn_hit, _apt_price_growth, _months_ago
 from src.analysis.forward_signals import jeonse_ratio_acceleration
-from src.analysis.recommend import _jeonse_quality_score, _jeonse_risk_label, region_tier_score
 
 
 # ── 결과 데이터클래스 ──────────────────────────────────────────────
@@ -86,6 +85,7 @@ class WalkForwardResult:
 def _gap_scores_at(as_of: date, train_months: int,
                    area_tol: float = 5.0, min_deals: int = 3) -> pd.DataFrame:
     """as_of 시점 기준 갭투자 5요소 점수 산출 (point-in-time)."""
+    from src.analysis.recommend import _jeonse_quality_score, _jeonse_risk_label, region_tier_score
     train_start = _months_ago(as_of, train_months)
     df_t = fetch_trades_df(date_from=train_start, date_to=as_of)
     df_r = fetch_rents_df(date_from=train_start, date_to=as_of)
