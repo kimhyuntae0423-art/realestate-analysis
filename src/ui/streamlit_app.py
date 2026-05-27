@@ -370,31 +370,31 @@ def render_table(df: pd.DataFrame, height: int | None = None):
 
 def _data_freshness() -> dict:
     """각 데이터의 마지막 갱신 시점 + 경과일."""
-    import sqlite3, json as _json
+    import json as _json
     from datetime import date as _date
+    from sqlalchemy import text
+    from src.database.models import engine as _engine
     out = {}
     try:
-        conn = sqlite3.connect(str(DATABASE_URL).replace("sqlite:///", ""))
-        cur = conn.cursor()
-        for tbl, col, label in [
-            ("apt_trade", "deal_date", "실거래 매매"),
-            ("apt_rent", "deal_date", "실거래 전월세"),
-            ("population_flow", "flow_date", "인구이동"),
-            ("supply_schedule", "move_in_date", "입주물량(사용검사)"),
-        ]:
-            try:
-                cur.execute(f"SELECT MAX({col}), COUNT(*) FROM {tbl}")
-                last, n = cur.fetchone()
-                if last:
-                    d = _date.fromisoformat(str(last)[:10])
-                    out[label] = {
-                        "last": d, "days_ago": (_date.today() - d).days, "rows": n,
-                    }
-                else:
+        with _engine.connect() as conn:
+            for tbl, col, label in [
+                ("apt_trade", "deal_date", "실거래 매매"),
+                ("apt_rent", "deal_date", "실거래 전월세"),
+            ]:
+                try:
+                    row = conn.execute(
+                        text(f"SELECT MAX({col}), COUNT(*) FROM {tbl}")
+                    ).fetchone()
+                    last, n = row
+                    if last:
+                        d = _date.fromisoformat(str(last)[:10])
+                        out[label] = {
+                            "last": d, "days_ago": (_date.today() - d).days, "rows": n,
+                        }
+                    else:
+                        out[label] = {"last": None, "days_ago": None, "rows": 0}
+                except Exception:
                     out[label] = {"last": None, "days_ago": None, "rows": 0}
-            except Exception:
-                out[label] = {"last": None, "days_ago": None, "rows": 0}
-        conn.close()
     except Exception:
         pass
     # config 파일
@@ -474,7 +474,7 @@ def _refresh_recent_data(months: int = 3, regions: list[str] | None = None,
     if do_supply:
         try:
             from src.database.models import SupplySchedule, SessionLocal
-            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+            from src.database.repository import _make_upsert
             col = KosisCollector()
             today = _date.today()
             y, m = today.year, today.month
@@ -500,7 +500,7 @@ def _refresh_recent_data(months: int = 3, regions: list[str] | None = None,
                     })
                 if payload:
                     with SessionLocal() as s:
-                        stmt = sqlite_insert(SupplySchedule).values(payload).on_conflict_do_nothing()
+                        stmt = _make_upsert(SupplySchedule, payload)
                         s.execute(stmt)
                         s.commit()
                     summary["supply"] = len(payload)

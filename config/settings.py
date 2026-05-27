@@ -23,7 +23,7 @@ KAKAO_REST_API_KEY = _get_secret("KAKAO_REST_API_KEY")
 VWORLD_API_KEY     = _get_secret("VWORLD_API_KEY")
 KOSIS_API_KEY      = _get_secret("KOSIS_API_KEY")
 
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'processed' / 'realestate.db'}")
+DATABASE_URL = _get_secret("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'processed' / 'realestate.db'}")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 RAW_DIR = ROOT / "data" / "raw"

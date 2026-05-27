@@ -133,7 +133,10 @@ class CollectionLog(Base):
     finished_at = Column(DateTime, default=datetime.utcnow)
 
 
-engine = create_engine(DATABASE_URL, future=True)
+_engine_kwargs: dict = {"future": True, "pool_pre_ping": True}
+if DATABASE_URL.startswith("postgresql"):
+    _engine_kwargs.update({"pool_size": 5, "max_overflow": 10, "pool_recycle": 300})
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, future=True)
 
 

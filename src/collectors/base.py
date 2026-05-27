@@ -17,7 +17,7 @@ class HttpClient:
         last_err = None
         for attempt in range(1, REQUEST_RETRY + 1):
             try:
-                r = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+                r = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT, verify=False)
                 if r.status_code == 200:
                     time.sleep(REQUEST_SLEEP)
                     return r

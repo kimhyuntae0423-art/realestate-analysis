@@ -1,14 +1,22 @@
 from contextlib import contextmanager
 from datetime import date
-from typing import Iterable
 import pandas as pd
 from sqlalchemy import select, and_
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.database.models import SessionLocal, AptTrade, AptRent, CollectionLog, engine
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
+
+
+def _make_upsert(model, rows: list[dict]):
+    """DB 방언에 따라 ON CONFLICT DO NOTHING INSERT 반환."""
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    return insert(model).values(rows).on_conflict_do_nothing()
 
 
 @contextmanager
@@ -25,11 +33,9 @@ def session_scope():
 
 
 def _bulk_upsert(session, model, rows: list[dict]) -> int:
-    """SQLite ON CONFLICT DO NOTHING - 중복 무시. inserted 행수 반환은 근사치."""
     if not rows:
         return 0
-    before = session.execute(select(model.id).limit(1)).all()
-    stmt = sqlite_insert(model).values(rows).on_conflict_do_nothing()
+    stmt = _make_upsert(model, rows)
     result = session.execute(stmt)
     return result.rowcount if result.rowcount is not None else 0
 
