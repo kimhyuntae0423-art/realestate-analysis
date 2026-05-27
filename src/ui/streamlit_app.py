@@ -1658,22 +1658,24 @@ def render_recommend_tab(inputs: dict):
     # 규제/비규제 실제 대출액 + 바인딩 요인 계산
     _loan_reg = max_buy_reg - seed_man
     _loan_nonreg = max_buy_nonreg - seed_man
-    # LTV만 적용 시 대출 가능액 (DSR 무시)
-    _ltv_only_reg = seed_man * ltv_규제 / (100 - ltv_규제)
-    _ltv_only_nonreg = seed_man * ltv_비규제 / (100 - ltv_비규제)
-    # 한도 cap (15억 이하 기준 6억, 보수적으로 고정)
-    _cap_reg = 60000  # 만원 단위 6억
-    # 바인딩 요인 판별
-    if dsr_cap_man is not None and _loan_reg <= dsr_cap_man + 100:
-        _bind_reg = f"DSR 한도 {dsr_cap_man/10000:.1f}억"
-    elif _loan_reg <= _ltv_only_reg + 100:
-        _bind_reg = f"LTV {ltv_규제:.0f}% 한도"
-    else:
-        _bind_reg = "대출 한도 cap"
-    if dsr_cap_man is not None and _loan_nonreg <= dsr_cap_man + 100:
-        _bind_nonreg = f"DSR 한도 {dsr_cap_man/10000:.1f}억"
-    else:
-        _bind_nonreg = f"LTV {ltv_비규제:.0f}% 한도"
+    # LTV가 허용하는 대출 (시드 / (1 - LTV%) × LTV%)
+    _ltv_loan_reg = seed_man * ltv_규제 / (100 - ltv_규제)
+    _ltv_loan_nonreg = seed_man * ltv_비규제 / (100 - ltv_비규제)
+    # 한도 cap: 매매가에 따라 다름 (규제지역만 적용)
+    _cap_reg = (60000 if max_buy_reg <= 150000
+                else 40000 if max_buy_reg <= 250000
+                else 20000)
+    # 바인딩 요인 판별 — 세 한도 중 가장 작은 값이 실제 대출을 결정
+    _limits_reg = [(_ltv_loan_reg, f"LTV {ltv_규제:.0f}%"),
+                   (_cap_reg,       f"한도 cap {_cap_reg//10000}억")]
+    if dsr_cap_man is not None:
+        _limits_reg.append((dsr_cap_man, f"DSR 한도 {dsr_cap_man/10000:.1f}억"))
+    _bind_reg = min(_limits_reg, key=lambda x: x[0])[1]
+
+    _limits_nonreg = [(_ltv_loan_nonreg, f"LTV {ltv_비규제:.0f}%")]
+    if dsr_cap_man is not None:
+        _limits_nonreg.append((dsr_cap_man, f"DSR 한도 {dsr_cap_man/10000:.1f}억"))
+    _bind_nonreg = min(_limits_nonreg, key=lambda x: x[0])[1]
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("매물 후보", f"{len(rec):,} 건")
@@ -1685,9 +1687,10 @@ def render_recommend_tab(inputs: dict):
                   f"시드 {seed_man/10000:.1f}억 + 대출 {_loan_reg/10000:.1f}억 = {max_buy_reg/10000:.1f}억\n"
                   f"→ 결정 요인: {_bind_reg}\n\n"
                   "【대출 한도 3가지 중 가장 작은 값 적용】\n"
-                  f"① LTV {ltv_규제:.0f}%: 매매가의 {ltv_규제:.0f}%까지 대출 (시드÷(1-LTV%)=매매가)\n"
-                  "② 한도 cap: 매매가 15억 이하 6억 / 15억 초과 25억 이하 4억 / 25억 초과 2억\n"
-                  f"③ DSR 40%: {f'연소득 기준 최대 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
+                  f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.1f}억\n"
+                  f"② 한도 cap: 이 매매가({max_buy_reg/10000:.1f}억)에 {_cap_reg//10000}억 적용\n"
+                  f"   (15억 이하 6억 / 15억 초과 25억 이하 4억 / 25억 초과 2억)\n"
+                  f"③ DSR 40%: {f'허용 대출 {dsr_cap_man/10000:.1f}억' if dsr_cap_man else '소득 미입력 (비적용)'}\n\n"
                   "※ LTV 기준: 투기과열지구(강남3구·용산) 40%, 기타 규제지역 50%, 생애최초 +10p 우대"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg/10000:.2f} 억",
