@@ -2157,8 +2157,7 @@ def render_recommend_tab(inputs: dict):
 
     if not submitted and not st.session_state.get("rec_has_run", False):
         st.info(
-            "👈 왼쪽 사이드바에서 **추천 검색 조건**을 설정하고 "
-            "**🔍 검색** 버튼을 누르세요."
+            "위 **검색 조건**을 설정하고 **🔍 검색** 버튼을 누르세요."
         )
         return
     if submitted:
