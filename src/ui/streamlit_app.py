@@ -1088,7 +1088,18 @@ def page_strategy_backtest():
 
             if not valid_cmp.empty:
                 # ── 신뢰도 판정 ──
-                def _reliability(rho, hit):
+                def _reliability(rho, hit, label=""):
+                    if "임대수익" in label:
+                        # 임대수익은 ρ<0이 정상 (수익형≠시세차익형 분리 확인)
+                        if rho <= -0.2:  return "🟢 역상관 확인", "임대 수익률 높은 곳이 시세차익은 낮음 — 수익형·시세차익형 분리 입증"
+                        if rho <  0.0:   return "🟡 약한 역상관", "임대수익·시세차익 분리가 약하게 나타남"
+                        return "🔴 비정상", "임대 수익률 높은 곳이 시세도 오름 — 이례적 결과, 데이터 확인 필요"
+                    if "갭투자" in label:
+                        # 갭투자는 매매가 상승 예측이 목적이 아니므로 ρ 음수도 정상
+                        if rho >= 0.3:   return "🟢 높음", f"갭 조건 좋은 곳이 실제 상승도 높음 (상위10% 중 {hit:.0f}% 적중)"
+                        if rho >= 0.0:   return "🟡 중립", "ρ≥0 — 탭 C ROE 시뮬레이션이 핵심 지표입니다"
+                        return "⚪ 해당없음", "갭투자 점수는 매매가 상승 예측 목적이 아닙니다. 탭 C ROE를 확인하세요"
+                    # 투자수익 (기본)
                     if rho >= 0.5:   return "🟢 높음", f"점수가 실제 상승을 잘 예측합니다 (상위10% 중 {hit:.0f}% 적중)"
                     if rho >= 0.3:   return "🟡 보통", f"어느 정도 예측 가능합니다 (상위10% 중 {hit:.0f}% 적중)"
                     if rho >= 0.0:   return "🔴 낮음", f"예측력이 약합니다 (점수와 상승률 거의 무관)"
@@ -1096,7 +1107,7 @@ def page_strategy_backtest():
 
                 c_m = st.columns(len(valid_cmp))
                 for col, (_, row) in zip(c_m, valid_cmp.iterrows()):
-                    badge, desc = _reliability(row["ρ"], row["상위10% 적중률(%)"])
+                    badge, desc = _reliability(row["ρ"], row["상위10% 적중률(%)"], row["전략"])
                     col.markdown(f"**{row['전략']}**")
                     col.markdown(f"### {badge}")
                     col.caption(desc)
@@ -1106,7 +1117,7 @@ def page_strategy_backtest():
 
                 # ── 차트: ρ 값은 참고용으로만 표시 ──
                 valid_cmp["신뢰도"] = valid_cmp.apply(
-                    lambda r: _reliability(r["ρ"], r["상위10% 적중률(%)"])[0], axis=1)
+                    lambda r: _reliability(r["ρ"], r["상위10% 적중률(%)"], r["전략"])[0], axis=1)
                 fig_cmp = px.bar(
                     valid_cmp, x="전략", y="ρ",
                     color="ρ", color_continuous_scale="RdYlGn", range_color=[-0.7, 0.7],

@@ -148,6 +148,7 @@ def _gap_scores_at(as_of: date, train_months: int,
     if g.empty:
         return g
 
+    g["activity"] = g["trade_count"] + g["rent_count"]
     g["jeonse_quality_score"] = g["jeonse_ratio"].apply(_jeonse_quality_score)
     g["tier_score"] = g["region_code"].apply(region_tier_score)
 
