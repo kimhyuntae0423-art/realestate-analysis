@@ -339,36 +339,85 @@ def naver_land_url(region: str | None, apt_name: str | None) -> str | None:
 
 
 def render_table(df: pd.DataFrame, height: int | None = None):
-    """영문 컬럼 → 한국어 + 단위 + 콤마 포맷으로 변환하여 출력."""
+    """영문 컬럼 → 한국어 + 단위 + 포맷, HTML 테이블로 가운데 정렬 출력."""
     if df is None or df.empty:
         st.info("표시할 데이터가 없습니다.")
         return
     out = df.copy()
-    # 사용자 노출 금지 컬럼 제거
     drop_cols = [c for c in out.columns if c in _HIDDEN_COLS]
     if drop_cols:
         out = out.drop(columns=drop_cols)
-    rename = {}
-    cfg = {}
+
+    col_labels: list[str] = []
+    col_kinds: list[str] = []
     for col in out.columns:
         spec = COL_SPEC.get(col)
-        if not spec:
-            rename[col] = col
-            continue
-        name, kind = spec
-        # 만원 → 억원 변환
-        if kind == "ueok" and pd.api.types.is_numeric_dtype(out[col]):
-            out[col] = (out[col].astype(float) / 10000.0).round(2)
-        label = _label_with_unit(name, kind)
-        rename[col] = label
-        col_cfg = _column_config(label, kind)
-        if col_cfg is not None:
-            cfg[label] = col_cfg
-    out = out.rename(columns=rename)
-    kwargs = {"width": "stretch", "column_config": cfg}
-    if height is not None:
-        kwargs["height"] = height
-    st.dataframe(out, **kwargs)
+        if spec:
+            name, kind = spec
+            if kind == "ueok" and pd.api.types.is_numeric_dtype(out[col]):
+                out[col] = (out[col].astype(float) / 10000.0).round(2)
+        else:
+            name, kind = col, "txt"
+        col_labels.append(_label_with_unit(name, kind))
+        col_kinds.append(kind)
+
+    def _fmt(val, kind: str) -> str:
+        try:
+            if val is None or pd.isna(val):
+                return "—"
+        except Exception:
+            pass
+        if kind == "link":
+            return f"<a href='{val}' target='_blank'>🔗 보기</a>" if val else "—"
+        if kind in ("ueok", "pct", "area"):
+            try:
+                return f"{float(val):,.2f}"
+            except Exception:
+                return str(val)
+        if kind in ("man", "ppyeong", "cnt", "raw_int"):
+            try:
+                return f"{int(float(val)):,}"
+            except Exception:
+                return str(val)
+        if kind == "year":
+            try:
+                return f"{int(float(val))}"
+            except Exception:
+                return str(val)
+        return str(val)
+
+    _css = """
+<style>
+.rt-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.rt-tbl th{background:#f1f5f9;color:#374151;padding:7px 10px;text-align:center;
+           border-bottom:2px solid #cbd5e1;white-space:nowrap;font-weight:600}
+.rt-tbl td{padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap}
+.rt-tbl tr:nth-child(even) td{background:#f9fafb}
+.rt-tbl tr:hover td{background:#f0f9ff}
+.rt-tbl a{color:#2563eb;text-decoration:none}
+.rt-tbl a:hover{text-decoration:underline}
+</style>"""
+
+    header_row = "<tr>" + "".join(
+        f"<th>{lbl.replace(chr(10), '<br>')}</th>" for lbl in col_labels
+    ) + "</tr>"
+
+    body_rows = [
+        "<tr>" + "".join(
+            f"<td>{_fmt(row[col], kind)}</td>"
+            for col, kind in zip(out.columns, col_kinds)
+        ) + "</tr>"
+        for _, row in out.iterrows()
+    ]
+
+    scroll = f"max-height:{height}px;overflow-y:auto;" if height else ""
+    st.markdown(
+        _css
+        + f"<div style='{scroll}overflow-x:auto'>"
+        + f"<table class='rt-tbl'><thead>{header_row}</thead>"
+        + f"<tbody>{''.join(body_rows)}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _data_freshness() -> dict:
