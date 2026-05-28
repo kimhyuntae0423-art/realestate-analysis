@@ -1089,21 +1089,16 @@ def page_strategy_backtest():
             if not valid_cmp.empty:
                 # ── 신뢰도 판정 ──
                 def _reliability(rho, hit, label=""):
-                    if "임대수익" in label:
-                        # 임대수익은 ρ<0이 정상 (수익형≠시세차익형 분리 확인)
-                        if rho <= -0.2:  return "🟢 역상관 확인", "임대 수익률 높은 곳이 시세차익은 낮음 — 수익형·시세차익형 분리 입증"
-                        if rho <  0.0:   return "🟡 약한 역상관", "임대수익·시세차익 분리가 약하게 나타남"
-                        return "🔴 비정상", "임대 수익률 높은 곳이 시세도 오름 — 이례적 결과, 데이터 확인 필요"
                     if "갭투자" in label:
-                        # 갭투자는 매매가 상승 예측이 목적이 아니므로 ρ 음수도 정상
+                        # 갭투자는 매매가 상승 예측이 목적이 아님 — ρ 음수도 정상
                         if rho >= 0.3:   return "🟢 높음", f"갭 조건 좋은 곳이 실제 상승도 높음 (상위10% 중 {hit:.0f}% 적중)"
                         if rho >= 0.0:   return "🟡 중립", "ρ≥0 — 탭 C ROE 시뮬레이션이 핵심 지표입니다"
                         return "⚪ 해당없음", "갭투자 점수는 매매가 상승 예측 목적이 아닙니다. 탭 C ROE를 확인하세요"
-                    # 투자수익 (기본)
+                    # 투자수익 · 임대수익 공통 (두 전략 모두 양의 ρ 목표)
                     if rho >= 0.5:   return "🟢 높음", f"점수가 실제 상승을 잘 예측합니다 (상위10% 중 {hit:.0f}% 적중)"
                     if rho >= 0.3:   return "🟡 보통", f"어느 정도 예측 가능합니다 (상위10% 중 {hit:.0f}% 적중)"
                     if rho >= 0.0:   return "🔴 낮음", f"예측력이 약합니다 (점수와 상승률 거의 무관)"
-                    return "🔴 역방향", f"점수 높은 곳이 오히려 덜 올랐습니다 (점수 의미 재확인 필요)"
+                    return "🔴 역방향", f"점수 높은 곳이 오히려 덜 올랐습니다 — 수식 점검 필요"
 
                 c_m = st.columns(len(valid_cmp))
                 for col, (_, row) in zip(c_m, valid_cmp.iterrows()):
@@ -1418,11 +1413,10 @@ def page_strategy_backtest():
     with tab_yield:
         st.markdown("#### 💰 임대수익 전략 백테스트")
         st.markdown(
-            "**이 전략의 핵심 질문:** 월세 수익률(연간 임대료 ÷ 매매가)이 높은 단지가 매매가도 더 오르는가?  \n\n"
-            "**예상 결과:** ρ가 **음수**. 임대 수익률이 높다 = 매매가 대비 임대료가 비싸다 = 상대적으로 저평가된 비인기 지역.  \n"
-            "부동산에서는 비인기 지역이 덜 오르는 경향이 있어, "
-            "수익률 높은 곳이 오히려 매매 차익은 낮습니다.  \n\n"
-            "이 백테스트는 그 역설을 수치로 확인하는 용도입니다."
+            "**이 전략의 핵심 질문:** 현금흐름(월세 수익률)과 상승잠재력(상급지×시장강도)을 동시에 만족하는 단지를 찾는가?  \n\n"
+            "**점수 구성:** 상승예상(tier+시장강도) **70%** + 수익률품질(yield × 상급지 보정) **30%**  \n"
+            "`yield_quality = annual_yield_% × appreciation_score/100` — 같은 수익률이면 상급지 매물을 우대, 저가지역 고수익률 역상관 효과를 제거  \n\n"
+            "**기대 결과:** ρ ≥ 0 (수식 개선 전 역상관이었으나, yield_quality 도입으로 양의 상관 목표)"
         )
         if st.button("▶ 실행", key="run_yield"):
             with st.spinner("계산 중..."):
@@ -1432,43 +1426,41 @@ def page_strategy_backtest():
                     )
                     cy1, cy2, cy3 = st.columns(3)
                     cy1.metric("표본 수", f"{ry.n:,}건")
-                    cy2.metric("수익률 ↔ 상승률 ρ", f"{ry.spearman:+.3f}",
-                               help="음수이면 '월세 수익률 높은 곳이 매매가 상승은 낮음' — 예상된 결과")
+                    cy2.metric("종합점수 ρ", f"{ry.spearman:+.3f}",
+                               help="양수이면 점수 높은 곳이 실제로도 상승 — 0.3 이상이면 활용 가능")
                     cy3.metric("상위10% 적중률", f"{ry.top10_hit*100:.1f}%",
-                               help="랜덤 기대치=20%. 임대수익 전략은 매매가 상승 예측 목적이 아니므로 낮아도 정상")
+                               help="랜덤 기대치=20%. 30% 이상이면 선별력 있음")
 
                     st.markdown("**요소별 단독 ρ** — 각 요소와 매매가 상승률의 관계")
-                    st.caption("임대수익 관련 요소들이 매매 상승과 역상관이면 '수익형 vs 시세차익형' 분리가 명확히 입증됨")
+                    st.caption("yield_quality(수익률품질)가 annual_yield(%)(원시 수익률)보다 높은 ρ를 보이면 수식 개선 효과가 입증됨")
                     comp_y = pd.DataFrame([
                         {"요소": k, "ρ": v,
                          "해석": "양의 상관 (높을수록 시세도 오름)" if v > 0.1
-                                 else ("역상관 (수익형↑ = 시세차익↓)" if v < -0.1 else "중립")}
+                                 else ("역상관" if v < -0.1 else "중립")}
                         for k, v in ry.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
                     st.dataframe(comp_y, hide_index=True, use_container_width=True)
 
-                    if not ry.raw.empty and "annual_yield_%" in ry.raw.columns:
+                    if not ry.raw.empty and "yield_quality" in ry.raw.columns:
                         fig_y = px.scatter(
-                            ry.raw, x="annual_yield_%", y="actual_growth",
-                            hover_data=["region_code", "apt_name"],
-                            labels={"annual_yield_%": "연수익률 (%)", "actual_growth": "실제 상승률 (%)"},
-                            title=f"임대수익률 vs 실제 매매가 상승률 (ρ={ry.spearman:+.3f})",
+                            ry.raw, x="yield_quality", y="actual_growth",
+                            hover_data=["region_code", "apt_name", "annual_yield_%"],
+                            labels={"yield_quality": "수익률품질 (yield×상급지)", "actual_growth": "실제 상승률 (%)"},
+                            title=f"수익률품질 vs 실제 매매가 상승률 (종합ρ={ry.spearman:+.3f})",
                             trendline="ols",
                         )
-                        st.caption("우하향(\\) 추세선이면 임대수익 높은 곳이 덜 올랐다는 것 — 역설 입증")
+                        st.caption("우상향(/) 추세선이면 yield_quality 높은 곳이 실제로도 올랐다는 것")
                         st.plotly_chart(fig_y, use_container_width=True)
 
-                    if ry.spearman <= -0.2:
-                        st.info(
-                            f"📌 ρ = {ry.spearman:+.3f} — **수익형·시세차익형 분리 확인**  \n"
-                            "임대 수익률 높은 단지는 매매가 상승이 낮습니다. "
-                            "투자 목적(현금흐름 vs 시세차익)을 명확히 구분해야 합니다.  \n"
-                            "임대수익 추천 단지는 '안정적 현금흐름'용으로만 활용하세요."
-                        )
-                    elif ry.spearman >= 0.2:
-                        st.success(f"📌 ρ = {ry.spearman:+.3f} — 임대수익 높은 곳이 시세도 오름 (이례적 결과)")
+                    if ry.spearman >= 0.3:
+                        st.success(f"📌 ρ = {ry.spearman:+.3f} — 현금흐름·상승잠재력 동시 선별 확인")
+                    elif ry.spearman >= 0.0:
+                        st.info(f"📌 ρ = {ry.spearman:+.3f} — 약한 양의 상관 | n={ry.n:,}. 가중치 추가 조정 여지 있음")
                     else:
-                        st.caption(f"📌 ρ = {ry.spearman:+.3f} — 임대수익과 매매 상승 상관이 약함 | n={ry.n:,}")
+                        st.warning(
+                            f"📌 ρ = {ry.spearman:+.3f} — 여전히 역상관. "
+                            "annual_yield_%와 appreciation_score 역방향이 강한 데이터 구간일 수 있습니다."
+                        )
                 except ValueError as e:
                     st.error(f"계산 실패: {e}")
 

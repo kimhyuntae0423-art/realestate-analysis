@@ -559,6 +559,7 @@ def rental_yield_backtest(
     n = len(g)
     rho = _spearman(g["score"], g["actual_growth"])
     component_corr = {
+        "yield_quality":      round(float(_spearman(g["yield_quality"],      g["actual_growth"])), 3),
         "annual_yield_%":     round(float(_spearman(g["annual_yield_%"],     g["actual_growth"])), 3),
         "appreciation_score": round(float(_spearman(g["appreciation_score"], g["actual_growth"])), 3),
         "tier_score":         round(float(_spearman(g["tier_score"],         g["actual_growth"])), 3),

@@ -332,7 +332,9 @@ def _apply_rental_scores(
 ) -> pd.DataFrame:
     """임대수익 종합점수 산출 — recommend_rental_yield + rental_yield_backtest 공용.
 
-    공식: 임대수익률 50% + 상승예상(tier+시장강도) 50%
+    공식: 상승예상(tier+시장강도) 70% + 수익률품질 30%
+    수익률품질(yield_quality) = annual_yield_% × (appreciation_score/100)
+      → 상급지에서 나오는 수익률을 우대, 저가지역 고수익률 역상관 효과를 제거
     입력 df 필수 컬럼: annual_yield_%, tier_score
     """
     df = df.copy()
@@ -342,9 +344,13 @@ def _apply_rental_scores(
         df["market_score"] = 50.0
     df["market_score"] = df["market_score"].fillna(50.0)
     df["appreciation_score"] = (df["tier_score"] * 0.6 + df["market_score"] * 0.4).clip(0, 100)
+    # 수익률 이상치 cap 후 상급지 가중 → 저가지역 고수익률 역상관 할인
+    df["yield_quality"] = (
+        df["annual_yield_%"].clip(upper=10.0) * (df["appreciation_score"] / 100)
+    ).round(3)
     df["score"] = (
-        df["annual_yield_%"].rank(pct=True) * 0.50
-        + df["appreciation_score"].rank(pct=True) * 0.50
+        df["appreciation_score"].rank(pct=True) * 0.70
+        + df["yield_quality"].rank(pct=True) * 0.30
     ) * 100
     df["score"] = df["score"].round(1)
     return df
