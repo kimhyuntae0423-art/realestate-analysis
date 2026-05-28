@@ -2050,6 +2050,7 @@ def _render_compare_view(
         "같은 조건으로 투자수익·갭투자·임대수익을 동시 실행합니다. "
         "여러 전략 상위권에 겹치는 단지일수록 확신도가 높습니다."
     )
+    half_months = max(months // 2, 3)
 
     if max_buy_reg_net > 0 or max_buy_nonreg_net > 0:
         _ca, _cb = st.columns(2)
@@ -2154,7 +2155,20 @@ def _render_compare_view(
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수",
                 "expected_roi_%": "🚀 예상수익률(%)", "annual_yield_%": "💰 연수익률(%)",
             }),
-            column_config={"순위": st.column_config.NumberColumn("순위", format="%d")},
+            column_config={
+                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
+                "🚀 예상수익금(억)": st.column_config.NumberColumn(
+                    f"🚀 예상수익금(억)",
+                    help=f"예상수익률 × 투입자본. 최근 {half_months}개월 추세 기반 전망 — 과거 추세 보장 아님.",
+                    format="%.2f",
+                ),
+                "🚀 예상수익률(%)": st.column_config.NumberColumn(
+                    f"🚀 예상수익률(%)",
+                    help=f"최근 {half_months}개월 상승 추세 × 레버리지. 향후 {half_months}개월 지속 가정 — 보장 아님.",
+                    format="%.2f",
+                ),
+                "💰 연수익률(%)": st.column_config.NumberColumn("💰 연수익률(%)", format="%.2f"),
+            },
             hide_index=True, width='stretch'
         )
     elif any2:
@@ -2191,13 +2205,31 @@ def _render_compare_view(
             show = inv.copy()
             show.insert(0, "순위", range(1, len(show) + 1))
             show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
+            if "expected_roi_%" in show.columns and "required_equity" in show.columns:
+                show[f"예상수익금(억)"] = (
+                    show["expected_roi_%"] * show["required_equity"] / 100 / 10000
+                ).round(2)
             cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
             if "expected_roi_%" in show.columns: cols.append("expected_roi_%")
+            if f"예상수익금(억)" in show.columns: cols.append(f"예상수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
             st.dataframe(show[cols].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
-                "expected_roi_%": "예상수익률(%)", "tier_label": "지역등급",
-            }), hide_index=True, width='stretch')
+                "expected_roi_%": f"예상수익률(%)",
+                "tier_label": "지역등급",
+            }), column_config={
+                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
+                f"예상수익률(%)": st.column_config.NumberColumn(
+                    f"예상수익률(%)",
+                    help=f"최근 {half_months}개월 상승 추세 × 레버리지. 향후 {half_months}개월 지속 가정 — 보장 아님.",
+                    format="%.2f",
+                ),
+                f"예상수익금(억)": st.column_config.NumberColumn(
+                    f"예상수익금(억)",
+                    help=f"예상수익률 × 투입자본. 최근 {half_months}개월 추세 기반 — 보장 아님.",
+                    format="%.2f",
+                ),
+            }, hide_index=True, width='stretch')
 
     with tab_gap:
         if gap.empty:
@@ -2212,7 +2244,9 @@ def _render_compare_view(
             st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "jeonse_ratio": "전세가율(%)", "jeonse_risk": "역전세리스크",
-            }), hide_index=True, width='stretch')
+            }), column_config={
+                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
+            }, hide_index=True, width='stretch')
 
     with tab_yld:
         if yld.empty:
@@ -2229,7 +2263,9 @@ def _render_compare_view(
             st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "annual_yield_%": "연수익률(%)",
-            }), hide_index=True, width='stretch')
+            }), column_config={
+                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
+            }, hide_index=True, width='stretch')
 
 
 def render_recommend_tab(inputs: dict):
