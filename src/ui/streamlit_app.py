@@ -2157,52 +2157,41 @@ def _render_compare_view(
             over["🏠 갭투자수익금(억)"] = (gain / 10000).round(2)
             over["🏠 갭투자수익률(%)"] = (gain / over["gap"] * 100).round(2)
 
-        _show = ["순위", "지역", "apt_name", "area_bucket", "매매가(억)",
-                 "🚀 예상수익금(억)", "expected_roi_%",
-                 "💰 연수익금(억)", "annual_yield_%",
-                 "🏠 갭투자수익금(억)", "🏠 갭투자수익률(%)", "🏠 갭(억)",
-                 "score"]
+        # ── 2단 헤더: 상위(전략그룹) × 하위(수익금·수익률) ──
+        _mi: dict = {}
+        _mi[("", "순위")]     = over["순위"]
+        _mi[("", "지역")]     = over["지역"]
+        _mi[("", "단지")]     = over["apt_name"]
+        _mi[("", "면적(㎡)")] = over["area_bucket"]
+        _mi[("", "매매가(억)")] = over["매매가(억)"]
 
-        st.dataframe(
-            over[[c for c in _show if c in over.columns]].rename(columns={
-                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수",
-                "expected_roi_%": "🚀 예상수익률(%)", "annual_yield_%": "💰 연수익률(연간%)",
-            }),
-            column_config={
-                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
-                "🚀 예상수익금(억)": st.column_config.NumberColumn(
-                    "🚀 예상수익금(억)",
-                    help=f"투자수익 전략: 예상수익률 × 투입자본. 최근 {half_months}개월 추세 기반 — 비연환산.",
-                    format="%.2f",
-                ),
-                "🚀 예상수익률(%)": st.column_config.NumberColumn(
-                    f"🚀 예상수익률({half_months}개월·비연환산%)",
-                    help=f"투자수익 전략: 최근 {half_months}개월 가격 상승 추세 × 레버리지. 연환산 = ÷{half_months}×12.",
-                    format="%.2f",
-                ),
-                "💰 연수익금(억)": st.column_config.NumberColumn(
-                    "💰 연수익금(억)",
-                    help="임대수익 전략: 월세 × 12 (세전, 공실·관리비 미차감).",
-                    format="%.2f",
-                ),
-                "💰 연수익률(연간%)": st.column_config.NumberColumn(
-                    "💰 연수익률(연간%)",
-                    help="임대수익 전략: (월세×12) ÷ 투입자본 × 100. 진짜 연환산.",
-                    format="%.2f",
-                ),
-                "🏠 갭투자수익금(억)": st.column_config.NumberColumn(
-                    "🏠 갭투자수익금(억)",
-                    help=f"갭투자 전략: 매매가 × 가격상승률({half_months}개월). 전세 만기 후 시세차익 기대치 — 비연환산.",
-                    format="%.2f",
-                ),
-                "🏠 갭투자수익률(%)": st.column_config.NumberColumn(
-                    f"🏠 갭투자수익률({half_months}개월·비연환산%)",
-                    help=f"갭투자 전략: 시세차익 ÷ 갭(자기자본) × 100. 레버리지 효과 반영 — 연환산 = ÷{half_months}×12.",
-                    format="%.2f",
-                ),
-                "🏠 갭(억)": st.column_config.NumberColumn("🏠 갭(억)", format="%.2f"),
-            },
-            hide_index=True, width='stretch'
+        if "🚀 예상수익금(억)" in over.columns:
+            _mi[("🚀 투자수익", "수익금(억)")] = over["🚀 예상수익금(억)"]
+        if "expected_roi_%" in over.columns:
+            _mi[("🚀 투자수익", f"수익률({half_months}개월%)")] = over["expected_roi_%"]
+
+        if "💰 임대수익" not in [k[0] for k in _mi]:
+            pass
+        if "💰 연수익금(억)" in over.columns:
+            _mi[("💰 임대수익", "연수익금(억)")] = over["💰 연수익금(억)"]
+        if "annual_yield_%" in over.columns:
+            _mi[("💰 임대수익", "연수익률(%연간)")] = over["annual_yield_%"]
+
+        if "🏠 갭투자수익금(억)" in over.columns:
+            _mi[("🏠 갭투자", "수익금(억)")] = over["🏠 갭투자수익금(억)"]
+        if "🏠 갭투자수익률(%)" in over.columns:
+            _mi[("🏠 갭투자", f"수익률({half_months}개월%)")] = over["🏠 갭투자수익률(%)"]
+        if "🏠 갭(억)" in over.columns:
+            _mi[("🏠 갭투자", "갭(억)")] = over["🏠 갭(억)"]
+
+        _mi[("", "투자수익점수")] = over["score"].round(1)
+
+        display_df = pd.DataFrame(_mi)
+        st.dataframe(display_df, hide_index=True, use_container_width=True)
+        st.caption(
+            f"📅 수익금·수익률 기준 기간: 최근 **{half_months}개월** vs 이전 **{half_months}개월** 실거래 비교 "
+            f"(분석기간 {months}개월 ÷ 2). 연환산 참고 = 표시값 ÷ {half_months} × 12. "
+            f"💰 임대수익 연수익률만 진짜 연환산."
         )
     elif any2:
         st.info(f"🔶 **2전략 이상 상위권 — {len(any2)}개 단지**")
