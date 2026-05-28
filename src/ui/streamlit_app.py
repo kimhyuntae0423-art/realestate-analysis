@@ -792,9 +792,9 @@ def page_invest():
             c1, c2, c3 = st.columns(3)
             strategy = c1.selectbox(
                 "투자 전략",
-                ["🚀 투자수익", "갭투자", "임대수익", "자가매입"],
+                ["🔀 전략 비교", "🚀 투자수익", "갭투자", "임대수익", "자가매입"],
                 index=0,
-                help="🚀 투자수익 = 호재 + 매수심리 + 레버리지 + 상급지등급",
+                help="🔀 전략 비교 = 3전략 동시 실행 후 교집합 하이라이트",
             )
             months = c2.slider("분석 기간 (개월)", 3, 36, 24,
                                  help="과거 N개월 데이터 사용")
@@ -879,9 +879,9 @@ def invest_sidebar_inputs() -> dict:
             )
             strategy = st.selectbox(
                 "투자 전략",
-                ["🚀 투자수익", "갭투자", "임대수익", "자가매입"],
+                ["🔀 전략 비교", "🚀 투자수익", "갭투자", "임대수익", "자가매입"],
                 index=0,
-                help="🚀 투자수익 = 호재 + 매수심리 + 레버리지",
+                help="🔀 전략 비교 = 3전략 동시 실행 후 교집합 하이라이트",
             )
             with st.expander("💳 DSR (선택) - 정확한 대출 한도"):
                 use_dsr = st.checkbox(
@@ -1984,6 +1984,145 @@ def _render_region_detail(region_code: str, rec_df: pd.DataFrame | None = None,
             render_table(region_rec[cols].head(10))
 
 
+def _render_compare_view(
+    seed_man: int, months: int, min_deals: int,
+    ownership: str, first_time: bool, use_loan: bool,
+    catalyst_weight: float, tier_weight: float, prestige_weight: float,
+    dsr_cap_man, top_n: int, area_range, year_range,
+):
+    """3전략 동시 비교 — 겹치는 단지가 높은 확신도."""
+    st.markdown("### 🔀 3전략 동시 비교")
+    st.caption(
+        "같은 조건으로 투자수익·갭투자·임대수익을 동시 실행합니다. "
+        "여러 전략 상위권에 겹치는 단지일수록 확신도가 높습니다."
+    )
+
+    with st.spinner("3전략 계산 중..."):
+        rec_inv = _cached_investment(seed_man, months, min_deals, ownership, first_time,
+                                      use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man)
+        rec_gap = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
+        rec_yld = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
+
+    def _prep(df):
+        if df.empty:
+            return df
+        df = df.copy()
+        if area_range and "area_bucket" in df.columns:
+            df = df[(df["area_bucket"] >= area_range[0]) & (df["area_bucket"] <= area_range[1])]
+        if year_range and "build_year" in df.columns:
+            df = df[df["build_year"].notna()
+                    & (df["build_year"] >= year_range[0])
+                    & (df["build_year"] <= year_range[1])]
+        df["지역"] = df["region_code"].map(REGION_MAP).fillna(df["region_code"])
+        return df.head(top_n).reset_index(drop=True)
+
+    inv = _prep(rec_inv)
+    gap = _prep(rec_gap)
+    yld = _prep(rec_yld)
+
+    def _keys(df):
+        if df.empty or not {"apt_name", "region_code", "area_bucket"}.issubset(df.columns):
+            return set()
+        return set(zip(df["apt_name"], df["region_code"], df["area_bucket"]))
+
+    k_inv, k_gap, k_yld = _keys(inv), _keys(gap), _keys(yld)
+    all3 = k_inv & k_gap & k_yld
+    any2 = ((k_inv & k_gap) | (k_inv & k_yld) | (k_gap & k_yld)) - all3
+
+    def _badge(r):
+        k = (r["apt_name"], r["region_code"], r["area_bucket"])
+        if k in all3: return "🏆 3전략"
+        if k in any2: return "🔶 2전략"
+        return ""
+
+    for df in [inv, gap, yld]:
+        if not df.empty:
+            df["일치"] = df.apply(_badge, axis=1)
+
+    # ── 교집합 섹션 ──
+    if all3:
+        st.success(f"🏆 **3전략 모두 상위권 — {len(all3)}개 단지** | 시세차익 + 갭 진입 + 월세수익 동시 유망")
+        over = inv[inv["일치"] == "🏆 3전략"][["지역", "apt_name", "area_bucket", "trade_median", "score"]].copy()
+        over.insert(0, "순위", range(1, len(over) + 1))
+        over["매매가(억)"] = (over["trade_median"] / 10000).round(2)
+        st.dataframe(over[["순위", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]]
+                     .rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수"}),
+                     hide_index=True, use_container_width=True)
+    elif any2:
+        st.info(f"🔶 **2전략 이상 상위권 — {len(any2)}개 단지**")
+    else:
+        st.caption("현재 조건에서 두 전략 이상 겹치는 단지 없음 — 단지 수(top_n) 늘리거나 최소 거래수 낮춰보세요.")
+
+    if any2:
+        with st.expander(f"🔶 2전략 이상 겹치는 단지 ({len(any2)}개)", expanded=bool(not all3)):
+            rows = []
+            for df, label in [(inv, "🚀투자수익"), (gap, "🏠갭투자"), (yld, "💰임대수익")]:
+                if df.empty: continue
+                sub = df[df["일치"].isin(["🏆 3전략", "🔶 2전략"])].copy()
+                sub["전략"] = label
+                rows.append(sub[["지역", "apt_name", "area_bucket", "trade_median", "전략"]])
+            if rows:
+                m = pd.concat(rows)
+                m["매매가(억)"] = (m["trade_median"] / 10000).round(2)
+                piv = m.groupby(["지역", "apt_name", "area_bucket", "매매가(억)"])["전략"].apply(
+                    lambda x: " · ".join(sorted(set(x)))
+                ).reset_index()
+                st.dataframe(piv.rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)"}),
+                             hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 전략별 탭 ──
+    tab_inv, tab_gap, tab_yld = st.tabs(["🚀 투자수익", "🏠 갭투자", "💰 임대수익"])
+
+    with tab_inv:
+        if inv.empty:
+            st.warning("해당 조건의 투자수익 매물 없음")
+        else:
+            show = inv.copy()
+            show.insert(0, "순위", range(1, len(show) + 1))
+            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
+            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
+            if "expected_roi_%" in show.columns: cols.append("expected_roi_%")
+            if "tier_label" in show.columns: cols.append("tier_label")
+            st.dataframe(show[cols].rename(columns={
+                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
+                "expected_roi_%": "예상수익률(%)", "tier_label": "지역등급",
+            }), hide_index=True, use_container_width=True)
+
+    with tab_gap:
+        if gap.empty:
+            st.warning("해당 조건의 갭투자 매물 없음")
+        else:
+            show = gap.copy()
+            show.insert(0, "순위", range(1, len(show) + 1))
+            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
+            show["갭(억)"] = (show["gap"] / 10000).round(2)
+            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "갭(억)", "jeonse_ratio", "score"]
+            if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
+            st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
+                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
+                "jeonse_ratio": "전세가율(%)", "jeonse_risk": "역전세리스크",
+            }), hide_index=True, use_container_width=True)
+
+    with tab_yld:
+        if yld.empty:
+            st.warning("해당 조건의 임대수익 매물 없음")
+        else:
+            show = yld.copy()
+            show.insert(0, "순위", range(1, len(show) + 1))
+            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
+            if "required_equity" in show.columns:
+                show["필요자본(억)"] = (show["required_equity"] / 10000).round(2)
+            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
+            if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
+            if "필요자본(억)" in show.columns: cols.append("필요자본(억)")
+            st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
+                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
+                "annual_yield_%": "연수익률(%)",
+            }), hide_index=True, use_container_width=True)
+
+
 def render_recommend_tab(inputs: dict):
     seed_eok = inputs["seed_eok"]
     ownership = inputs["ownership"]
@@ -2056,6 +2195,24 @@ def render_recommend_tab(inputs: dict):
             f"⚠️ DSR 한도({dsr_cap_man/10000:.2f}억)가 LTV 한도(6억)보다 작습니다. "
             "실제 대출은 DSR 쪽이 binding 됩니다."
         )
+
+    if strategy == "🔀 전략 비교":
+        _render_compare_view(
+            seed_man=seed_man,
+            months=months,
+            min_deals=min_deals,
+            ownership=ownership,
+            first_time=first_time,
+            use_loan=use_loan,
+            catalyst_weight=catalyst_weight,
+            tier_weight=tier_weight,
+            prestige_weight=prestige_weight,
+            dsr_cap_man=dsr_cap_man,
+            top_n=top_n,
+            area_range=area_range,
+            year_range=year_range,
+        )
+        return
 
     if strategy == "🚀 투자수익":
         st.info(
