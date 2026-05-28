@@ -2177,14 +2177,14 @@ def _render_compare_view(
         _tbl_css = """
 <style>
 .cmp-tbl{width:100%;border-collapse:collapse;font-size:13px}
-.cmp-tbl th{padding:6px 10px;text-align:center;white-space:nowrap}
-.cmp-tbl th.base{background:#374151;color:#fff}
-.cmp-tbl th.inv{background:#1d4ed8;color:#fff}
-.cmp-tbl th.yld{background:#15803d;color:#fff}
-.cmp-tbl th.gap{background:#b45309;color:#fff}
-.cmp-tbl td{padding:5px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap}
+.cmp-tbl th{padding:6px 10px;text-align:center;white-space:nowrap;border:1px solid #e2e8f0}
+.cmp-tbl th.base{background:#f1f5f9;color:#374151}
+.cmp-tbl th.inv{background:#dbeafe;color:#1e40af}
+.cmp-tbl th.yld{background:#dcfce7;color:#166534}
+.cmp-tbl th.gap{background:#fef3c7;color:#92400e}
+.cmp-tbl td{padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap}
 .cmp-tbl tr:nth-child(even) td{background:#f9fafb}
-.cmp-tbl tr:hover td{background:#eff6ff}
+.cmp-tbl tr:hover td{background:#f0f9ff}
 </style>"""
 
         _thead = """
