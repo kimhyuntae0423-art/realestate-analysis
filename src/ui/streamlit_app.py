@@ -1997,11 +1997,24 @@ def _render_compare_view(
         "여러 전략 상위권에 겹치는 단지일수록 확신도가 높습니다."
     )
 
-    with st.spinner("3전략 계산 중..."):
+    _prog = st.progress(0, text="🚀 투자수익 계산 중…")
+    try:
         rec_inv = _cached_investment(seed_man, months, min_deals, ownership, first_time,
                                       use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man)
+        _prog.progress(34, text="🏠 갭투자 계산 중…")
         rec_gap = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
+        _prog.progress(67, text="💰 임대수익 계산 중…")
         rec_yld = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
+        _prog.progress(100, text="✅ 완료")
+        _prog.empty()
+    except MemoryError:
+        _prog.empty()
+        st.error("메모리 부족으로 중단됐습니다. 최소 거래수를 높이거나 분석 기간을 줄여보세요.")
+        return
+    except Exception as e:
+        _prog.empty()
+        st.error(f"계산 오류: {e}")
+        return
 
     def _prep(df):
         if df.empty:
