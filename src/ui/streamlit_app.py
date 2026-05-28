@@ -516,20 +516,43 @@ def _refresh_recent_data(months: int = 3, regions: list[str] | None = None,
 def _sidebar_nav() -> str:
     """사이드바: 페이지 네비게이션 + 캐시 클리어 + 데이터 최신화. 모든 페이지 공통."""
     with st.sidebar:
+        if "_nav_section" not in st.session_state:
+            st.session_state["_nav_section"] = "analysis"
+
+        def _on_analysis_nav():
+            st.session_state["_nav_section"] = "analysis"
+
         st.markdown("## 🏠 부동산 분석")
-        page = st.radio(
+        page_radio = st.radio(
             "페이지",
             [
-                "🏠 나의 한도",
+                "💰 나의 한도",
                 "🚀 투자 추천",
                 "📊 지역 분석",
                 "🗺️ 지도",
                 "🚦 시장 진단",
-                "🔬 전략 백테스트",
             ],
             label_visibility="collapsed",
             key="nav_page",
+            on_change=_on_analysis_nav,
         )
+
+        st.divider()
+        st.markdown("## 🔬 전략 백테스트")
+        if st.button(
+            "전략 백테스트",
+            width="stretch",
+            key="nav_backtest",
+            type="primary" if st.session_state["_nav_section"] == "backtest" else "secondary",
+        ):
+            st.session_state["_nav_section"] = "backtest"
+
+        page = (
+            "🔬 전략 백테스트"
+            if st.session_state["_nav_section"] == "backtest"
+            else page_radio
+        )
+
         st.divider()
         if st.button("🔄 캐시 비우기", width='stretch', key="nav_clear",
                      help="데이터 수집 후 또는 강제 재계산 시"):
@@ -658,7 +681,7 @@ def _sidebar_nav() -> str:
         st.divider()
         st.caption(
             "각 페이지가 자체 입력을 가집니다.\n\n"
-            "🏠 한도 = 시드/소득 기반 매수가\n"
+            "💰 한도 = 시드/소득 기반 매수가\n"
             "🚀 추천 = 매물 검색\n"
             "📊 지역 = 단일 시군구 시계열\n"
             "🗺️ 지도 = 전국 시각화\n"
@@ -767,8 +790,8 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
 
 
 def page_my_capacity():
-    """🏠 나의 한도 — 시드+대출+정책대출+부대비용 시뮬."""
-    st.title("🏠 나의 매수 한도")
+    """💰 나의 한도 — 시드+대출+정책대출+부대비용 시뮬."""
+    st.title("💰 나의 매수 한도")
     st.caption("자기자본·소득·LTV·DSR·정책대출·부대비용을 모두 반영한 최대 매수가")
 
     with st.container(border=True):
@@ -792,7 +815,7 @@ def page_my_capacity():
     st.markdown("---")
     st.markdown("### ℹ️ 어떻게 활용하나요?")
     st.markdown(
-        "- **나의 한도** 페이지: 본인 자금으로 어디까지 살 수 있는지 한눈에 파악\n"
+        "- **💰 나의 한도** 페이지: 본인 자금으로 어디까지 살 수 있는지 한눈에 파악\n"
         "- **🚀 투자 추천** 페이지: 위 한도 내 실제 매물 후보 검색\n"
         "- **📊 지역 분석** 페이지: 관심 지역 시세 추이·갭·수익률 등 깊이 분석\n"
         "- **🗺️ 지도**: 전국 평당가·거래량 시각적 비교\n"
@@ -1501,7 +1524,7 @@ def page_strategy_backtest():
 def main():
     page = _sidebar_nav()
 
-    if page.startswith("🏠"):
+    if page.startswith("💰"):
         page_my_capacity()
     elif page.startswith("🚀"):
         page_invest()
