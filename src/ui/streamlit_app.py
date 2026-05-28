@@ -2157,51 +2157,78 @@ def _render_compare_view(
             over["🏠 갭투자수익금(억)"] = (gain / 10000).round(2)
             over["🏠 갭투자수익률(%)"] = (gain / over["gap"] * 100).round(2)
 
-        # ── 2단 헤더: 상위(전략그룹) × 하위(수익금·수익률), 전부 연환산 ──
-        ann = 12 / half_months  # 연환산 배수
+        # ── HTML 2단 헤더 테이블 (rowspan/colspan, 전부 연환산) ──
+        ann = 12 / half_months
 
-        _mi: dict = {}
-        _mi[("", "순위")]       = over["순위"]
-        _mi[("", "지역")]       = over["지역"]
-        _mi[("", "단지")]       = over["apt_name"]
-        _mi[("", "면적(㎡)")]   = over["area_bucket"]
-        _mi[("", "매매가(억)")] = over["매매가(억)"]
+        has_inv_g = "🚀 예상수익금(억)" in over.columns
+        has_inv_r = "expected_roi_%" in over.columns
+        has_yld_g = "💰 연수익금(억)" in over.columns
+        has_yld_r = "annual_yield_%" in over.columns
+        has_gap_g = "🏠 갭투자수익금(억)" in over.columns
+        has_gap_r = "🏠 갭투자수익률(%)" in over.columns
+        has_gap_v = "🏠 갭(억)" in over.columns
 
-        if "🚀 예상수익금(억)" in over.columns:
-            _mi[("🚀 투자수익", "연수익금(억)")] = (over["🚀 예상수익금(억)"] * ann).round(2)
-        if "expected_roi_%" in over.columns:
-            _mi[("🚀 투자수익", "연수익률(%)")] = (over["expected_roi_%"] * ann).round(2)
+        def _n(v):
+            try:
+                return "—" if pd.isna(v) else f"{float(v):.2f}"
+            except Exception:
+                return "—"
 
-        if "💰 연수익금(억)" in over.columns:
-            _mi[("💰 임대수익", "연수익금(억)")] = over["💰 연수익금(억)"]
-        if "annual_yield_%" in over.columns:
-            _mi[("💰 임대수익", "연수익률(%)")] = over["annual_yield_%"]
-
-        if "🏠 갭투자수익금(억)" in over.columns:
-            _mi[("🏠 갭투자", "연수익금(억)")] = (over["🏠 갭투자수익금(억)"] * ann).round(2)
-        if "🏠 갭투자수익률(%)" in over.columns:
-            _mi[("🏠 갭투자", "연수익률(%)")] = (over["🏠 갭투자수익률(%)"] * ann).round(2)
-        if "🏠 갭(억)" in over.columns:
-            _mi[("🏠 갭투자", "갭(억)")] = over["🏠 갭(억)"]
-
-        _mi[("", "투자수익점수")] = over["score"].round(1)
-
-        display_df = pd.DataFrame(_mi)
-
-        # 헤더 가운데 정렬 CSS
-        st.markdown("""
+        _tbl_css = """
 <style>
-[data-testid="stDataFrame"] th,
-[data-testid="stDataFrame"] th > div {
-    text-align: center !important;
-    justify-content: center !important;
-}
-</style>
-""", unsafe_allow_html=True)
+.cmp-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.cmp-tbl th{padding:6px 10px;text-align:center;white-space:nowrap}
+.cmp-tbl th.base{background:#374151;color:#fff}
+.cmp-tbl th.inv{background:#1d4ed8;color:#fff}
+.cmp-tbl th.yld{background:#15803d;color:#fff}
+.cmp-tbl th.gap{background:#b45309;color:#fff}
+.cmp-tbl td{padding:5px 10px;border-bottom:1px solid #e5e7eb;text-align:center;white-space:nowrap}
+.cmp-tbl tr:nth-child(even) td{background:#f9fafb}
+.cmp-tbl tr:hover td{background:#eff6ff}
+</style>"""
 
-        st.dataframe(display_df, hide_index=True, use_container_width=True)
+        _thead = """
+<tr>
+  <th rowspan="2" class="base">순위</th>
+  <th rowspan="2" class="base">지역</th>
+  <th rowspan="2" class="base">단지</th>
+  <th rowspan="2" class="base">면적(㎡)</th>
+  <th rowspan="2" class="base">매매가(억)</th>
+  <th colspan="2" class="inv">🚀 투자수익</th>
+  <th colspan="2" class="yld">💰 임대수익</th>
+  <th colspan="3" class="gap">🏠 갭투자</th>
+  <th rowspan="2" class="base">점수</th>
+</tr>
+<tr>
+  <th class="inv">연수익금(억)</th><th class="inv">연수익률(%)</th>
+  <th class="yld">연수익금(억)</th><th class="yld">연수익률(%)</th>
+  <th class="gap">연수익금(억)</th><th class="gap">연수익률(%)</th><th class="gap">갭(억)</th>
+</tr>"""
+
+        _rows = []
+        for _, r in over.iterrows():
+            ig = _n(r["🚀 예상수익금(억)"] * ann) if has_inv_g else "—"
+            ir = _n(r["expected_roi_%"] * ann)    if has_inv_r else "—"
+            yg = _n(r["💰 연수익금(억)"])          if has_yld_g else "—"
+            yr = _n(r["annual_yield_%"])           if has_yld_r else "—"
+            gg = _n(r["🏠 갭투자수익금(억)"] * ann) if has_gap_g else "—"
+            gr = _n(r["🏠 갭투자수익률(%)"] * ann) if has_gap_r else "—"
+            gv = _n(r["🏠 갭(억)"])               if has_gap_v else "—"
+            _rows.append(
+                f"<tr><td>{int(r['순위'])}</td><td>{r['지역']}</td><td>{r['apt_name']}</td>"
+                f"<td>{r['area_bucket']:.0f}</td><td>{r['매매가(억)']:.2f}</td>"
+                f"<td>{ig}</td><td>{ir}</td><td>{yg}</td><td>{yr}</td>"
+                f"<td>{gg}</td><td>{gr}</td><td>{gv}</td><td>{r['score']:.1f}</td></tr>"
+            )
+
+        st.markdown(
+            _tbl_css + f"<div style='overflow-x:auto'>"
+            f"<table class='cmp-tbl'><thead>{_thead}</thead>"
+            f"<tbody>{''.join(_rows)}</tbody></table></div>",
+            unsafe_allow_html=True,
+        )
         st.caption(
-            f"📅 전부 연환산 기준 (× 12 ÷ {half_months}). "
+            f"📅 전부 연환산 기준 (× 12 ÷ {half_months}개월). "
             f"🚀·🏠 수치는 최근 {half_months}개월 실거래 추세를 연환산한 추정값 — 과거 추세 지속 보장 아님. "
             f"💰 임대수익은 실제 연간 월세 수입."
         )
