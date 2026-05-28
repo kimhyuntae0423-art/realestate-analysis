@@ -290,8 +290,10 @@ def _apply_gap_scores(
 ) -> pd.DataFrame:
     """갭투자 종합점수 산출 — recommend_gap_investment + _gap_scores_at 공용.
 
-    공식: 상승예상(tier+시장강도) 45% + 갭효율성(낮은갭=높은레버리지) 30% + 전세안전구간 25%
-    입력 df 필수 컬럼: trade_median, gap, tier_score, jeonse_quality_score
+    공식: 상승예상(tier+시장강도) 75% + 거래활성도 25%
+    - leverage_mult·jeonse_quality는 역상관(ρ≈-0.33) 확인으로 점수에서 제외,
+      갭 크기는 진입 필터(seed 조건)로만 사용
+    입력 df 필수 컬럼: trade_median, gap, tier_score, activity
     """
     df = df.copy()
     # 시장강도 병합
@@ -312,15 +314,14 @@ def _apply_gap_scores(
         df["jeonse_accel_score"] = 50.0
     df["jeonse_accel_%p"] = df["jeonse_accel_%p"].fillna(0.0)
     df["jeonse_accel_score"] = df["jeonse_accel_score"].fillna(50.0)
-    # 갭 레버리지 배수 (매매가/갭 — 높을수록 소액으로 큰 자산)
+    # 레버리지 배수 (표시용 — 점수에는 미포함)
     df["leverage_mult"] = (df["trade_median"] / df["gap"].clip(lower=1)).round(1)
     # 상승 예상력: 상급지(입지) 60% + 시장강도(매수세) 40%
     df["appreciation_score"] = (df["tier_score"] * 0.6 + df["market_score"] * 0.4).clip(0, 100)
-    # 종합점수
+    # 종합점수: 시세차익 예측력 중심 (갭투자도 결국 시세차익 + 레버리지 알파)
     df["score"] = (
-        df["appreciation_score"].rank(pct=True) * 0.45
-        + df["leverage_mult"].rank(pct=True) * 0.30
-        + df["jeonse_quality_score"].rank(pct=True) * 0.25
+        df["appreciation_score"].rank(pct=True) * 0.75
+        + df["activity"].rank(pct=True) * 0.25
     ) * 100
     df["score"] = df["score"].round(1)
     return df

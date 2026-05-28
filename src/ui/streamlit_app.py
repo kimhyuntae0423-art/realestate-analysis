@@ -1041,6 +1041,15 @@ def page_strategy_backtest():
         fall_thr     = c4.slider("역전세 기준 (%p)", 1.0, 10.0, 3.0, 0.5, key="bt_fall",
                                   help="전세가율이 이 수치 이상 하락하면 역전세 '발생'으로 판정")
 
+    _used_months = train_months + test_months
+    _remaining = max(0, 24 - _used_months)
+    st.caption(
+        f"📅 현재 설정 사용 기간: **{_used_months}개월** (학습 {train_months} + 검증 {test_months}) | "
+        f"DB 누적 목표: **24개월 이상** — "
+        + (f"약 {_remaining}개월 더 쌓이면 갭투자·임대수익 점수 수식 재검토 권장"
+           if _remaining > 0 else "✅ 24개월 이상 누적 — 수식 재검토 적기")
+    )
+
     tab_compare, tab_invest, tab_gap, tab_yield = st.tabs([
         "📊 전략 비교",
         "🚀 투자수익",
@@ -1216,9 +1225,10 @@ def page_strategy_backtest():
     with tab_gap:
         st.markdown("#### 🏠 갭투자 전략 백테스트 (4종)")
         st.markdown(
-            "**갭투자 점수 구성:** 전세가율 품질(25%) + 전세가율 가속도(20%) + 상급지 등급(20%) + 레버리지 배율(20%) + 거래 활성도(15%)  \n"
-            "⚠️ **주의:** 갭투자 점수는 *좋은 갭 조건*을 평가하는 것으로, 매매가 상승 예측 목적이 아닙니다. "
-            "전략 비교에서 ρ가 음수로 나오는 게 정상입니다 (갭이 큰 싼 지역 ≠ 빨리 오르는 지역)."
+            "**갭투자 점수 구성:** 상승예상(tier+시장강도) **75%** + 거래활성도 **25%**  \n"
+            "갭투자도 결국 시세차익이 핵심 — 갭 크기는 진입 필터(시드 조건)로만 사용하고, "
+            "점수는 얼마나 오를 곳인가를 기준으로 산정합니다.  \n"
+            "leverage_mult·jeonse_quality는 역상관(ρ≈−0.33) 확인으로 점수에서 제외됐으며, 표시 목적으로만 출력됩니다."
         )
 
         inner_a, inner_b, inner_c, inner_d = st.tabs([
