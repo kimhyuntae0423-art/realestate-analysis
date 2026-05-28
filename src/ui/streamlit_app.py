@@ -361,6 +361,10 @@ def render_table(df: pd.DataFrame, height: int | None = None):
         col_labels.append(_label_with_unit(name, kind))
         col_kinds.append(kind)
 
+    _TH = "style='background:#f1f5f9;color:#374151;padding:7px 10px;text-align:center;border-bottom:2px solid #cbd5e1;white-space:nowrap;font-weight:600;border:1px solid #e2e8f0'"
+    _TD = "style='padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap'"
+    _TD_E = "style='padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap;background:#f9fafb'"
+
     def _fmt(val, kind: str) -> str:
         try:
             if val is None or pd.isna(val):
@@ -368,7 +372,7 @@ def render_table(df: pd.DataFrame, height: int | None = None):
         except Exception:
             pass
         if kind == "link":
-            return f"<a href='{val}' target='_blank'>🔗 보기</a>" if val else "—"
+            return f"<a href='{val}' target='_blank' style='color:#2563eb;text-decoration:none'>🔗 보기</a>" if val else "—"
         if kind in ("ueok", "pct", "area"):
             try:
                 return f"{float(val):,.2f}"
@@ -386,36 +390,56 @@ def render_table(df: pd.DataFrame, height: int | None = None):
                 return str(val)
         return str(val)
 
-    _css = """
-<style>
-.rt-tbl{width:100%;border-collapse:collapse;font-size:13px}
-.rt-tbl th{background:#f1f5f9;color:#374151;padding:7px 10px;text-align:center;
-           border-bottom:2px solid #cbd5e1;white-space:nowrap;font-weight:600}
-.rt-tbl td{padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap}
-.rt-tbl tr:nth-child(even) td{background:#f9fafb}
-.rt-tbl tr:hover td{background:#f0f9ff}
-.rt-tbl a{color:#2563eb;text-decoration:none}
-.rt-tbl a:hover{text-decoration:underline}
-</style>"""
-
     header_row = "<tr>" + "".join(
-        f"<th>{lbl.replace(chr(10), '<br>')}</th>" for lbl in col_labels
+        f"<th {_TH}>{lbl.replace(chr(10), '<br>')}</th>" for lbl in col_labels
     ) + "</tr>"
 
-    body_rows = [
-        "<tr>" + "".join(
-            f"<td>{_fmt(row[col], kind)}</td>"
+    body_rows = []
+    for i, (_, row) in enumerate(out.iterrows()):
+        td = _TD_E if i % 2 else _TD
+        cells = "".join(
+            f"<td {td}>{_fmt(row[col], kind)}</td>"
             for col, kind in zip(out.columns, col_kinds)
-        ) + "</tr>"
-        for _, row in out.iterrows()
-    ]
+        )
+        body_rows.append(f"<tr>{cells}</tr>")
+
+    scroll = f"max-height:{height}px;overflow-y:auto;" if height else ""
+    tbl_style = "style='width:100%;border-collapse:collapse;font-size:13px'"
+    st.markdown(
+        f"<div style='{scroll}overflow-x:auto'>"
+        f"<table {tbl_style}><thead>{header_row}</thead>"
+        f"<tbody>{''.join(body_rows)}</tbody></table></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_df(df: pd.DataFrame, height: int | None = None, **_):
+    """일반 DataFrame을 가운데 정렬 HTML 테이블로 출력 (st.dataframe 대체)."""
+    if df is None or df.empty:
+        st.info("표시할 데이터가 없습니다.")
+        return
+    _TH = "style='background:#f1f5f9;color:#374151;padding:7px 10px;text-align:center;border:1px solid #e2e8f0;white-space:nowrap;font-weight:600'"
+    _TD = "style='padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap'"
+    _TD_E = "style='padding:5px 10px;border-bottom:1px solid #e2e8f0;text-align:center;white-space:nowrap;background:#f9fafb'"
+
+    def _v(v):
+        try:
+            if pd.isna(v): return "—"
+        except Exception:
+            pass
+        return str(v) if v is not None else "—"
+
+    header = "<tr>" + "".join(f"<th {_TH}>{c}</th>" for c in df.columns) + "</tr>"
+    rows = []
+    for i, (_, row) in enumerate(df.iterrows()):
+        td = _TD_E if i % 2 else _TD
+        rows.append("<tr>" + "".join(f"<td {td}>{_v(row[c])}</td>" for c in df.columns) + "</tr>")
 
     scroll = f"max-height:{height}px;overflow-y:auto;" if height else ""
     st.markdown(
-        _css
-        + f"<div style='{scroll}overflow-x:auto'>"
-        + f"<table class='rt-tbl'><thead>{header_row}</thead>"
-        + f"<tbody>{''.join(body_rows)}</tbody></table></div>",
+        f"<div style='{scroll}overflow-x:auto'>"
+        f"<table style='width:100%;border-collapse:collapse;font-size:13px'>"
+        f"<thead>{header}</thead><tbody>{''.join(rows)}</tbody></table></div>",
         unsafe_allow_html=True,
     )
 
@@ -1235,7 +1259,7 @@ def page_strategy_backtest():
                 st.markdown("**수치 상세** — 상위10% 적중률 랜덤 기대치 = **20%**, 30% 이상이면 활용 가능")
                 display_cmp = valid_cmp[["전략", "신뢰도", "표본수", "상위10% 적중률(%)", "ρ"]].copy()
                 display_cmp["ρ"] = display_cmp["ρ"].apply(lambda v: f"{v:+.3f}")
-                st.dataframe(display_cmp, hide_index=True, width='stretch')
+                render_df(display_cmp)
 
             for _, row in df_cmp[df_cmp["ρ"].isna()].iterrows():
                 st.warning(f"{row['전략']}: {row.get('오류', '알 수 없는 오류')}")
@@ -1307,7 +1331,7 @@ def page_strategy_backtest():
                          "방향": "↑ 양 (높을수록 오름)" if v > 0.05 else ("↓ 음 (높을수록 덜 오름)" if v < -0.05 else "→ 중립")}
                         for k, v in ri_apt.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
-                    st.dataframe(comp_inv, hide_index=True, width='stretch')
+                    render_df(comp_inv)
                     st.caption(
                         f"📌 단지 ρ={ri_apt.spearman:+.3f} / 시군구 ρ={ri_reg.spearman:+.3f}. "
                         + ("두 단위 모두 유의미 — 점수를 신뢰할 수 있습니다." if min(ri_apt.spearman, ri_reg.spearman) >= 0.3
@@ -1357,7 +1381,7 @@ def page_strategy_backtest():
                              "방향": "↑ 양 (상승 연관)" if v > 0.05 else ("↓ 음 (역연관)" if v < -0.05 else "→ 중립")}
                             for k, v in ra.component_corr.items()
                         ]).sort_values("ρ", ascending=False)
-                        st.dataframe(comp, hide_index=True, width='stretch')
+                        render_df(comp)
                         if not ra.raw.empty:
                             fig = px.scatter(
                                 ra.raw, x="score", y="actual_growth",
@@ -1403,7 +1427,7 @@ def page_strategy_backtest():
                         }).set_index("")
                         st.markdown("**혼동 행렬 (Confusion Matrix)**")
                         st.caption("TP=맞게 위험 경고, FP=헛경보(실제 안전), FN=놓친 위험, TN=맞게 안전 판정")
-                        st.dataframe(conf_df, width='content')
+                        render_df(conf_df)
                         st.caption(
                             f"📌 F1={rb.f1:.3f} → "
                             + ("실용적 수준 — 역전세 회피에 이 지표를 활용할 수 있습니다." if rb.f1 >= 0.5
@@ -1448,7 +1472,7 @@ def page_strategy_backtest():
                             )
                             fig_roe.update_xaxes(tickangle=45)
                             st.plotly_chart(fig_roe, width='stretch')
-                            st.dataframe(show, hide_index=True, width='stretch')
+                            render_df(show)
                         st.caption(
                             f"📌 갭 1억으로 ROE {rc.avg_roe_pct:+.2f}% = "
                             f"평균 {abs(rc.avg_roe_pct)/100:.2f}억 수익. 보유 {rc.hold_months}개월."
@@ -1493,12 +1517,12 @@ def page_strategy_backtest():
                                             labels={"as_of": "기준 시점", "spearman": "ρ"}, title="시점별 ρ")
                             fig_a.add_hline(y=0, line_dash="dash", line_color="gray")
                             st.plotly_chart(fig_a, width='stretch')
-                    st.dataframe(rd.summary, hide_index=True, width='stretch')
+                    render_df(rd.summary)
                 if "risk" in wf_results:
                     rd = wf_results["risk"]
                     st.markdown("**B. 역전세 리스크 walk-forward**")
                     st.metric("평균 F1", f"{rd.avg_f1:.3f}", delta=f"±{rd.std_f1:.3f}")
-                    st.dataframe(rd.summary, hide_index=True, width='stretch')
+                    render_df(rd.summary)
                 if "simulation" in wf_results:
                     rd = wf_results["simulation"]
                     st.markdown("**C. 수익 시뮬레이션 walk-forward**")
@@ -1512,7 +1536,7 @@ def page_strategy_backtest():
                         )
                         fig_c.add_hline(y=0, line_dash="dash", line_color="gray")
                         st.plotly_chart(fig_c, width='stretch')
-                    st.dataframe(rd.summary, hide_index=True, width='stretch')
+                    render_df(rd.summary)
 
     # ── 임대수익 탭 ───────────────────────────────────────────────
     with tab_yield:
@@ -1544,7 +1568,7 @@ def page_strategy_backtest():
                                  else ("역상관" if v < -0.1 else "중립")}
                         for k, v in ry.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
-                    st.dataframe(comp_y, hide_index=True, width='stretch')
+                    render_df(comp_y)
 
                     if not ry.raw.empty and "yield_quality" in ry.raw.columns:
                         fig_y = px.scatter(
@@ -1675,10 +1699,9 @@ def page_region():
             st.plotly_chart(fig, width='stretch')
             fc_only = f[f["is_forecast"]].copy()
             st.markdown("**향후 6개월 예측값**")
-            st.dataframe(
+            render_df(
                 fc_only[["ds", "가격(억원)", "하한(억원)", "상한(억원)"]]
-                .rename(columns={"ds": "년월"}),
-                width='stretch', hide_index=True,
+                .rename(columns={"ds": "년월"})
             )
 
     with tab2:
@@ -1900,7 +1923,7 @@ def _render_stress_test(inputs: dict, selected_row: dict):
                 "매도 시 자기자본(억)": round(s["equity_at_exit_man"] / 10000, 2),
                 "연환산 수익률(%)": s["roi_annual_pct"],
             })
-        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+        render_df(pd.DataFrame(rows))
 
 
 def page_map():
@@ -2023,7 +2046,7 @@ def render_map_tab(months: int):
 
     st.markdown("### 지역 요약 (테이블)")
     show = map_df.drop(columns=["lat", "lon", "region_code"]).sort_values("평당가(만원/평)", ascending=False)
-    st.dataframe(show, width='stretch', hide_index=True, height=400)
+    render_df(show, height=400)
 
 
 def _render_region_detail(region_code: str, rec_df: pd.DataFrame | None = None,
@@ -2300,8 +2323,7 @@ def _render_compare_view(
                 piv = m.groupby(["지역", "apt_name", "area_bucket", "매매가(억)"])["전략"].apply(
                     lambda x: " · ".join(sorted(set(x)))
                 ).reset_index()
-                st.dataframe(piv.rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)"}),
-                             hide_index=True, width='stretch')
+                render_df(piv.rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)"}))
 
     st.markdown("---")
 
@@ -2323,23 +2345,11 @@ def _render_compare_view(
             if "expected_roi_%" in show.columns: cols.append("expected_roi_%")
             if f"예상수익금(억)" in show.columns: cols.append(f"예상수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
-            st.dataframe(show[cols].rename(columns={
+            render_df(show[cols].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "expected_roi_%": f"예상수익률(%)",
                 "tier_label": "지역등급",
-            }), column_config={
-                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
-                f"예상수익률(%)": st.column_config.NumberColumn(
-                    f"예상수익률(%)",
-                    help=f"최근 {half_months}개월 상승 추세 × 레버리지. 향후 {half_months}개월 지속 가정 — 보장 아님.",
-                    format="%.2f",
-                ),
-                f"예상수익금(억)": st.column_config.NumberColumn(
-                    f"예상수익금(억)",
-                    help=f"예상수익률 × 투입자본. 최근 {half_months}개월 추세 기반 — 보장 아님.",
-                    format="%.2f",
-                ),
-            }, hide_index=True, width='stretch')
+            }))
 
     with tab_gap:
         if gap.empty:
@@ -2351,12 +2361,10 @@ def _render_compare_view(
             show["갭(억)"] = (show["gap"] / 10000).round(2)
             cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "갭(억)", "jeonse_ratio", "score"]
             if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
-            st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
+            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "jeonse_ratio": "전세가율(%)", "jeonse_risk": "역전세리스크",
-            }), column_config={
-                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
-            }, hide_index=True, width='stretch')
+            }))
 
     with tab_yld:
         if yld.empty:
@@ -2370,12 +2378,10 @@ def _render_compare_view(
             cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
             if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
             if "필요자본(억)" in show.columns: cols.append("필요자본(억)")
-            st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
+            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "annual_yield_%": "연수익률(%)",
-            }), column_config={
-                "순위": st.column_config.NumberColumn("순위", format="%d", width="small"),
-            }, hide_index=True, width='stretch')
+            }))
 
 
 def render_recommend_tab(inputs: dict):
@@ -2495,7 +2501,7 @@ def render_recommend_tab(inputs: dict):
                             "내용": c.get("name", ""),
                             "점수": c.get("score", 0),
                         })
-                st.dataframe(pd.DataFrame(rows), width='stretch', height=400)
+                render_df(pd.DataFrame(rows), height=400)
             st.caption("호재 추가/수정: `config/catalysts.json` 직접 편집. 저장 후 사이드바 [🔄 캐시 비우기].")
     elif strategy == "갭투자":
         st.info(
@@ -2854,7 +2860,7 @@ def render_recommend_tab(inputs: dict):
             rc1, rc2 = st.columns([1, 3])
             with rc1:
                 st.markdown("**역전세 리스크 분포**")
-                st.dataframe(risk_dist, hide_index=True, width='stretch')
+                render_df(risk_dist)
 
             # 지역별 요약 집계
             rg = gap_rec.groupby("region_code").agg(
@@ -2891,7 +2897,7 @@ def render_recommend_tab(inputs: dict):
                 "risk_n": "역전세위험",
             })
             with rc2:
-                st.dataframe(rg_show, hide_index=True, width='stretch', height=380)
+                render_df(rg_show, height=380)
 
     st.markdown(f"### 🎯 단지·평형 추천 TOP {top_n}")
     # 🛡️ 시드 안전망 + 매매가 한도 안전망 (지역별 max_purchase 계산해서 매매가 자체도 컷)
