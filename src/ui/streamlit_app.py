@@ -591,11 +591,34 @@ def _sidebar_nav() -> str:
                 "**자동 갱신**\n"
                 "• 실거래 매매·전월세 (국토부 API) ← 점수 산정에 사용\n\n"
                 "**수동 갱신**\n"
-                "• 호재(`config/catalysts.json`): GTX·신도시 확정 시 직접 편집 → 호재 슬라이더에 자동 반영\n"
-                "• 등급(`config/region_tiers.json`): 정보 표시용 (점수 산식 X)\n\n"
+                "• 호재(`config/catalysts.json`): GTX·신도시 확정 시 직접 편집\n"
+                "• 등급(`config/region_tiers.json`): 정보 표시용 (점수 산식 X)\n"
+                "• 대출규제(`config/loan_regulations.json`): 변경 감지 시 확인 후 직접 편집\n\n"
                 "**중단된 수집** (점수 산식에서 제외됨)\n"
                 "• KOSIS 입주물량·인구이동 → 백테스트 결과 효과 없음"
             )
+
+            # ── 규제 뉴스 변경 감지 알림 ──
+            try:
+                from src.collectors.regulation_news import load_regulation_news
+                _reg = load_regulation_news()
+            except Exception:
+                _reg = None
+            if _reg and _reg.get("count", 0) > 0:
+                st.markdown("")
+                with st.expander(
+                    f"⚠️ 규제 관련 뉴스 {_reg['count']}건 감지 "
+                    f"(수집일: {_reg.get('collected_at', '')})",
+                    expanded=False,
+                ):
+                    st.caption(
+                        "자동 반영 **아님** — 내용 확인 후 "
+                        "`config/loan_regulations.json` 직접 수정하세요."
+                    )
+                    for _art in _reg["articles"][:10]:
+                        st.markdown(
+                            f"- [{_art['datetime']}] [{_art['title']}]({_art['url']})"
+                        )
 
         # ── 개발 히스토리 ─────────────────────────────────
         st.divider()
