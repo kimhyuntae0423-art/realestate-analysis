@@ -2267,30 +2267,31 @@ def _render_compare_view(
   <th rowspan="2" class="base">면적(㎡)</th>
   <th rowspan="2" class="base">매매가(억)</th>
   <th colspan="2" class="inv">🚀 투자수익</th>
-  <th colspan="2" class="yld">💰 임대수익</th>
   <th colspan="3" class="gap">🏠 갭투자</th>
+  <th colspan="2" class="yld">💰 임대수익</th>
   <th rowspan="2" class="base">점수</th>
 </tr>
 <tr>
   <th class="inv">연수익금(억)</th><th class="inv">연수익률(%)</th>
-  <th class="yld">연수익금(억)</th><th class="yld">연수익률(%)</th>
   <th class="gap">연수익금(억)</th><th class="gap">연수익률(%)</th><th class="gap">갭(억)</th>
+  <th class="yld">연수익금(억)</th><th class="yld">연수익률(%)</th>
 </tr>"""
 
         _rows = []
         for _, r in over.iterrows():
             ig = _n(r["🚀 예상수익금(억)"] * ann) if has_inv_g else "—"
             ir = _n(r["expected_roi_%"] * ann)    if has_inv_r else "—"
-            yg = _n(r["💰 연수익금(억)"])          if has_yld_g else "—"
-            yr = _n(r["annual_yield_%"])           if has_yld_r else "—"
             gg = _n(r["🏠 갭투자수익금(억)"] * ann) if has_gap_g else "—"
             gr = _n(r["🏠 갭투자수익률(%)"] * ann) if has_gap_r else "—"
             gv = _n(r["🏠 갭(억)"])               if has_gap_v else "—"
+            yg = _n(r["💰 연수익금(억)"])          if has_yld_g else "—"
+            yr = _n(r["annual_yield_%"])           if has_yld_r else "—"
             _rows.append(
                 f"<tr><td>{int(r['순위'])}</td><td>{r['지역']}</td><td>{r['apt_name']}</td>"
                 f"<td>{r['area_bucket']:.0f}</td><td>{r['매매가(억)']:.2f}</td>"
-                f"<td>{ig}</td><td>{ir}</td><td>{yg}</td><td>{yr}</td>"
-                f"<td>{gg}</td><td>{gr}</td><td>{gv}</td><td>{r['score']:.1f}</td></tr>"
+                f"<td>{ig}</td><td>{ir}</td>"
+                f"<td>{gg}</td><td>{gr}</td><td>{gv}</td>"
+                f"<td>{yg}</td><td>{yr}</td><td>{r['score']:.1f}</td></tr>"
             )
 
         st.markdown(
@@ -2338,18 +2339,19 @@ def _render_compare_view(
             show.insert(0, "순위", range(1, len(show) + 1))
             show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
             if "expected_roi_%" in show.columns and "required_equity" in show.columns:
-                show[f"예상수익금(억)"] = (
-                    show["expected_roi_%"] * show["required_equity"] / 100 / 10000
+                show["연수익률(%)"] = (show["expected_roi_%"] * ann).round(2)
+                show["연수익금(억)"] = (
+                    show["expected_roi_%"] * ann * show["required_equity"] / 100 / 10000
                 ).round(2)
             cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
-            if "expected_roi_%" in show.columns: cols.append("expected_roi_%")
-            if f"예상수익금(억)" in show.columns: cols.append(f"예상수익금(억)")
+            if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
+            if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
             render_df(show[cols].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
-                "expected_roi_%": f"예상수익률(%)",
                 "tier_label": "지역등급",
             }))
+            st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세)")
 
     with tab_gap:
         if gap.empty:
