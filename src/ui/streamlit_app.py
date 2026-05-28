@@ -2157,41 +2157,53 @@ def _render_compare_view(
             over["🏠 갭투자수익금(억)"] = (gain / 10000).round(2)
             over["🏠 갭투자수익률(%)"] = (gain / over["gap"] * 100).round(2)
 
-        # ── 2단 헤더: 상위(전략그룹) × 하위(수익금·수익률) ──
+        # ── 2단 헤더: 상위(전략그룹) × 하위(수익금·수익률), 전부 연환산 ──
+        ann = 12 / half_months  # 연환산 배수
+
         _mi: dict = {}
-        _mi[("", "순위")]     = over["순위"]
-        _mi[("", "지역")]     = over["지역"]
-        _mi[("", "단지")]     = over["apt_name"]
-        _mi[("", "면적(㎡)")] = over["area_bucket"]
+        _mi[("", "순위")]       = over["순위"]
+        _mi[("", "지역")]       = over["지역"]
+        _mi[("", "단지")]       = over["apt_name"]
+        _mi[("", "면적(㎡)")]   = over["area_bucket"]
         _mi[("", "매매가(억)")] = over["매매가(억)"]
 
         if "🚀 예상수익금(억)" in over.columns:
-            _mi[("🚀 투자수익", "수익금(억)")] = over["🚀 예상수익금(억)"]
+            _mi[("🚀 투자수익", "연수익금(억)")] = (over["🚀 예상수익금(억)"] * ann).round(2)
         if "expected_roi_%" in over.columns:
-            _mi[("🚀 투자수익", f"수익률({half_months}개월%)")] = over["expected_roi_%"]
+            _mi[("🚀 투자수익", "연수익률(%)")] = (over["expected_roi_%"] * ann).round(2)
 
-        if "💰 임대수익" not in [k[0] for k in _mi]:
-            pass
         if "💰 연수익금(억)" in over.columns:
             _mi[("💰 임대수익", "연수익금(억)")] = over["💰 연수익금(억)"]
         if "annual_yield_%" in over.columns:
-            _mi[("💰 임대수익", "연수익률(%연간)")] = over["annual_yield_%"]
+            _mi[("💰 임대수익", "연수익률(%)")] = over["annual_yield_%"]
 
         if "🏠 갭투자수익금(억)" in over.columns:
-            _mi[("🏠 갭투자", "수익금(억)")] = over["🏠 갭투자수익금(억)"]
+            _mi[("🏠 갭투자", "연수익금(억)")] = (over["🏠 갭투자수익금(억)"] * ann).round(2)
         if "🏠 갭투자수익률(%)" in over.columns:
-            _mi[("🏠 갭투자", f"수익률({half_months}개월%)")] = over["🏠 갭투자수익률(%)"]
+            _mi[("🏠 갭투자", "연수익률(%)")] = (over["🏠 갭투자수익률(%)"] * ann).round(2)
         if "🏠 갭(억)" in over.columns:
             _mi[("🏠 갭투자", "갭(억)")] = over["🏠 갭(억)"]
 
         _mi[("", "투자수익점수")] = over["score"].round(1)
 
         display_df = pd.DataFrame(_mi)
+
+        # 헤더 가운데 정렬 CSS
+        st.markdown("""
+<style>
+[data-testid="stDataFrame"] th,
+[data-testid="stDataFrame"] th > div {
+    text-align: center !important;
+    justify-content: center !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
         st.dataframe(display_df, hide_index=True, use_container_width=True)
         st.caption(
-            f"📅 수익금·수익률 기준 기간: 최근 **{half_months}개월** vs 이전 **{half_months}개월** 실거래 비교 "
-            f"(분석기간 {months}개월 ÷ 2). 연환산 참고 = 표시값 ÷ {half_months} × 12. "
-            f"💰 임대수익 연수익률만 진짜 연환산."
+            f"📅 전부 연환산 기준 (× 12 ÷ {half_months}). "
+            f"🚀·🏠 수치는 최근 {half_months}개월 실거래 추세를 연환산한 추정값 — 과거 추세 지속 보장 아님. "
+            f"💰 임대수익은 실제 연간 월세 수입."
         )
     elif any2:
         st.info(f"🔶 **2전략 이상 상위권 — {len(any2)}개 단지**")
