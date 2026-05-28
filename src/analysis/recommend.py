@@ -319,9 +319,11 @@ def _apply_gap_scores(
     # 상승 예상력: 상급지(입지) 60% + 시장강도(매수세) 40%
     df["appreciation_score"] = (df["tier_score"] * 0.6 + df["market_score"] * 0.4).clip(0, 100)
     # 종합점수: 시세차익 예측력 중심 (갭투자도 결국 시세차익 + 레버리지 알파)
+    # market_score는 백테스트에서 현재 데이터 기준(non-point-in-time)이라 노이즈 큼
+    # → tier_score 직접 사용 (단독 ρ=+0.443으로 가장 신뢰도 높음)
     df["score"] = (
-        df["appreciation_score"].rank(pct=True) * 0.75
-        + df["activity"].rank(pct=True) * 0.25
+        df["tier_score"].rank(pct=True) * 0.80
+        + df["activity"].rank(pct=True) * 0.20
     ) * 100
     df["score"] = df["score"].round(1)
     return df

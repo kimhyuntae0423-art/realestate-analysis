@@ -1225,10 +1225,10 @@ def page_strategy_backtest():
     with tab_gap:
         st.markdown("#### 🏠 갭투자 전략 백테스트 (4종)")
         st.markdown(
-            "**갭투자 점수 구성:** 상승예상(tier+시장강도) **75%** + 거래활성도 **25%**  \n"
+            "**갭투자 점수 구성:** 상급지 등급(tier) **80%** + 거래활성도 **20%**  \n"
             "갭투자도 결국 시세차익이 핵심 — 갭 크기는 진입 필터(시드 조건)로만 사용하고, "
             "점수는 얼마나 오를 곳인가를 기준으로 산정합니다.  \n"
-            "leverage_mult·jeonse_quality는 역상관(ρ≈−0.33) 확인으로 점수에서 제외됐으며, 표시 목적으로만 출력됩니다."
+            "leverage_mult·jeonse_quality·market_score는 역상관 또는 노이즈 확인으로 점수에서 제외됐으며, 표시 목적으로만 출력됩니다."
         )
 
         inner_a, inner_b, inner_c, inner_d = st.tabs([
