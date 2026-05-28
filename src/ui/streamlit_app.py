@@ -2165,15 +2165,12 @@ def render_recommend_tab(inputs: dict):
 
     seed_man = int(seed_eok * 10000)
 
-    # 헤더 - 현재 조건 요약
     from src.analysis.loan import get_ltv_pct, max_purchase_man
     ltv_규제 = get_ltv_pct("11680", ownership, first_time)
     ltv_비규제 = get_ltv_pct("99999", ownership, first_time)
-    # 규제·비규제 별 실제 최대 매수가 (시드 + LTV + cap + DSR 다 반영)
     max_buy_reg = max_purchase_man(seed_man, "11680", ownership, first_time, dsr_cap_man) if use_loan else seed_man
     max_buy_nonreg = max_purchase_man(seed_man, "99999", ownership, first_time, dsr_cap_man) if use_loan else seed_man
 
-    # 부대비용 포함 실제 최대 매수가 (격자 탐색 1000만원 단위)
     from src.analysis.costs import total_acquisition_cost_man as _tacm
     from src.analysis.loan import loan_capacity_man as _lcm
     def _max_buy_net(seed, rc, own, ft, dsr, loan_ok):
@@ -2190,16 +2187,6 @@ def render_recommend_tab(inputs: dict):
     max_buy_nonreg_net = _max_buy_net(seed_man, "99999", ownership, first_time, dsr_cap_man, use_loan)
     costs_reg    = _tacm(max_buy_reg_net,    ownership, first_time)
     costs_nonreg = _tacm(max_buy_nonreg_net, ownership, first_time)
-    header = (
-        f"**조건:** 시드 {seed_eok}억 · {ownership}"
-        f"{' · 생애최초' if first_time else ''}"
-        f"{' · 대출O' if use_loan else ' · 대출X'}"
-        f"  ·  LTV 규제 {ltv_규제:.0f}% / 비규제 {ltv_비규제:.0f}%"
-        f"  ·  규제지역 한도 cap 6억(15억↓) / 4억(15~25) / 2억(25↑)"
-    )
-    if use_dsr and dsr_cap_man is not None:
-        header += f"  ·  💳 **DSR 대출 한도 {dsr_cap_man/10000:.2f}억**"
-    st.markdown(header)
 
 
     if use_dsr and dsr_cap_man is not None and dsr_cap_man < 60000:
