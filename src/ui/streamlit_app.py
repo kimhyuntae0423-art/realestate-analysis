@@ -1681,7 +1681,14 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
 
     cc1, cc2 = st.columns([1, 1])
     with cc1:
-        st.markdown("##### 🏙️ 규제지역 (서울25 + 경기12)")
+        st.markdown("##### 🏙️ 규제지역 (서울25 + 경기12)",
+                    help=(
+                        "**서울** — 25개구 전체\n\n"
+                        "**경기** — 12곳\n"
+                        "수원시(장안·팔달·영통) · 성남시(수정·중원·분당) · "
+                        "안양시(동안) · 광명시 · 과천시 · 하남시 · 용인시(처인·수지)\n\n"
+                        "※ 2025-10-15 부동산 대책 기준, 2026-12-31까지 한시 적용"
+                    ))
         st.metric("최대 매수가", f"{actual_p_reg/10000:.2f} 억",
                   help=f"부대비용 {costs['total']/10000:.2f}억 차감 후 실매수가")
         loan_reg = loan_capacity_man(p_reg, "11680", ownership, first_time, dsr_cap_man)
