@@ -184,10 +184,10 @@ COL_SPEC = {
     "required_equity":  ("필요자기자본", "ueok"),
     "max_buy_price":    ("최대매수가", "ueok"),
     "affordable":       ("매수가능", "txt"),
-    "price_growth_%":   ("평당가상승률", "pct"),
+    "price_growth_%":   ("평당가상승률(분석기간½)", "pct"),
     "leverage":         ("레버리지(배)", "pct"),
-    "expected_roi_%":   ("예상자기자본수익률", "pct"),
-    "expected_gain":    ("예상평가차익", "ueok"),
+    "expected_roi_%":   ("예상자기자본수익률(분석기간½·비연환산)", "pct"),
+    "expected_gain":    ("예상평가차익(억·비연환산)", "ueok"),
     "seed_usage_%":     ("시드활용도", "pct"),
     "best_roi_%":       ("최고예상수익률", "pct"),
     "avg_growth_%":     ("평균상승률", "pct"),
@@ -2348,6 +2348,7 @@ def render_recommend_tab(inputs: dict):
         return
 
     if strategy == "🚀 투자수익":
+        half_mo = max(months // 2, 3)
         st.info(
             f"💡 **투자수익 전략** — 미래 상승을 노리는 **레버리지 매수**\n\n"
             f"- 자금구조: 자기자본 {seed_eok}억 + **LTV 대출** = 매매가\n"
@@ -2356,6 +2357,9 @@ def render_recommend_tab(inputs: dict):
             f"- 종합점수 = **호재({int(catalyst_weight*100)}%)** + **상급지등급({int(tier_weight*100)}%)** + **대장단지({int(prestige_weight*100)}%)** + 과거상승 + 레버리지수익률 + 시드활용\n"
             f"- 상급지등급: 2022~23 규제지역 해제 순서 기반 (강남3구·용산=100, 서울 비강남=80, 인천/경기=60, 지방=40)\n"
             f"- 대장단지: 시군구 내 평당가 백분위(60%) + 동(dong) 평당가 백분위(40%). 그 지역의 1군 단지에 가산점.\n\n"
+            f"📅 **수익률 기간 기준**: 분석기간 {months}개월 → 최근 **{half_mo}개월** vs 이전 **{half_mo}개월** 실거래 평당가 비교\n"
+            f"- **예상평가차익·예상자기자본수익률은 연환산이 아닌 {half_mo}개월치 가격 변화율 × 레버리지**\n"
+            f"- 연환산 참고치 = 표시값 ÷ {half_mo} × 12\n\n"
             f"⚙️ `config/catalysts.json`·`config/region_tiers.json` 직접 편집 가능"
         )
         rec = _cached_investment(seed_man, months, min_deals,
