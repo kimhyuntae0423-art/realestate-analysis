@@ -1989,6 +1989,7 @@ def _render_compare_view(
     ownership: str, first_time: bool, use_loan: bool,
     catalyst_weight: float, tier_weight: float, prestige_weight: float,
     dsr_cap_man, top_n: int, area_range, year_range,
+    max_buy_reg_net: int = 0, max_buy_nonreg_net: int = 0,
 ):
     """3전략 동시 비교 — 겹치는 단지가 높은 확신도."""
     st.markdown("### 🔀 3전략 동시 비교")
@@ -1996,6 +1997,11 @@ def _render_compare_view(
         "같은 조건으로 투자수익·갭투자·임대수익을 동시 실행합니다. "
         "여러 전략 상위권에 겹치는 단지일수록 확신도가 높습니다."
     )
+
+    if max_buy_reg_net > 0 or max_buy_nonreg_net > 0:
+        _ca, _cb = st.columns(2)
+        _ca.metric("🏙️ 규제지역 최대 매수가 (부대비용 포함)", f"{max_buy_reg_net/10000:.2f} 억")
+        _cb.metric("🏞️ 비규제지역 최대 매수가 (부대비용 포함)", f"{max_buy_nonreg_net/10000:.2f} 억")
 
     _prog = st.progress(0, text="🚀 투자수익 계산 중…")
     try:
@@ -2053,14 +2059,51 @@ def _render_compare_view(
             df["일치"] = df.apply(_badge, axis=1)
 
     # ── 교집합 섹션 ──
+    _key_cols = ["apt_name", "region_code", "area_bucket"]
+
     if all3:
         st.success(f"🏆 **3전략 모두 상위권 — {len(all3)}개 단지** | 시세차익 + 갭 진입 + 월세수익 동시 유망")
-        over = inv[inv["일치"] == "🏆 3전략"][["지역", "apt_name", "area_bucket", "trade_median", "score"]].copy()
+
+        # 베이스: 투자수익 DataFrame
+        _inv_cols = _key_cols + ["지역", "trade_median", "score"]
+        for _c in ["expected_roi_%", "required_equity"]:
+            if _c in inv.columns: _inv_cols.append(_c)
+        over = inv[inv["일치"] == "🏆 3전략"][_inv_cols].copy()
         over.insert(0, "순위", range(1, len(over) + 1))
         over["매매가(억)"] = (over["trade_median"] / 10000).round(2)
-        st.dataframe(over[["순위", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]]
-                     .rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수"}),
-                     hide_index=True, width='stretch')
+
+        # 갭투자 데이터 병합
+        if not gap.empty and "gap" in gap.columns:
+            _g = gap[gap["일치"] == "🏆 3전략"][_key_cols + ["gap"]].copy()
+            over = over.merge(_g, on=_key_cols, how="left")
+            over["🏠 갭(억)"] = (over["gap"] / 10000).round(2)
+
+        # 임대수익 데이터 병합
+        if not yld.empty and "annual_yield_%" in yld.columns:
+            _y = yld[yld["일치"] == "🏆 3전략"][_key_cols + ["annual_yield_%"]].copy()
+            over = over.merge(_y, on=_key_cols, how="left")
+
+        # 예상수익금 계산 (수익률 × 필요자본)
+        if "expected_roi_%" in over.columns and "required_equity" in over.columns:
+            over["🚀 예상수익금(억)"] = (
+                over["expected_roi_%"] * over["required_equity"] / 100 / 10000
+            ).round(2)
+
+        _show = ["순위", "지역", "apt_name", "area_bucket", "매매가(억)"]
+        if "🚀 예상수익금(억)" in over.columns: _show.append("🚀 예상수익금(억)")
+        if "expected_roi_%" in over.columns:    _show.append("expected_roi_%")
+        if "annual_yield_%" in over.columns:    _show.append("annual_yield_%")
+        if "🏠 갭(억)" in over.columns:         _show.append("🏠 갭(억)")
+        _show.append("score")
+
+        st.dataframe(
+            over[[c for c in _show if c in over.columns]].rename(columns={
+                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수",
+                "expected_roi_%": "🚀 예상수익률(%)", "annual_yield_%": "💰 연수익률(%)",
+            }),
+            column_config={"순위": st.column_config.NumberColumn("순위", format="%d")},
+            hide_index=True, width='stretch'
+        )
     elif any2:
         st.info(f"🔶 **2전략 이상 상위권 — {len(any2)}개 단지**")
     else:
@@ -2210,6 +2253,8 @@ def render_recommend_tab(inputs: dict):
             top_n=top_n,
             area_range=area_range,
             year_range=year_range,
+            max_buy_reg_net=max_buy_reg_net,
+            max_buy_nonreg_net=max_buy_nonreg_net,
         )
         return
 
