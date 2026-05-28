@@ -531,7 +531,7 @@ def _sidebar_nav() -> str:
             key="nav_page",
         )
         st.divider()
-        if st.button("🔄 캐시 비우기", use_container_width=True, key="nav_clear",
+        if st.button("🔄 캐시 비우기", width='stretch', key="nav_clear",
                      help="데이터 수집 후 또는 강제 재계산 시"):
             st.cache_data.clear()
             st.success("캐시 비움")
@@ -577,7 +577,7 @@ def _sidebar_nav() -> str:
                 ]
 
             if st.button("🔄 데이터 수집 (최근 3개월)",
-                         use_container_width=True, type="primary", key="nav_refresh"):
+                         width='stretch', type="primary", key="nav_refresh"):
                 with st.spinner("국토부 실거래 수집 중… 5~10분 소요"):
                     res = _refresh_recent_data(months=3, do_supply=False,
                                                regions=selected_regions)
@@ -838,7 +838,7 @@ def page_invest():
                 )
 
             submitted = st.form_submit_button(
-                "🔍 검색", type="primary", use_container_width=True,
+                "🔍 검색", type="primary", width='stretch',
             )
 
     inputs = dict(
@@ -936,11 +936,11 @@ def invest_sidebar_inputs() -> dict:
                          "슬라이더 하나로 전 지역 가중치 동시 조절.",
                 )
             submitted = st.form_submit_button(
-                "🔍 검색", type="primary", use_container_width=True,
+                "🔍 검색", type="primary", width='stretch',
             )
 
         st.divider()
-        if st.button("🔄 캐시 비우기", use_container_width=True, key="i_clear",
+        if st.button("🔄 캐시 비우기", width='stretch', key="i_clear",
                      help="새 데이터 수집 후 또는 강제 재계산 시"):
             st.cache_data.clear()
             st.success("캐시 비움. 다음 검색은 재실행됩니다.")
@@ -1135,12 +1135,12 @@ def page_strategy_backtest():
                 fig_cmp.update_traces(textposition="outside")
                 fig_cmp.update_layout(coloraxis_showscale=False,
                                        yaxis_title="예측력 (Spearman ρ, 참고용)")
-                st.plotly_chart(fig_cmp, use_container_width=True)
+                st.plotly_chart(fig_cmp, width='stretch')
 
                 st.markdown("**수치 상세** — 상위10% 적중률 랜덤 기대치 = **20%**, 30% 이상이면 활용 가능")
                 display_cmp = valid_cmp[["전략", "신뢰도", "표본수", "상위10% 적중률(%)", "ρ"]].copy()
                 display_cmp["ρ"] = display_cmp["ρ"].apply(lambda v: f"{v:+.3f}")
-                st.dataframe(display_cmp, hide_index=True, use_container_width=True)
+                st.dataframe(display_cmp, hide_index=True, width='stretch')
 
             for _, row in df_cmp[df_cmp["ρ"].isna()].iterrows():
                 st.warning(f"{row['전략']}: {row.get('오류', '알 수 없는 오류')}")
@@ -1212,7 +1212,7 @@ def page_strategy_backtest():
                          "방향": "↑ 양 (높을수록 오름)" if v > 0.05 else ("↓ 음 (높을수록 덜 오름)" if v < -0.05 else "→ 중립")}
                         for k, v in ri_apt.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
-                    st.dataframe(comp_inv, hide_index=True, use_container_width=True)
+                    st.dataframe(comp_inv, hide_index=True, width='stretch')
                     st.caption(
                         f"📌 단지 ρ={ri_apt.spearman:+.3f} / 시군구 ρ={ri_reg.spearman:+.3f}. "
                         + ("두 단위 모두 유의미 — 점수를 신뢰할 수 있습니다." if min(ri_apt.spearman, ri_reg.spearman) >= 0.3
@@ -1262,7 +1262,7 @@ def page_strategy_backtest():
                              "방향": "↑ 양 (상승 연관)" if v > 0.05 else ("↓ 음 (역연관)" if v < -0.05 else "→ 중립")}
                             for k, v in ra.component_corr.items()
                         ]).sort_values("ρ", ascending=False)
-                        st.dataframe(comp, hide_index=True, use_container_width=True)
+                        st.dataframe(comp, hide_index=True, width='stretch')
                         if not ra.raw.empty:
                             fig = px.scatter(
                                 ra.raw, x="score", y="actual_growth",
@@ -1271,7 +1271,7 @@ def page_strategy_backtest():
                                 title=f"갭투자 점수 vs 실제 매매가 상승률 (ρ={ra.spearman:+.3f})",
                                 trendline="ols",
                             )
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
                             st.caption("점들이 우상향(/)이면 점수가 상승 예측, 우하향(\\)이면 역상관")
                     except ValueError as e:
                         st.error(f"계산 실패: {e}")
@@ -1308,7 +1308,7 @@ def page_strategy_backtest():
                         }).set_index("")
                         st.markdown("**혼동 행렬 (Confusion Matrix)**")
                         st.caption("TP=맞게 위험 경고, FP=헛경보(실제 안전), FN=놓친 위험, TN=맞게 안전 판정")
-                        st.dataframe(conf_df, use_container_width=False)
+                        st.dataframe(conf_df, width='content')
                         st.caption(
                             f"📌 F1={rb.f1:.3f} → "
                             + ("실용적 수준 — 역전세 회피에 이 지표를 활용할 수 있습니다." if rb.f1 >= 0.5
@@ -1352,8 +1352,8 @@ def page_strategy_backtest():
                                 title=f"TOP-{top_n_c} 자기자본 수익률",
                             )
                             fig_roe.update_xaxes(tickangle=45)
-                            st.plotly_chart(fig_roe, use_container_width=True)
-                            st.dataframe(show, hide_index=True, use_container_width=True)
+                            st.plotly_chart(fig_roe, width='stretch')
+                            st.dataframe(show, hide_index=True, width='stretch')
                         st.caption(
                             f"📌 갭 1억으로 ROE {rc.avg_roe_pct:+.2f}% = "
                             f"평균 {abs(rc.avg_roe_pct)/100:.2f}억 수익. 보유 {rc.hold_months}개월."
@@ -1397,13 +1397,13 @@ def page_strategy_backtest():
                             fig_a = px.bar(valid_s, x="as_of", y="spearman",
                                             labels={"as_of": "기준 시점", "spearman": "ρ"}, title="시점별 ρ")
                             fig_a.add_hline(y=0, line_dash="dash", line_color="gray")
-                            st.plotly_chart(fig_a, use_container_width=True)
-                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+                            st.plotly_chart(fig_a, width='stretch')
+                    st.dataframe(rd.summary, hide_index=True, width='stretch')
                 if "risk" in wf_results:
                     rd = wf_results["risk"]
                     st.markdown("**B. 역전세 리스크 walk-forward**")
                     st.metric("평균 F1", f"{rd.avg_f1:.3f}", delta=f"±{rd.std_f1:.3f}")
-                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+                    st.dataframe(rd.summary, hide_index=True, width='stretch')
                 if "simulation" in wf_results:
                     rd = wf_results["simulation"]
                     st.markdown("**C. 수익 시뮬레이션 walk-forward**")
@@ -1416,8 +1416,8 @@ def page_strategy_backtest():
                             title="시점별 평균 ROE",
                         )
                         fig_c.add_hline(y=0, line_dash="dash", line_color="gray")
-                        st.plotly_chart(fig_c, use_container_width=True)
-                    st.dataframe(rd.summary, hide_index=True, use_container_width=True)
+                        st.plotly_chart(fig_c, width='stretch')
+                    st.dataframe(rd.summary, hide_index=True, width='stretch')
 
     # ── 임대수익 탭 ───────────────────────────────────────────────
     with tab_yield:
@@ -1449,7 +1449,7 @@ def page_strategy_backtest():
                                  else ("역상관" if v < -0.1 else "중립")}
                         for k, v in ry.component_corr.items()
                     ]).sort_values("ρ", ascending=False)
-                    st.dataframe(comp_y, hide_index=True, use_container_width=True)
+                    st.dataframe(comp_y, hide_index=True, width='stretch')
 
                     if not ry.raw.empty and "yield_quality" in ry.raw.columns:
                         fig_y = px.scatter(
@@ -1460,7 +1460,7 @@ def page_strategy_backtest():
                             trendline="ols",
                         )
                         st.caption("우상향(/) 추세선이면 yield_quality 높은 곳이 실제로도 올랐다는 것")
-                        st.plotly_chart(fig_y, use_container_width=True)
+                        st.plotly_chart(fig_y, width='stretch')
 
                     if ry.spearman >= 0.3:
                         st.success(f"📌 ρ = {ry.spearman:+.3f} — 현금흐름·상승잠재력 동시 선별 확인")
@@ -1547,8 +1547,8 @@ def page_region():
         st.caption("금액 단위: 억원 (1억원 = 10,000 만원). 평당가는 만원/평.")
         monthly = yoy_change(monthly_summary(df_t))
         if not monthly.empty:
-            st.plotly_chart(chart_monthly_price(monthly, label), use_container_width=True)
-            st.plotly_chart(chart_monthly_ppp(monthly), use_container_width=True)
+            st.plotly_chart(chart_monthly_price(monthly, label), width='stretch')
+            st.plotly_chart(chart_monthly_ppp(monthly), width='stretch')
             render_table(monthly)
 
         st.markdown("---")
@@ -1577,7 +1577,7 @@ def page_region():
                             line=dict(color="rgba(214,39,40,0.2)"), name="상한",
                             fill="tonexty", fillcolor="rgba(214,39,40,0.1)",
                             showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             fc_only = f[f["is_forecast"]].copy()
             st.markdown("**향후 6개월 예측값**")
             st.dataframe(
@@ -1604,7 +1604,7 @@ def page_region():
                         labels={"평균매매가_억원": "평균매매가 (억원)", "ym": "년월"},
                         title=f"'{sel}' 월별 평균가",
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 st.markdown("**최근 거래 내역 (최대 200건)**")
                 recent = sub.sort_values("deal_date", ascending=False).head(200)
                 show_cols = ["deal_date", "apt_name", "dong", "area_m2", "floor",
@@ -1634,7 +1634,7 @@ def page_region():
                          labels={"apt_name": "단지명", "change_%": "변동률 (%)"},
                          title="평당가 상승률 TOP 20")
             fig.update_xaxes(tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 
 
@@ -1917,7 +1917,7 @@ def render_map_tab(months: int):
         height=650,
     )
     fig.update_layout(margin={"r": 0, "t": 30, "l": 0, "b": 0})
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.markdown("### 지역 요약 (테이블)")
     show = map_df.drop(columns=["lat", "lon", "region_code"]).sort_values("평당가(만원/평)", ascending=False)
@@ -2047,7 +2047,7 @@ def _render_compare_view(
         over["매매가(억)"] = (over["trade_median"] / 10000).round(2)
         st.dataframe(over[["순위", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]]
                      .rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)", "score": "투자수익점수"}),
-                     hide_index=True, use_container_width=True)
+                     hide_index=True, width='stretch')
     elif any2:
         st.info(f"🔶 **2전략 이상 상위권 — {len(any2)}개 단지**")
     else:
@@ -2068,7 +2068,7 @@ def _render_compare_view(
                     lambda x: " · ".join(sorted(set(x)))
                 ).reset_index()
                 st.dataframe(piv.rename(columns={"apt_name": "단지", "area_bucket": "면적(㎡)"}),
-                             hide_index=True, use_container_width=True)
+                             hide_index=True, width='stretch')
 
     st.markdown("---")
 
@@ -2088,7 +2088,7 @@ def _render_compare_view(
             st.dataframe(show[cols].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "expected_roi_%": "예상수익률(%)", "tier_label": "지역등급",
-            }), hide_index=True, use_container_width=True)
+            }), hide_index=True, width='stretch')
 
     with tab_gap:
         if gap.empty:
@@ -2103,7 +2103,7 @@ def _render_compare_view(
             st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "jeonse_ratio": "전세가율(%)", "jeonse_risk": "역전세리스크",
-            }), hide_index=True, use_container_width=True)
+            }), hide_index=True, width='stretch')
 
     with tab_yld:
         if yld.empty:
@@ -2120,7 +2120,7 @@ def _render_compare_view(
             st.dataframe(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "annual_yield_%": "연수익률(%)",
-            }), hide_index=True, use_container_width=True)
+            }), hide_index=True, width='stretch')
 
 
 def render_recommend_tab(inputs: dict):
@@ -2607,7 +2607,7 @@ def render_recommend_tab(inputs: dict):
             rc1, rc2 = st.columns([1, 3])
             with rc1:
                 st.markdown("**역전세 리스크 분포**")
-                st.dataframe(risk_dist, hide_index=True, use_container_width=True)
+                st.dataframe(risk_dist, hide_index=True, width='stretch')
 
             # 지역별 요약 집계
             rg = gap_rec.groupby("region_code").agg(
@@ -2644,7 +2644,7 @@ def render_recommend_tab(inputs: dict):
                 "risk_n": "역전세위험",
             })
             with rc2:
-                st.dataframe(rg_show, hide_index=True, use_container_width=True, height=380)
+                st.dataframe(rg_show, hide_index=True, width='stretch', height=380)
 
     st.markdown(f"### 🎯 단지·평형 추천 TOP {top_n}")
     # 🛡️ 시드 안전망 + 매매가 한도 안전망 (지역별 max_purchase 계산해서 매매가 자체도 컷)
