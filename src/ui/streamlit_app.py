@@ -2186,6 +2186,7 @@ def _render_compare_view(
 
     # ── 교집합 섹션 ──
     _key_cols = ["apt_name", "region_code", "area_bucket"]
+    ann = 12 / half_months
 
     if all3:
         st.success(f"🏆 **3전략 모두 상위권 — {len(all3)}개 단지** | 시세차익 + 갭 진입 + 월세수익 동시 유망")
@@ -2230,7 +2231,6 @@ def _render_compare_view(
             over["🏠 갭투자수익률(%)"] = (gain / over["gap"] * 100).round(2)
 
         # ── HTML 2단 헤더 테이블 (rowspan/colspan, 전부 연환산) ──
-        ann = 12 / half_months
 
         has_inv_g = "🚀 예상수익금(억)" in over.columns
         has_inv_r = "expected_roi_%" in over.columns
