@@ -1649,62 +1649,100 @@ def page_portfolio_strategy():
     def _prop_block(prefix: str, default_region: str = "서울 강남구",
                     default_buy: int = 50_000, default_est: int = 80_000,
                     default_loan: int = 20_000) -> dict:
-        name = st.text_input("단지명", value="", key=f"{prefix}_name",
-                             placeholder="예: 반포자이")
-        code = _rsel("지역", f"{prefix}_region", default_region)
-        buy  = st.number_input("매수가 (만원)", min_value=0, value=default_buy,
-                               step=1_000, key=f"{prefix}_buy")
-        est  = st.number_input("현재 추정 시세 (만원)", min_value=0, value=default_est,
-                               step=1_000, key=f"{prefix}_est")
-        loan = st.number_input("대출 잔액 (만원)", min_value=0, value=default_loan,
-                               step=1_000, key=f"{prefix}_loan")
-        c1, c2 = st.columns(2)
-        with c1:
-            hold = st.number_input("보유기간 (년)", min_value=0.0, value=5.0,
+        """컴팩트 2~3열 병렬 레이아웃으로 한 물건 입력 폼을 렌더링."""
+        # 행 1: 단지명 + 지역
+        r1a, r1b = st.columns([2, 3])
+        with r1a:
+            name = st.text_input("단지명", value="", key=f"{prefix}_name",
+                                 placeholder="예: 반포자이")
+        with r1b:
+            code = _rsel("지역", f"{prefix}_region", default_region)
+
+        # 행 2: 매수가 / 현재 시세 / 대출 잔액
+        r2a, r2b, r2c = st.columns(3)
+        with r2a:
+            buy = st.number_input("매수가(만원)", 0, value=default_buy,
+                                  step=1_000, key=f"{prefix}_buy")
+        with r2b:
+            est = st.number_input("현재 시세(만원)", 0, value=default_est,
+                                  step=1_000, key=f"{prefix}_est")
+        with r2c:
+            loan = st.number_input("대출 잔액(만원)", 0, value=default_loan,
+                                   step=1_000, key=f"{prefix}_loan")
+
+        # 행 3: 보유기간 / 실거주 / 체크박스 3개
+        r3a, r3b, r3c, r3d, r3e = st.columns([1.2, 1.2, 1.5, 1.5, 1.5])
+        with r3a:
+            hold = st.number_input("보유(년)", 0.0, value=5.0,
                                    step=0.5, key=f"{prefix}_hold")
-        with c2:
-            resi = st.number_input("실거주 기간 (년)", min_value=0.0, value=2.0,
+        with r3b:
+            resi = st.number_input("실거주(년)", 0.0, value=2.0,
                                    step=0.5, key=f"{prefix}_resi")
-        sole = st.checkbox("1세대 1주택", value=True, key=f"{prefix}_sole",
-                           help="이 집만 보유 중이면 체크 (양도세 비과세 판단)")
-        adj  = st.checkbox("조정대상지역", value=True, key=f"{prefix}_adj")
-        sur  = st.checkbox("다주택 중과 적용", value=False, key=f"{prefix}_sur")
-        st.markdown("**임대 현황**")
-        tenant = st.selectbox("유형", TENANT_OPTS, key=f"{prefix}_tenant")
+        with r3c:
+            sole = st.checkbox("1주택", value=True, key=f"{prefix}_sole",
+                               help="이 집만 보유 중 (양도세 비과세 판단)")
+        with r3d:
+            adj = st.checkbox("조정지역", value=True, key=f"{prefix}_adj")
+        with r3e:
+            sur = st.checkbox("중과 적용", value=False, key=f"{prefix}_sur",
+                              help="다주택 양도세 중과 (보수적 시뮬레이션용)")
+
+        st.caption("임대 현황")
+        # 행 4: 임대 유형 선택
+        tenant = st.radio("", TENANT_OPTS, horizontal=True, key=f"{prefix}_tenant",
+                          label_visibility="collapsed")
+
         jdep = rdep = rmon = 0; cend = ""; buf = 2
+        renewal_used = False; notified = False
+
         if tenant in ("전세", "월세"):
+            # 행 5: 보증금 계열
             if tenant == "전세":
-                jdep = st.number_input("전세 보증금 (만원)", 0, value=0,
-                                       step=1_000, key=f"{prefix}_jdep")
+                r5a, r5b, r5c = st.columns(3)
+                with r5a:
+                    jdep = st.number_input("전세보증금(만원)", 0, value=0,
+                                           step=1_000, key=f"{prefix}_jdep")
+                with r5b:
+                    ed = st.date_input("계약 만료일", key=f"{prefix}_end",
+                                       value=date.today())
+                    cend = ed.isoformat() if ed else ""
+                with r5c:
+                    buf = st.number_input("이사 준비(개월)", 0, value=2,
+                                         step=1, key=f"{prefix}_buf")
             else:
-                rdep = st.number_input("월세 보증금 (만원)", 0, value=0,
-                                       step=500, key=f"{prefix}_rdep")
-                rmon = st.number_input("월세 (만원/월)", 0, value=0,
-                                       step=10, key=f"{prefix}_rmon")
-            c3, c4 = st.columns(2)
-            with c3:
-                ed = st.date_input("계약 만료일", key=f"{prefix}_end",
-                                   value=date.today())
-                cend = ed.isoformat() if ed else ""
-            with c4:
-                buf = st.number_input("이사 준비 기간 (개월)", 0, value=2,
-                                      step=1, key=f"{prefix}_buf")
-            st.markdown("**계약갱신청구권**")
-            renewal_used = st.checkbox(
-                "임차인이 갱신청구권을 이미 사용함",
-                value=False, key=f"{prefix}_renewal_used",
-                help="임차인이 갱신청구권(2년 연장 권리)을 이전 계약에서 이미 사용한 경우 체크"
-            )
-            notified = st.checkbox(
-                "임대인이 갱신 거절 통보를 완료함",
-                value=False, key=f"{prefix}_notified",
-                help="계약 만료 2개월 전까지 임차인에게 갱신 안 함을 서면 통보한 경우 체크"
-            )
+                r5a, r5b, r5c, r5d = st.columns(4)
+                with r5a:
+                    rdep = st.number_input("보증금(만원)", 0, value=0,
+                                          step=500, key=f"{prefix}_rdep")
+                with r5b:
+                    rmon = st.number_input("월세(만원)", 0, value=0,
+                                          step=10, key=f"{prefix}_rmon")
+                with r5c:
+                    ed = st.date_input("계약 만료일", key=f"{prefix}_end",
+                                       value=date.today())
+                    cend = ed.isoformat() if ed else ""
+                with r5d:
+                    buf = st.number_input("이사 준비(개월)", 0, value=2,
+                                         step=1, key=f"{prefix}_buf")
+
+            # 행 6: 갱신청구권 체크박스
+            r6a, r6b = st.columns(2)
+            with r6a:
+                renewal_used = st.checkbox(
+                    "갱신청구권 이미 사용됨",
+                    value=False, key=f"{prefix}_renewal_used",
+                    help="임차인이 이전 계약에서 갱신청구권을 이미 사용한 경우")
+            with r6b:
+                notified = st.checkbox(
+                    "갱신 거절 통보 완료",
+                    value=False, key=f"{prefix}_notified",
+                    help="임대인이 만료 2개월 전까지 갱신 안 함을 서면 통보한 경우")
+
             # 실시간 갱신 리스크 경고
             if cend and not renewal_used and not notified:
                 from src.analysis.portfolio_strategy import calc_renewal_risk
-                from dataclasses import dataclass
-                @dataclass
+                from dataclasses import dataclass as _dc
+                @_dc
                 class _P:
                     tenant_type: str; contract_end_date: str
                     renewal_right_used: bool; notified_nonrenewal: bool
@@ -1715,9 +1753,7 @@ def page_portfolio_strategy():
                     st.warning(_risk["message"])
                 elif _risk["risk_level"] == "medium" and _risk["days_to_deadline"] is not None:
                     st.info(_risk["message"])
-        else:
-            renewal_used = False
-            notified     = False
+
         return dict(
             label=name or prefix, region_code=code, apt_name=name,
             acquisition_price_man=float(buy), estimated_price_man=float(est),
@@ -1793,37 +1829,25 @@ def page_portfolio_strategy():
     kws_mine    = []
     kws_partner = []
 
-    # ── 그리드 배치 ─────────────────────────────────────────────
-    # 파트너가 없으면 1열 전체, 있으면 2열 나란히
-    if not show_partner:
-        # 내 물건만 — 전체 너비 사용
-        for i in range(n_mine):
-            label = f"👤 내 {i+1}번째 부동산" if n_mine > 1 else "👤 내 부동산"
+    # ── 위→아래 순차 배치 (좌우 분리 없음) ────────────────────────
+    # 내 물건 먼저, 파트너 물건 그 아래
+    for i in range(n_mine):
+        label = f"👤 내 {i+1}번째 부동산" if n_mine > 1 else "👤 내 부동산"
+        with st.expander(label, expanded=True):
+            kws_mine.append(_prop_block(
+                f"mine_{i}",
+                default_region=MINE_DEFAULTS[i % len(MINE_DEFAULTS)],
+            ))
+
+    if show_partner and n_partner > 0:
+        st.divider()
+        for i in range(n_partner):
+            label = f"👥 파트너 {i+1}번째 부동산" if n_partner > 1 else "👥 파트너 부동산"
             with st.expander(label, expanded=True):
-                kws_mine.append(_prop_block(
-                    f"mine_{i}",
-                    default_region=MINE_DEFAULTS[i % len(MINE_DEFAULTS)],
+                kws_partner.append(_prop_block(
+                    f"partner_{i}",
+                    default_region=PARTNER_DEFAULTS[i % len(PARTNER_DEFAULTS)],
                 ))
-    else:
-        # 나/파트너 2열 나란히
-        for i in range(max(n_mine, n_partner)):
-            c_mine, c_partner = st.columns(2)
-            with c_mine:
-                if i < n_mine:
-                    label = f"👤 내 {i+1}번째" if n_mine > 1 else "👤 내 부동산"
-                    with st.expander(label, expanded=True):
-                        kws_mine.append(_prop_block(
-                            f"mine_{i}",
-                            default_region=MINE_DEFAULTS[i % len(MINE_DEFAULTS)],
-                        ))
-            with c_partner:
-                if i < n_partner:
-                    label = f"👥 파트너 {i+1}번째" if n_partner > 1 else "👥 파트너 부동산"
-                    with st.expander(label, expanded=True):
-                        kws_partner.append(_prop_block(
-                            f"partner_{i}",
-                            default_region=PARTNER_DEFAULTS[i % len(PARTNER_DEFAULTS)],
-                        ))
 
     # ── 목표 부동산 & 재무 ───────────────────────────────────────
     st.divider()
