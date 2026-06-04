@@ -16,3 +16,5 @@ logs/
 *.csv
 streamlit_out.txt
 streamlit_err.txt
+# GitHub Actions 주간 수집 결과는 추적
+!data/exports/*.csv

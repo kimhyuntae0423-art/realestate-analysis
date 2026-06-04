@@ -1,0 +1,62 @@
+name: 주간 부동산 데이터 수집
+
+on:
+  schedule:
+    # 매주 월요일 00:00 UTC = 09:00 KST
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: realestate-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 의존성 설치
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests python-dotenv "SQLAlchemy>=2.0" pandas numpy xmltodict tqdm pydantic statsmodels openpyxl
+
+      - name: DB 초기화
+        run: python scripts/init_db.py
+        env:
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+
+      - name: 데이터 수집 (주요 6개 지역, 최근 3개월)
+        run: |
+          python scripts/collect_data.py \
+            --regions 11680,11650,11710,11440,11170,41135 \
+            --months 3 \
+            --skip-reg-news
+        env:
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+
+      - name: 요약 CSV 내보내기
+        run: python scripts/export_summary.py
+        env:
+          DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+
+      - name: 변경사항 커밋 & 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/exports/
+          git diff --cached --quiet || \
+            git commit -m "data: 자동 갱신 $(date -u '+%Y-%m-%d %H:%M') UTC"
+          git push
