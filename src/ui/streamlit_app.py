@@ -1769,12 +1769,15 @@ def page_portfolio_strategy():
     with col_f:
         with st.container(border=True):
             st.markdown("#### 재무 정보")
-            income   = st.number_input("연 소득 합산 (만원, 0=DSR 미계산)",
-                                       0, value=0, step=500, key="income")
-            ex_pay   = st.number_input("기존 월 원리금 (만원)",
-                                       0, value=0, step=10, key="ex_pay")
-            int_rent = st.number_input("임시 거주 월세 (만원/월, 시나리오A용)",
-                                       0, value=0, step=10, key="int_rent")
+            cash_seed = st.number_input("현재 보유 현금 (만원)",
+                                        0, value=0, step=1_000, key="cash_seed",
+                                        help="부동산 매도 외 이미 가지고 있는 현금·예금")
+            income    = st.number_input("연 소득 합산 (만원, 0=DSR 미계산)",
+                                        0, value=0, step=500, key="income")
+            ex_pay    = st.number_input("기존 월 원리금 (만원)",
+                                        0, value=0, step=10, key="ex_pay")
+            int_rent  = st.number_input("임시 거주 월세 (만원/월, 시나리오A용)",
+                                        0, value=0, step=10, key="int_rent")
 
     if st.button("시나리오 분석 실행", type="primary", use_container_width=True):
         from datetime import date as _date
@@ -1792,13 +1795,16 @@ def page_portfolio_strategy():
             target=target,
             annual_income_man=float(income),
             existing_monthly_payment_man=float(ex_pay),
+            current_cash_man=float(cash_seed),
         )
 
         def _eok(v: float) -> str:
             return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
 
         rec = result["recommended_scenario"]
-        tab1, tab2, tab3 = st.tabs(["💰 순수령액 & 매수력", "📋 시나리오 비교", "📅 타임라인 & 자금흐름"])
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "💰 순수령액 & 매수력", "🏆 최적 매도 순서", "📋 시나리오 비교", "📅 타임라인 & 자금흐름"
+        ])
 
         with tab1:
             st.markdown("#### 부동산별 매도 순수령액")
@@ -1818,11 +1824,14 @@ def page_portfolio_strategy():
                 })
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
             st.caption("⚠️ 양도세 추정값. 실제 세액은 세무사 확인 필수.")
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3, m4, m5 = st.columns(5)
             with m1: st.metric("내 부동산 합계",  _eok(result["equity_mine_man"]))
             with m2: st.metric("파트너 합계",      _eok(result["equity_partner_man"]))
-            with m3: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]))
-            with m4: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
+            with m3: st.metric("현금 시드",        _eok(result["current_cash_man"]),
+                               help="직접 입력한 보유 현금")
+            with m4: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
+                               help="내 부동산 + 파트너 + 현금 합계")
+            with m5: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
             acq_t = result["target_acquisition_cost"]["total"]
             min_needed = t_min + acq_t; max_needed = t_max + acq_t
             total_power = result["combined_equity_man"] + result["effective_loan_man"]
@@ -1833,7 +1842,63 @@ def page_portfolio_strategy():
             else:
                 st.error(f"목표 하한도 미달 — {_eok(min_needed - total_power)} 부족")
 
+        # ══ TAB 2: 최적 매도 순서 ══════════════════════════════
         with tab2:
+            from src.analysis.portfolio_strategy import recommend_sell_order
+            order = recommend_sell_order(
+                props_mine=props_mine,
+                props_partner=props_partner,
+                sales_mine=result["sales_mine"],
+                sales_partner=result["sales_partner"],
+                target=target,
+                current_cash_man=float(cash_seed),
+            )
+
+            st.markdown("#### 전략적 매도 순서 추천")
+            st.caption("점수 = 계약 긴급도 + 세금 부담 + 순수령액 크기 + 비과세 안정성 종합")
+
+            # 헤드라인 추천
+            first = order[0]
+            last  = order[-1]
+            st.success(
+                f"**먼저 팔 것:** {first['owner']} · {first['label']}  "
+                f"({_eok(first['net_man'])} 확보)  \n"
+                f"**마지막에 팔 것:** {last['owner']} · {last['label']}  "
+                f"({_eok(last['net_man'])} — 잔금 충당용)"
+            )
+
+            # 순서별 카드
+            for item in order:
+                medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"][min(item["rank"]-1, 5)]
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
+                    with c1:
+                        st.markdown(f"### {medal}")
+                    with c2:
+                        st.markdown(f"**{item['owner']} — {item['label']}**")
+                        st.caption(f"임대: {item['tenant_type']}  |  양도세 판정: {item['tax_note']}")
+                    with c3:
+                        st.metric("순수령액", _eok(item["net_man"]))
+                    with c4:
+                        color = "normal" if item["can_buy_target"] else "off"
+                        st.metric("이 시점 누적 자금", _eok(item["cumulative_cash_man"]),
+                                  delta="목표 하한 달성" if item["can_buy_target"] else "목표 미달",
+                                  delta_color=color)
+
+                    st.markdown("**근거:**")
+                    for r in item["reasons"]:
+                        st.markdown(f"- {r}")
+
+            # 현금 시드 표시
+            if cash_seed > 0:
+                st.info(f"현재 보유 현금 {_eok(float(cash_seed))} 포함 — 첫 번째 매도 전에도 계약금으로 활용 가능")
+
+            st.caption(
+                "⚠️ 이 순서는 점수 모델 기반 참고용입니다. "
+                "실제 매도 순서는 세무사·중개사와 함께 결정하세요."
+            )
+
+        with tab3:
             for sc in result["scenarios"]:
                 is_rec = sc["label"].startswith(rec)
                 with st.expander(("✅ **[추천]** " if is_rec else "") + sc["label"], expanded=is_rec):
@@ -1866,7 +1931,7 @@ def page_portfolio_strategy():
 | **P** | 매도가 20% 낮아도 자금 계획이 성립하나요? |
 """)
 
-        with tab3:
+        with tab4:
             sc_labels   = [s["label"] for s in result["scenarios"]]
             default_idx = next((i for i, l in enumerate(sc_labels) if l.startswith(rec)), 0)
             chosen      = st.selectbox("시나리오 선택", sc_labels, index=default_idx, key="tl_sc")

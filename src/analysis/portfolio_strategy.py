@@ -126,6 +126,7 @@ def plan_scenarios_multi(
     target: TargetProperty,
     annual_income_man: float = 0.0,
     existing_monthly_payment_man: float = 0.0,
+    current_cash_man: float = 0.0,
 ) -> dict:
     """여러 부동산을 보유한 두 사람의 처분·매수 시나리오.
 
@@ -137,7 +138,7 @@ def plan_scenarios_multi(
 
     equity_mine    = sum(s["net_man"] for s in sales_mine)
     equity_partner = sum(s["net_man"] for s in sales_partner)
-    combined       = equity_mine + equity_partner
+    combined       = equity_mine + equity_partner + current_cash_man
     total_count    = len(props_mine) + len(props_partner)
 
     dsr_cap = 0.0
@@ -235,6 +236,7 @@ def plan_scenarios_multi(
         "props_partner": props_partner,
         "equity_mine_man": round(equity_mine),
         "equity_partner_man": round(equity_partner),
+        "current_cash_man": round(current_cash_man),
         "combined_equity_man": round(combined),
         "dsr_loan_limit_man": round(dsr_cap),
         "effective_loan_man": round(_loan_cap(target, "무주택", dsr_cap)),
@@ -245,6 +247,134 @@ def plan_scenarios_multi(
         "prop_a_sale": sales_mine[0] if sales_mine else {},
         "prop_b_sale": sales_partner[0] if sales_partner else {},
     }
+
+
+def recommend_sell_order(
+    props_mine: list,
+    props_partner: list,
+    sales_mine: list,
+    sales_partner: list,
+    target: TargetProperty,
+    current_cash_man: float = 0.0,
+) -> list:
+    """전략적 매도 순서 추천.
+
+    각 부동산을 점수화해 '먼저 팔면 유리한 순서'로 정렬한다.
+
+    점수 기준 (높을수록 먼저 팔기 유리):
+      1. 계약 만료 긴급도   (30점) - 만료일 빠를수록 높음
+      2. 세금 부담 낮음     (25점) - 양도세/시세 비율 낮을수록 높음
+      3. 순수령액 작음      (20점) - 작은 것 먼저 팔아야 자금 압박 덜함
+      4. 비과세 안정성      (25점) - 비과세 확보된 물건 먼저 정리
+    """
+    from datetime import date as _date
+
+    today = _date.today()
+    all_items = (
+        [(p, s, "나") for p, s in zip(props_mine, sales_mine)] +
+        [(p, s, "파트너") for p, s in zip(props_partner, sales_partner)]
+    )
+
+    def _score(prop, sale):
+        score = 0
+        reasons = []
+
+        # 1. 계약 만료 긴급도 (30점)
+        if prop.contract_end_date and prop.tenant_type in ("전세", "월세"):
+            try:
+                end = _date.fromisoformat(prop.contract_end_date)
+                months_left = max(0, (end.year - today.year) * 12 + (end.month - today.month))
+                if months_left <= 3:
+                    score += 30
+                    reasons.append(f"계약 만료 {months_left}개월 이내 — 즉시 매도 필요")
+                elif months_left <= 6:
+                    score += 20
+                    reasons.append(f"계약 만료 {months_left}개월 내 — 조기 매도 권장")
+                elif months_left <= 12:
+                    score += 10
+                    reasons.append(f"계약 만료 {months_left}개월 내")
+                else:
+                    reasons.append(f"계약 만료까지 {months_left}개월 여유")
+            except Exception:
+                pass
+        elif prop.tenant_type == "직접거주":
+            score += 5
+            reasons.append("직접 거주 중 — 이사 계획 세우면 바로 매도 가능")
+        elif prop.tenant_type == "공실":
+            score += 15
+            reasons.append("공실 — 즉시 매도 가능")
+
+        # 2. 세금 부담 낮음 (25점)
+        cgt = sale.get("capital_gains_tax_man", 0)
+        est = sale.get("sale_price_man", 1)
+        tax_rate = cgt / est if est > 0 else 0
+        tax_note = sale.get("tax_note", "")
+        if "비과세" in tax_note:
+            score += 25
+            reasons.append("양도세 비과세 — 세금 없이 전액 회수")
+        elif tax_rate < 0.03:
+            score += 18
+            reasons.append(f"양도세 부담 낮음 ({tax_rate*100:.1f}%)")
+        elif tax_rate < 0.08:
+            score += 10
+            reasons.append(f"양도세 중간 수준 ({tax_rate*100:.1f}%)")
+        else:
+            score += 3
+            reasons.append(f"양도세 부담 높음 ({tax_rate*100:.1f}%) — 마지막에 팔수록 다른 비과세 활용 여지")
+
+        # 3. 순수령액 크기 (20점) — 작은 것 먼저 팔아 초기 자금 확보
+        net = sale.get("net_man", 0)
+        ref_price = target.budget_min_man
+        if net < ref_price * 0.3:
+            score += 20
+            reasons.append(f"순수령액 소규모({_fmt(net)}) — 먼저 팔아 초기 계약금 마련")
+        elif net < ref_price * 0.6:
+            score += 12
+            reasons.append(f"순수령액 중간({_fmt(net)})")
+        else:
+            score += 5
+            reasons.append(f"순수령액 대규모({_fmt(net)}) — 나중에 팔아 잔금 충당")
+
+        # 4. 비과세 유지 안정성 (25점)
+        if prop.is_sole_home and prop.hold_years >= 2 and prop.residency_years >= 2:
+            score += 25
+            reasons.append("1주택 비과세 요건 충족 — 팔수록 손해 없음")
+        elif prop.hold_years < 2:
+            score -= 10
+            score = max(0, score)
+            reasons.append(f"보유 {prop.hold_years:.1f}년 — 비과세 미충족, 단기양도 세율 적용 주의")
+
+        return score, reasons
+
+    ranked = []
+    for i, (prop, sale, owner) in enumerate(all_items):
+        s, reasons = _score(prop, sale)
+        ranked.append({
+            "rank": 0,
+            "owner": owner,
+            "label": prop.label,
+            "net_man": sale.get("net_man", 0),
+            "tax_man": sale.get("capital_gains_tax_man", 0),
+            "tax_note": sale.get("tax_note", "-"),
+            "tenant_type": prop.tenant_type,
+            "contract_end_date": prop.contract_end_date,
+            "score": s,
+            "reasons": reasons,
+        })
+
+    ranked.sort(key=lambda x: -x["score"])
+    for i, item in enumerate(ranked):
+        item["rank"] = i + 1
+
+    # 누적 자금 계산 (매도 순서대로)
+    running = current_cash_man
+    for item in ranked:
+        running += item["net_man"]
+        item["cumulative_cash_man"] = round(running)
+        needed = target.budget_min_man
+        item["can_buy_target"] = running >= needed
+
+    return ranked
 
 
 # 하위 호환 래퍼
