@@ -14,3 +14,5 @@ logs/
 .claude/
 *.xlsx
 *.csv
+streamlit_out.txt
+streamlit_err.txt
