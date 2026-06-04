@@ -25,6 +25,13 @@ class PropertyProfile:
     is_sole_home: bool = True               # 이 집만 보유 중 (1주택 비과세 판단)
     is_adjusted_area: bool = True           # 조정대상지역 여부
     multihome_surcharge: bool = False       # 다주택 양도세 중과 여부
+    # ── 임대 현황 ────────────────────────────────────────────
+    tenant_type: str = "직접거주"            # "직접거주" | "전세" | "월세" | "공실"
+    jeonse_deposit_man: float = 0.0         # 전세 보증금 (만원) — 매도 시 반환 의무
+    monthly_rent_deposit_man: float = 0.0  # 월세 보증금 (만원)
+    monthly_rent_man: float = 0.0          # 월세 금액 (만원/월)
+    contract_end_date: str = ""            # 임대차 계약 만료일 "YYYY-MM-DD"
+    move_out_buffer_months: int = 2        # 계약 만료 후 이사 준비 기간 (개월)
 
 
 @dataclass
@@ -63,7 +70,15 @@ def net_sale_proceeds(prop: PropertyProfile) -> dict:
         multihome_surcharge=prop.multihome_surcharge,
     )
     cgt = tax_info["tax_man"]
-    net = sale - prop.loan_balance_man - broker - cgt
+
+    # 세입자 보증금 반환 (매도 시 매수인에게 승계 또는 직접 반환)
+    deposit_return = 0.0
+    if prop.tenant_type == "전세":
+        deposit_return = prop.jeonse_deposit_man
+    elif prop.tenant_type == "월세":
+        deposit_return = prop.monthly_rent_deposit_man
+
+    net = sale - prop.loan_balance_man - broker - cgt - deposit_return
 
     return {
         "net_man": round(net),
@@ -71,6 +86,8 @@ def net_sale_proceeds(prop: PropertyProfile) -> dict:
         "loan_repay_man": round(prop.loan_balance_man),
         "broker_fee_man": round(broker),
         "capital_gains_tax_man": cgt,
+        "deposit_return_man": round(deposit_return),
+        "tenant_type": prop.tenant_type,
         "tax_note": tax_info["note"],
         "tax_detail": tax_info,
     }
