@@ -1855,46 +1855,62 @@ def page_portfolio_strategy():
             )
 
             st.markdown("#### 전략적 매도 순서 추천")
-            st.caption("점수 = 계약 긴급도 + 세금 부담 + 순수령액 크기 + 비과세 안정성 종합")
 
-            # 헤드라인 추천
-            first = order[0]
-            last  = order[-1]
-            st.success(
-                f"**먼저 팔 것:** {first['owner']} · {first['label']}  "
-                f"({_eok(first['net_man'])} 확보)  \n"
-                f"**마지막에 팔 것:** {last['owner']} · {last['label']}  "
-                f"({_eok(last['net_man'])} — 잔금 충당용)"
-            )
-
-            # 순서별 카드
-            for item in order:
-                medal = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"][min(item["rank"]-1, 5)]
+            # ── 전략 요약 문단 ──────────────────────────────
+            if order:
                 with st.container(border=True):
-                    c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
+                    st.markdown("##### 전략 요약")
+                    st.markdown(order[0].get("strategy_summary", ""))
+
+            st.divider()
+            st.caption("아래는 각 물건별 상세 근거입니다.")
+
+            # ── 순서별 카드 ──────────────────────────────────
+            MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"]
+            for item in order:
+                medal = MEDALS[min(item["rank"] - 1, 5)]
+                rank_label = "먼저 파세요" if item["rank"] == 1 else (
+                    "마지막에 파세요" if item["rank"] == len(order) else f"{item['rank']}번째"
+                )
+                with st.expander(
+                    f"{medal} **{rank_label}** — {item['owner']}의 {item['label']}  "
+                    f"(순수령액 {_eok(item['net_man'])})",
+                    expanded=(item["rank"] == 1),
+                ):
+                    # 수치 요약
+                    c1, c2, c3 = st.columns(3)
                     with c1:
-                        st.markdown(f"### {medal}")
-                    with c2:
-                        st.markdown(f"**{item['owner']} — {item['label']}**")
-                        st.caption(f"임대: {item['tenant_type']}  |  양도세 판정: {item['tax_note']}")
-                    with c3:
                         st.metric("순수령액", _eok(item["net_man"]))
-                    with c4:
+                    with c2:
+                        st.metric("양도세", _eok(item["tax_man"]),
+                                  help=item["tax_note"])
+                    with c3:
                         color = "normal" if item["can_buy_target"] else "off"
-                        st.metric("이 시점 누적 자금", _eok(item["cumulative_cash_man"]),
-                                  delta="목표 하한 달성" if item["can_buy_target"] else "목표 미달",
-                                  delta_color=color)
+                        st.metric(
+                            "이 시점 누적 자금", _eok(item["cumulative_cash_man"]),
+                            delta="새 집 계약 가능" if item["can_buy_target"] else "아직 부족",
+                            delta_color=color,
+                        )
 
-                    st.markdown("**근거:**")
-                    for r in item["reasons"]:
-                        st.markdown(f"- {r}")
+                    st.markdown("**왜 이 순서인가요?**")
+                    for ex in item.get("explains", item.get("reasons", [])):
+                        st.markdown(f"> {ex}")
 
-            # 현금 시드 표시
-            if cash_seed > 0:
-                st.info(f"현재 보유 현금 {_eok(float(cash_seed))} 포함 — 첫 번째 매도 전에도 계약금으로 활용 가능")
+                    # 만약 이 순서대로 안 하면?
+                    if item["rank"] == 1 and len(order) > 1:
+                        with st.expander("만약 이 집을 나중에 팔면 어떻게 되나요?", expanded=False):
+                            last_item = order[-1]
+                            st.warning(
+                                f"**{last_item['label']}를 먼저 팔고 {item['label']}를 나중에 파는 경우:**\n\n"
+                                f"초기 자금이 {_eok(last_item['net_man'])}로 시작됩니다. "
+                                f"{'이 금액으로 새 집 계약금을 낼 수 있지만, ' if last_item['can_buy_target'] else '이 금액만으로는 새 집 계약이 어렵고, '}"
+                                f"{item['label']}의 {item['tenant_type']} 계약 문제가 해결되지 않은 상태에서 "
+                                f"새 집과 기존 집을 동시에 보유하는 기간이 길어질 수 있습니다. "
+                                f"취득세 중과(1주택 이상 상태에서 매수) 위험도 확인이 필요합니다."
+                            )
 
             st.caption(
-                "⚠️ 이 순서는 점수 모델 기반 참고용입니다. "
+                "⚠️ 이 순서는 분석 모델 기반 참고용입니다. "
                 "실제 매도 순서는 세무사·중개사와 함께 결정하세요."
             )
 
