@@ -1736,78 +1736,114 @@ def page_portfolio_strategy():
     if "n_partner" not in st.session_state:
         st.session_state["n_partner"] = 1
 
-    st.markdown("### 1. 보유 부동산")
-    col_a, col_b = st.columns(2)
+    n_mine    = st.session_state["n_mine"]
+    n_partner = st.session_state["n_partner"]
 
-    with col_a:
-        hd, badd, bdel = st.columns([3, 1, 1])
-        with hd:
-            st.markdown(f"#### 내 부동산 ({st.session_state['n_mine']}채)")
-        with badd:
-            if st.button("＋", key="add_mine") and st.session_state["n_mine"] < 5:
-                st.session_state["n_mine"] += 1
-                st.rerun()
-        with bdel:
-            if st.button("－", key="del_mine") and st.session_state["n_mine"] > 1:
-                st.session_state["n_mine"] -= 1
-                st.rerun()
-        kws_mine = []
-        for i in range(st.session_state["n_mine"]):
-            with st.container(border=True):
-                if st.session_state["n_mine"] > 1:
-                    st.markdown(f"**{i+1}번째**")
-                kws_mine.append(_prop_block(f"mine_{i}",
-                    default_region="서울 서초구" if i == 0 else "서울 강남구"))
+    st.markdown("### 1. 보유 부동산 전체 목록")
 
-    with col_b:
-        hd2, badd2, bdel2 = st.columns([3, 1, 1])
-        with hd2:
-            st.markdown(f"#### 파트너 부동산 ({st.session_state['n_partner']}채)")
-        with badd2:
-            if st.button("＋", key="add_partner") and st.session_state["n_partner"] < 5:
-                st.session_state["n_partner"] += 1
-                st.rerun()
-        with bdel2:
-            if st.button("－", key="del_partner") and st.session_state["n_partner"] > 1:
-                st.session_state["n_partner"] -= 1
-                st.rerun()
-        kws_partner = []
-        for i in range(st.session_state["n_partner"]):
-            with st.container(border=True):
-                if st.session_state["n_partner"] > 1:
-                    st.markdown(f"**{i+1}번째**")
-                kws_partner.append(_prop_block(f"partner_{i}",
-                    default_region="서울 마포구" if i == 0 else "서울 용산구"))
+    # 한 줄에 두 사람의 물건 수 조절 버튼
+    with st.container(border=False):
+        hc1, hc2 = st.columns(2)
+        with hc1:
+            st.markdown("##### 👤 내 부동산")
+            ba, bd, _ = st.columns([1, 1, 4])
+            with ba:
+                if st.button("＋ 추가", key="add_mine", use_container_width=True):
+                    if st.session_state["n_mine"] < 5:
+                        st.session_state["n_mine"] += 1
+                    st.rerun()
+            with bd:
+                if st.button("－ 삭제", key="del_mine", use_container_width=True):
+                    if st.session_state["n_mine"] > 1:
+                        st.session_state["n_mine"] -= 1
+                    st.rerun()
+        with hc2:
+            st.markdown("##### 👥 파트너 부동산")
+            bb, be, _ = st.columns([1, 1, 4])
+            with bb:
+                if st.button("＋ 추가", key="add_partner", use_container_width=True):
+                    if st.session_state["n_partner"] < 5:
+                        st.session_state["n_partner"] += 1
+                    st.rerun()
+            with be:
+                if st.button("－ 삭제", key="del_partner", use_container_width=True):
+                    if st.session_state["n_partner"] > 1:
+                        st.session_state["n_partner"] -= 1
+                    st.rerun()
+
+    # 나/파트너 물건을 2열 그리드로 나란히 배치
+    n_mine    = st.session_state["n_mine"]
+    n_partner = st.session_state["n_partner"]
+    kws_mine    = []
+    kws_partner = []
+
+    MINE_DEFAULTS    = ["서울 서초구", "서울 강남구", "충남 천안시 동남구", "경기 성남시 분당구", "서울 송파구"]
+    PARTNER_DEFAULTS = ["서울 마포구", "서울 용산구", "서울 강동구", "인천 연수구", "경기 수원시 영통구"]
+
+    for i in range(max(n_mine, n_partner)):
+        c_mine, c_partner = st.columns(2)
+        with c_mine:
+            if i < n_mine:
+                label = f"👤 내 {i+1}번째 부동산" if n_mine > 1 else "👤 내 부동산"
+                with st.expander(label, expanded=True):
+                    kws_mine.append(_prop_block(
+                        f"mine_{i}",
+                        default_region=MINE_DEFAULTS[i] if i < len(MINE_DEFAULTS) else "서울 강남구",
+                    ))
+            else:
+                st.empty()
+        with c_partner:
+            if i < n_partner:
+                label = f"👥 파트너 {i+1}번째 부동산" if n_partner > 1 else "👥 파트너 부동산"
+                with st.expander(label, expanded=True):
+                    kws_partner.append(_prop_block(
+                        f"partner_{i}",
+                        default_region=PARTNER_DEFAULTS[i] if i < len(PARTNER_DEFAULTS) else "서울 마포구",
+                    ))
 
     # ── 목표 부동산 & 재무 ───────────────────────────────────────
-    st.markdown("### 2. 목표 부동산 & 재무 정보")
-    col_t, col_f = st.columns(2)
+    st.divider()
+    st.markdown("### 2. 살 집 & 재무 정보")
 
+    col_t, col_f = st.columns(2)
     with col_t:
         with st.container(border=True):
-            st.markdown("#### 목표 부동산")
+            st.markdown("#### 🏡 살 집 (목표 부동산)")
             t_name  = st.text_input("단지명/메모", value="", key="t_name",
                                     placeholder="예: 잠실엘스")
-            t_code  = _rsel("목표 지역", "t_region", "서울 송파구")
-            t_min   = st.number_input("목표 예산 하한 (만원)", 0, value=150_000,
-                                      step=1_000, key="t_min")
-            t_max   = st.number_input("목표 예산 상한 (만원)", 0, value=200_000,
-                                      step=1_000, key="t_max")
-            t_close = st.date_input("목표 잔금일 (비우면 자동)", value=None,
+            t_code  = _rsel("지역", "t_region", "서울 송파구")
+            ca, cb  = st.columns(2)
+            with ca:
+                t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
+                                        step=1_000, key="t_min")
+            with cb:
+                t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
+                                        step=1_000, key="t_max")
+            t_close = st.date_input("희망 잔금일 (비우면 자동)", value=None,
                                     key="t_close")
 
     with col_f:
         with st.container(border=True):
-            st.markdown("#### 재무 정보")
-            cash_seed = st.number_input("현재 보유 현금 (만원)",
-                                        0, value=0, step=1_000, key="cash_seed",
-                                        help="부동산 매도 외 이미 가지고 있는 현금·예금")
-            income    = st.number_input("연 소득 합산 (만원, 0=DSR 미계산)",
-                                        0, value=0, step=500, key="income")
-            ex_pay    = st.number_input("기존 월 원리금 (만원)",
-                                        0, value=0, step=10, key="ex_pay")
-            int_rent  = st.number_input("임시 거주 월세 (만원/월, 시나리오A용)",
-                                        0, value=0, step=10, key="int_rent")
+            st.markdown("#### 💰 자금 & 소득")
+            cash_seed = st.number_input(
+                "현재 보유 현금 (만원)",
+                0, value=0, step=1_000, key="cash_seed",
+                help="부동산 매도 전부터 갖고 있는 현금·예금. 계약금으로 바로 쓸 수 있어요."
+            )
+            st.caption(f"현금 포함 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
+            st.divider()
+            income = st.number_input(
+                "연 소득 합산 (만원)", 0, value=0, step=500, key="income",
+                help="0 입력 시 DSR 대출 한도 계산 생략"
+            )
+            ex_pay = st.number_input(
+                "기존 월 원리금 (만원)", 0, value=0, step=10, key="ex_pay",
+                help="이미 갚고 있는 대출 원리금 (신규 주담대 제외)"
+            )
+            int_rent = st.number_input(
+                "임시 거주 예상 월세 (만원/월)", 0, value=0, step=10, key="int_rent",
+                help="전체 매도 후 입주 전까지 임시로 살 곳의 월세"
+            )
 
     if st.button("시나리오 분석 실행", type="primary", use_container_width=True):
         from datetime import date as _date
