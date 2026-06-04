@@ -38,6 +38,9 @@ class PropertyProfile:
     monthly_rent_man: float = 0.0
     contract_end_date: str = ""
     move_out_buffer_months: int = 2
+    # 계약갱신청구권
+    renewal_right_used: bool = False   # 임차인이 이미 갱신청구권을 사용했는가
+    notified_nonrenewal: bool = False   # 임대인이 갱신 거절 통보를 했는가
 
 
 @dataclass
@@ -91,6 +94,125 @@ def net_sale_proceeds(prop: PropertyProfile) -> dict:
         "tax_note": tax_info["note"],
         "tax_detail": tax_info,
     }
+
+
+def calc_renewal_risk(prop: PropertyProfile, today=None) -> dict:
+    """계약갱신청구권·묵시적갱신 리스크 계산.
+
+    Returns:
+        risk_level: "none" | "low" | "medium" | "high" | "critical"
+        notice_deadline: 임대인이 갱신 거절 통보해야 하는 마감일 (계약 만료 2개월 전)
+        locked_until: 갱신 시 임차인이 머무를 수 있는 종료일 (계약만료 + 2년)
+        days_to_deadline: 통보 마감까지 남은 일수 (음수면 이미 지남)
+        message: 사람이 읽을 수 있는 설명
+    """
+    from datetime import date as _date, timedelta
+    import calendar
+
+    if today is None:
+        today = _date.today()
+
+    result = {
+        "risk_level": "none",
+        "notice_deadline": None,
+        "locked_until": None,
+        "days_to_deadline": None,
+        "can_refuse_renewal": False,
+        "message": "",
+    }
+
+    if prop.tenant_type not in ("전세", "월세") or not prop.contract_end_date:
+        result["message"] = "임대 계약 없음 — 갱신 리스크 해당 없음"
+        return result
+
+    try:
+        end = _date.fromisoformat(prop.contract_end_date)
+    except Exception:
+        return result
+
+    # 통보 마감일 = 계약 만료 2개월 전
+    m = end.month - 2
+    y = end.year
+    if m <= 0:
+        m += 12
+        y -= 1
+    last = calendar.monthrange(y, m)[1]
+    notice_deadline = _date(y, m, min(end.day, last))
+
+    # 갱신 시 임차인 거주 가능 종료일 = 계약 만료 + 2년
+    locked_y = end.year + 2
+    locked_until = _date(locked_y, end.month, end.day)
+
+    days_to_deadline = (notice_deadline - today).days
+    result["notice_deadline"] = notice_deadline
+    result["locked_until"] = locked_until
+    result["days_to_deadline"] = days_to_deadline
+
+    # 갱신청구권 이미 사용 → 리스크 없음
+    if prop.renewal_right_used:
+        result["risk_level"] = "low"
+        result["can_refuse_renewal"] = True
+        result["message"] = (
+            "임차인이 계약갱신청구권을 이미 사용했습니다. "
+            "계약 만료 후 임차인은 법적으로 연장을 요구할 수 없습니다. "
+            f"다만 임대인은 만료 2개월 전({notice_deadline.strftime('%Y-%m-%d')})까지 "
+            "퇴거 의사를 통보해야 합니다."
+        )
+        return result
+
+    # 통보를 이미 했음
+    if prop.notified_nonrenewal:
+        result["risk_level"] = "low"
+        result["can_refuse_renewal"] = True
+        result["message"] = (
+            "갱신 거절 통보 완료. 임차인은 계약 만료 후 퇴거해야 합니다. "
+            "단, 임차인이 갱신청구권을 행사하겠다고 다투는 경우 법적 분쟁 가능성에 대비하세요."
+        )
+        return result
+
+    # 통보 마감이 지남 + 미통보 → 묵시적 갱신 위험
+    if days_to_deadline < 0:
+        result["risk_level"] = "critical"
+        result["can_refuse_renewal"] = False
+        result["message"] = (
+            f"⚠️ 위험: 갱신 거절 통보 마감일({notice_deadline.strftime('%Y-%m-%d')})이 "
+            f"{abs(days_to_deadline)}일 지났습니다. "
+            "임대인이 통보하지 않으면 '묵시적 갱신'이 성립해 임차인은 최대 2년을 더 거주할 수 있습니다. "
+            f"이 경우 집을 팔 수 있는 시점이 {locked_until.strftime('%Y-%m-%d')}까지 미뤄질 수 있습니다. "
+            "즉시 임차인과 소통하고 법적 대응 여부를 검토하세요."
+        )
+        return result
+
+    # 통보 마감 30일 이내 → 긴급
+    if days_to_deadline <= 30:
+        result["risk_level"] = "high"
+        result["message"] = (
+            f"⚠️ 긴급: 갱신 거절 통보 마감이 {days_to_deadline}일 후({notice_deadline.strftime('%Y-%m-%d')})입니다. "
+            "이 기한 내에 임차인에게 서면(문자/내용증명)으로 '계약을 갱신하지 않겠다'는 의사를 전달해야 합니다. "
+            "미통보 시 묵시적 갱신으로 2년 더 묶입니다."
+        )
+        return result
+
+    # 통보 마감 60일 이내 → 주의
+    if days_to_deadline <= 60:
+        result["risk_level"] = "medium"
+        result["message"] = (
+            f"주의: 갱신 거절 통보 마감이 {days_to_deadline}일 후({notice_deadline.strftime('%Y-%m-%d')})입니다. "
+            "아직 여유가 있지만, 이 기한을 놓치면 임차인이 갱신청구권을 사용해 "
+            f"집이 {locked_until.strftime('%Y-%m-%d')}까지 묶일 수 있습니다. "
+            "지금 임차인에게 퇴거 의사를 미리 알려두는 것이 좋습니다."
+        )
+        return result
+
+    # 여유 있음
+    result["risk_level"] = "medium" if not prop.renewal_right_used else "low"
+    result["message"] = (
+        f"갱신 거절 통보 마감일은 {notice_deadline.strftime('%Y-%m-%d')} ({days_to_deadline}일 후)입니다. "
+        "임차인이 갱신청구권을 행사하면 계약이 2년 연장될 수 있습니다. "
+        f"만약 갱신되면 집을 팔 수 있는 가장 빠른 시점은 {locked_until.strftime('%Y-%m-%d')}이 됩니다. "
+        f"매도 계획이 있다면 마감일 전에 반드시 통보하세요."
+    )
+    return result
 
 
 def _loan_cap(target: TargetProperty, ownership: str, dsr_cap: float) -> float:
@@ -334,6 +456,26 @@ def recommend_sell_order(
                 "단, 공실 기간이 길어질수록 관리비·대출이자가 손실로 쌓이므로 빠르게 매도하는 것이 유리합니다."
             )
 
+        # ── 1b. 갱신청구권·묵시적갱신 리스크 ────────────────
+        renewal = calc_renewal_risk(prop, today)
+        item_renewal = renewal  # 나중에 ranked에 포함
+        if renewal["risk_level"] == "critical":
+            score += 35  # 묵시적 갱신 성립 위험 → 최우선
+            reasons.append("묵시적 갱신 위험 (통보 마감 초과)")
+            explains.append(renewal["message"])
+        elif renewal["risk_level"] == "high":
+            score += 25
+            reasons.append(f"갱신 거절 통보 마감 {renewal['days_to_deadline']}일 내")
+            explains.append(renewal["message"])
+        elif renewal["risk_level"] == "medium":
+            score += 10
+            if renewal["days_to_deadline"] is not None:
+                reasons.append(f"갱신청구권 리스크 있음 (마감 {renewal['days_to_deadline']}일 후)")
+                explains.append(renewal["message"])
+        elif renewal["risk_level"] == "low":
+            reasons.append("갱신청구권 리스크 낮음")
+            explains.append(renewal["message"])
+
         # ── 2. 세금 부담 (25점) ──────────────────────────────
         cgt = sale.get("capital_gains_tax_man", 0)
         est = sale.get("sale_price_man", 1) or 1
@@ -424,11 +566,11 @@ def recommend_sell_order(
                 f"가능하다면 {24 - int(prop.hold_years*12)}개월 더 기다리는 것을 검토하세요."
             )
 
-        return score, reasons, explains
+        return score, reasons, explains, item_renewal
 
     ranked = []
     for prop, sale, owner in all_items:
-        s, reasons, explains = _score(prop, sale)
+        s, reasons, explains, renewal = _score(prop, sale)
         ranked.append({
             "rank": 0,
             "owner": owner,
@@ -441,6 +583,7 @@ def recommend_sell_order(
             "score": s,
             "reasons": reasons,
             "explains": explains,
+            "renewal": renewal,
         })
 
     ranked.sort(key=lambda x: -x["score"])

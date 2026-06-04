@@ -1689,6 +1689,35 @@ def page_portfolio_strategy():
             with c4:
                 buf = st.number_input("이사 준비 기간 (개월)", 0, value=2,
                                       step=1, key=f"{prefix}_buf")
+            st.markdown("**계약갱신청구권**")
+            renewal_used = st.checkbox(
+                "임차인이 갱신청구권을 이미 사용함",
+                value=False, key=f"{prefix}_renewal_used",
+                help="임차인이 갱신청구권(2년 연장 권리)을 이전 계약에서 이미 사용한 경우 체크"
+            )
+            notified = st.checkbox(
+                "임대인이 갱신 거절 통보를 완료함",
+                value=False, key=f"{prefix}_notified",
+                help="계약 만료 2개월 전까지 임차인에게 갱신 안 함을 서면 통보한 경우 체크"
+            )
+            # 실시간 갱신 리스크 경고
+            if cend and not renewal_used and not notified:
+                from src.analysis.portfolio_strategy import calc_renewal_risk
+                from dataclasses import dataclass
+                @dataclass
+                class _P:
+                    tenant_type: str; contract_end_date: str
+                    renewal_right_used: bool; notified_nonrenewal: bool
+                _risk = calc_renewal_risk(_P(tenant, cend, False, False))
+                if _risk["risk_level"] == "critical":
+                    st.error(_risk["message"])
+                elif _risk["risk_level"] == "high":
+                    st.warning(_risk["message"])
+                elif _risk["risk_level"] == "medium" and _risk["days_to_deadline"] is not None:
+                    st.info(_risk["message"])
+        else:
+            renewal_used = False
+            notified     = False
         return dict(
             label=name or prefix, region_code=code, apt_name=name,
             acquisition_price_man=float(buy), estimated_price_man=float(est),
@@ -1698,6 +1727,7 @@ def page_portfolio_strategy():
             tenant_type=tenant, jeonse_deposit_man=float(jdep),
             monthly_rent_deposit_man=float(rdep), monthly_rent_man=float(rmon),
             contract_end_date=cend, move_out_buffer_months=int(buf),
+            renewal_right_used=renewal_used, notified_nonrenewal=notified,
         )
 
     # ── 보유 부동산 수 조절 ──────────────────────────────────────
@@ -1892,6 +1922,16 @@ def page_portfolio_strategy():
                             delta_color=color,
                         )
 
+                    # 갱신 리스크 배너
+                    renewal = item.get("renewal", {})
+                    rl = renewal.get("risk_level", "none")
+                    if rl == "critical":
+                        st.error(f"🚨 **묵시적 갱신 위험** — {renewal.get('message','')}")
+                    elif rl == "high":
+                        st.warning(f"⚠️ **갱신 거절 통보 마감 임박** — {renewal.get('message','')}")
+                    elif rl == "medium" and renewal.get("days_to_deadline") is not None:
+                        st.info(f"📌 **갱신청구권 주의** — {renewal.get('message','')}")
+
                     st.markdown("**왜 이 순서인가요?**")
                     for ex in item.get("explains", item.get("reasons", [])):
                         st.markdown(f"> {ex}")
@@ -1969,7 +2009,7 @@ def page_portfolio_strategy():
                 st.metric("순 현금흐름", _eok(ncf))
 
             ICON = {"계약만료":"📋","매도":"💵","매수":"🏠",
-                    "임시거주":"🏨","월세수입":"💰","비용":"💸"}
+                    "임시거주":"🏨","월세수입":"💰","비용":"💸","갱신주의":"⚠️"}
             tl_rows = [{
                 "시점":     e["ym"],
                 "이벤트":   ICON.get(e["category"], "•") + " " + e["event"],

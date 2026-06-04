@@ -50,14 +50,57 @@ def _contract_expiry_event(prop, today: date) -> list[dict]:
     end = date.fromisoformat(prop.contract_end_date)
     kind = "전세" if prop.tenant_type == "전세" else "월세"
     dep = prop.jeonse_deposit_man if prop.tenant_type == "전세" else prop.monthly_rent_deposit_man
-    return [_ev(
+    events = []
+
+    # 갱신 거절 통보 마감일 (계약 만료 2개월 전)
+    import calendar as _cal
+    nm, ny = end.month - 2, end.year
+    if nm <= 0:
+        nm += 12; ny -= 1
+    notice_d = date(ny, nm, min(end.day, _cal.monthrange(ny, nm)[1]))
+    days_left = (notice_d - today).days
+
+    renewal_used = getattr(prop, "renewal_right_used", False)
+    notified     = getattr(prop, "notified_nonrenewal", False)
+    locked_end   = date(end.year + 2, end.month, end.day)
+
+    if not renewal_used and not notified:
+        if days_left >= 0:
+            tag = "⚠️ 긴급" if days_left <= 30 else "📌"
+            events.append(_ev(
+                d=notice_d,
+                event=f"[{prop.label}] {tag} 갱신 거절 통보 마감",
+                desc=(
+                    f"이 날까지 임차인에게 '계약 갱신 안 함'을 서면 통보해야 합니다. "
+                    f"미통보 시 묵시적 갱신 → {locked_end.strftime('%Y-%m-%d')}까지 퇴거 불가"
+                ),
+                cash_in=0, cash_out=0,
+                note=f"내용증명 또는 문자 발송 권장",
+                category="갱신주의",
+            ))
+        else:
+            events.append(_ev(
+                d=today,
+                event=f"[{prop.label}] 🚨 묵시적 갱신 위험",
+                desc=(
+                    f"통보 마감({notice_d.strftime('%Y-%m-%d')})이 지났고 통보 미완료. "
+                    f"임차인 갱신청구 시 {locked_end.strftime('%Y-%m-%d')}까지 매도 불가."
+                ),
+                cash_in=0, cash_out=0,
+                note="즉시 임차인 소통 및 법적 검토 필요",
+                category="갱신주의",
+            ))
+
+    # 계약 만료 이벤트
+    events.append(_ev(
         d=end,
         event=f"[{prop.label}] {kind} 계약 만료",
-        desc=f"세입자에게 퇴거 통보 → {prop.move_out_buffer_months}개월 후 이사 완료 예정",
+        desc=f"세입자 퇴거 후 매도 가능 (이사 준비 {prop.move_out_buffer_months}개월)",
         cash_in=0, cash_out=0,
-        note=f"보증금 {dep:,.0f}만원 반환 예정 (매도 잔금에서 처리)",
+        note=f"보증금 {dep:,.0f}만원 반환 예정 (매도 잔금 처리)",
         category="계약만료",
-    )]
+    ))
+    return events
 
 
 def _sell_event(prop, sell_date: date, sale: dict) -> dict:
