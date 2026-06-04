@@ -37,6 +37,10 @@ from src.analysis.loan import (
     dsr_loan_capacity_man, max_purchase_man as calc_max_purchase,
     loan_capacity_man, get_ltv_pct, get_zone,
 )
+from src.analysis.portfolio_strategy import (
+    PropertyProfile, TargetProperty, plan_scenarios_multi,
+)
+from src.analysis.cashflow_timeline import build_timeline
 
 
 @st.cache_data(ttl=600)
@@ -1610,11 +1614,6 @@ def page_strategy_backtest():
 # ─────────────────────────────────────────────────────────────
 def page_portfolio_strategy():
     """🏘️ 처분·매수 전략 — 내/파트너 부동산 처분 + 신규 매수 시나리오 + 타임라인."""
-    from src.analysis.portfolio_strategy import (
-        PropertyProfile, TargetProperty, plan_scenarios_multi,
-    )
-    from src.analysis.cashflow_timeline import build_timeline
-
     st.title("🏘️ 처분·매수 전략 플래너")
     st.caption("보유 부동산 전체를 처분하고 새 집을 사는 시나리오 · 타임라인 · 자금 흐름 분석")
 
