@@ -124,12 +124,12 @@ def _rental_income_event(prop, today: date, sell_date: date) -> list[dict]:
     )]
 
 
-# ── 메인 타임라인 빌더 ───────────────────────────────────────────
+# ── 메인 타임라인 빌더 (다중 부동산 지원) ─────────────────────────
 def build_timeline(
-    prop_a,
-    prop_b,
-    sale_a: dict,
-    sale_b: dict,
+    props_mine: list,
+    props_partner: list,
+    sales_mine: list[dict],
+    sales_partner: list[dict],
     target,
     scenario_label: str = "A",
     today: Optional[date] = None,
@@ -139,10 +139,9 @@ def build_timeline(
 ) -> tuple[list[dict], dict]:
     """시나리오별 타임라인 이벤트 + 자금 흐름 반환.
 
-    Args:
-        equity_needed_man: 신규 매수 시 자기자본 지출액 (매수가 - 대출)
-    Returns:
-        (events, summary)
+    props_mine / props_partner: PropertyProfile 리스트
+    sales_mine / sales_partner: net_sale_proceeds 결과 리스트 (동일 순서)
+    equity_needed_man: 신규 매수 시 자기자본 지출액 (매수가 - 대출)
     """
     if today is None:
         today = date.today()
@@ -150,69 +149,60 @@ def build_timeline(
     sc = (scenario_label or "A")[0].upper()
     events: list[dict] = []
 
-    sell_date_a = _earliest_sell_date(prop_a, today)
-    sell_date_b = _earliest_sell_date(prop_b, today)
+    sell_dates_mine    = [_earliest_sell_date(p, today) for p in props_mine]
+    sell_dates_partner = [_earliest_sell_date(p, today) for p in props_partner]
 
-    # 월세 수입 (매도 전까지 발생)
-    events.extend(_rental_income_event(prop_a, today, sell_date_a))
-    events.extend(_rental_income_event(prop_b, today, sell_date_b))
+    # 월세 수입 이벤트
+    for p, sd in zip(props_mine, sell_dates_mine):
+        events.extend(_rental_income_event(p, today, sd))
+    for p, sd in zip(props_partner, sell_dates_partner):
+        events.extend(_rental_income_event(p, today, sd))
+
+    def _add_group_events(props, sell_dates, sales, today_):
+        for p, sd in zip(props, sell_dates):
+            events.extend(_contract_expiry_event(p, today_))
+        for p, sd, sale in zip(props, sell_dates, sales):
+            events.append(_sell_event(p, sd, sale))
+        return max(sell_dates) if sell_dates else today_
 
     if sc == "A":
-        # 둘 다 매도 → (임시거주) → 신규 매수
-        events.extend(_contract_expiry_event(prop_a, today))
-        events.extend(_contract_expiry_event(prop_b, today))
-        events.append(_sell_event(prop_a, sell_date_a, sale_a))
-        events.append(_sell_event(prop_b, sell_date_b, sale_b))
-
-        both_out = max(sell_date_a, sell_date_b)
-        buy_date = target_closing_date or _add_months(both_out, 2)
-
-        # 임시 거주 (두 집 모두 매도 후 ~ 입주까지)
-        interim_start = both_out
-        interim_months = max(0, (buy_date.year - interim_start.year) * 12
-                             + (buy_date.month - interim_start.month))
+        last_mine    = _add_group_events(props_mine,    sell_dates_mine,    sales_mine,    today)
+        last_partner = _add_group_events(props_partner, sell_dates_partner, sales_partner, today)
+        all_out = max(last_mine, last_partner) if sell_dates_mine or sell_dates_partner else today
+        buy_date = target_closing_date or _add_months(all_out, 2)
+        interim_months = max(0, (buy_date.year - all_out.year) * 12
+                             + (buy_date.month - all_out.month))
         if interim_rent_man > 0 and interim_months > 0:
-            events.append(_interim_rent_event(interim_start, interim_months, interim_rent_man))
-
-        if equity_needed_man > 0:
-            events.append(_buy_equity_event(target, buy_date, equity_needed_man))
+            events.append(_interim_rent_event(all_out, interim_months, interim_rent_man))
 
     elif sc == "B":
-        # prop_a 매도 → 신규 매수 → prop_b 매도
-        events.extend(_contract_expiry_event(prop_a, today))
-        events.append(_sell_event(prop_a, sell_date_a, sale_a))
-
-        buy_date = target_closing_date or _add_months(sell_date_a, 2)
-        if equity_needed_man > 0:
-            events.append(_buy_equity_event(target, buy_date, equity_needed_man))
-
-        events.extend(_contract_expiry_event(prop_b, today))
-        late_sell_b = max(sell_date_b, _add_months(buy_date, 1))
-        events.append(_sell_event(prop_b, late_sell_b, sale_b))
+        last_mine = _add_group_events(props_mine, sell_dates_mine, sales_mine, today)
+        buy_date = target_closing_date or _add_months(last_mine, 2)
+        for p, sd in zip(props_partner, sell_dates_partner):
+            events.extend(_contract_expiry_event(p, today))
+        for p, sd, sale in zip(props_partner, sell_dates_partner, sales_partner):
+            late = max(sd, _add_months(buy_date, 1))
+            events.append(_sell_event(p, late, sale))
 
     elif sc == "C":
-        # prop_b 매도 → 신규 매수 → prop_a 매도
-        events.extend(_contract_expiry_event(prop_b, today))
-        events.append(_sell_event(prop_b, sell_date_b, sale_b))
-
-        buy_date = target_closing_date or _add_months(sell_date_b, 2)
-        if equity_needed_man > 0:
-            events.append(_buy_equity_event(target, buy_date, equity_needed_man))
-
-        events.extend(_contract_expiry_event(prop_a, today))
-        late_sell_a = max(sell_date_a, _add_months(buy_date, 1))
-        events.append(_sell_event(prop_a, late_sell_a, sale_a))
+        last_partner = _add_group_events(props_partner, sell_dates_partner, sales_partner, today)
+        buy_date = target_closing_date or _add_months(last_partner, 2)
+        for p, sd in zip(props_mine, sell_dates_mine):
+            events.extend(_contract_expiry_event(p, today))
+        for p, sd, sale in zip(props_mine, sell_dates_mine, sales_mine):
+            late = max(sd, _add_months(buy_date, 1))
+            events.append(_sell_event(p, late, sale))
 
     elif sc == "D":
-        # 신규 매수 먼저 → 둘 다 매도
         buy_date = target_closing_date or _add_months(today, 2)
-        if equity_needed_man > 0:
-            events.append(_buy_equity_event(target, buy_date, equity_needed_man))
+        _add_group_events(props_mine,    sell_dates_mine,    sales_mine,    today)
+        _add_group_events(props_partner, sell_dates_partner, sales_partner, today)
 
-        events.extend(_contract_expiry_event(prop_a, today))
-        events.extend(_contract_expiry_event(prop_b, today))
-        events.append(_sell_event(prop_a, sell_date_a, sale_a))
-        events.append(_sell_event(prop_b, sell_date_b, sale_b))
+    else:
+        buy_date = target_closing_date or _add_months(today, 2)
+
+    if equity_needed_man > 0:
+        events.append(_buy_equity_event(target, buy_date, equity_needed_man))
 
     # 날짜 정렬 + 누적 잔고 계산
     events.sort(key=lambda e: (e["date"], e["category"]))
@@ -221,14 +211,14 @@ def build_timeline(
         running += e["cash_in_man"] - e["cash_out_man"]
         e["running_balance_man"] = round(running)
 
-    total_in = sum(e["cash_in_man"] for e in events)
+    total_in  = sum(e["cash_in_man"]  for e in events)
     total_out = sum(e["cash_out_man"] for e in events)
     summary = {
-        "total_in_man": round(total_in),
-        "total_out_man": round(total_out),
-        "net_cashflow_man": round(total_in - total_out),
-        "buy_date": buy_date if "buy_date" in dir() else None,
-        "sell_date_a": sell_date_a,
-        "sell_date_b": sell_date_b,
+        "total_in_man":      round(total_in),
+        "total_out_man":     round(total_out),
+        "net_cashflow_man":  round(total_in - total_out),
+        "buy_date":          buy_date,
+        "sell_dates_mine":   sell_dates_mine,
+        "sell_dates_partner": sell_dates_partner,
     }
     return events, summary
