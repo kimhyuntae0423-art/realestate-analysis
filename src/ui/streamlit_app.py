@@ -37,10 +37,21 @@ from src.analysis.loan import (
     dsr_loan_capacity_man, max_purchase_man as calc_max_purchase,
     loan_capacity_man, get_ltv_pct, get_zone,
 )
-from src.analysis.portfolio_strategy import (
-    PropertyProfile, TargetProperty, plan_scenarios_multi,
-)
-from src.analysis.cashflow_timeline import build_timeline
+try:
+    from src.analysis.portfolio_strategy import (
+        PropertyProfile, TargetProperty, plan_scenarios_multi,
+    )
+    from src.analysis.cashflow_timeline import build_timeline
+    _PORTFOLIO_OK = True
+    _PORTFOLIO_ERR = ""
+except Exception as _e:
+    _PORTFOLIO_OK = False
+    _PORTFOLIO_ERR = f"{type(_e).__name__}: {_e}"
+    # stub classes so the rest of the module parses
+    class PropertyProfile: pass  # type: ignore
+    class TargetProperty: pass   # type: ignore
+    def plan_scenarios_multi(*a, **kw): return {}  # type: ignore
+    def build_timeline(*a, **kw): return [], {}    # type: ignore
 
 
 @st.cache_data(ttl=600)
@@ -1615,6 +1626,9 @@ def page_strategy_backtest():
 def page_portfolio_strategy():
     """🏘️ 처분·매수 전략 — 내/파트너 부동산 처분 + 신규 매수 시나리오 + 타임라인."""
     st.title("🏘️ 처분·매수 전략 플래너")
+    if not _PORTFOLIO_OK:
+        st.error(f"모듈 로드 실패 — 아래 에러를 캡쳐해서 공유해 주세요:\n\n```\n{_PORTFOLIO_ERR}\n```")
+        return
     st.caption("보유 부동산 전체를 처분하고 새 집을 사는 시나리오 · 타임라인 · 자금 흐름 분석")
 
     # ── 지역 목록 (코드→이름 올바르게 매핑) ─────────────────────
