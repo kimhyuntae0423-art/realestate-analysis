@@ -620,11 +620,22 @@ def _sidebar_nav() -> str:
         ):
             st.session_state["_nav_section"] = "backtest"
 
-        page = (
-            "🔬 전략 백테스트"
-            if st.session_state["_nav_section"] == "backtest"
-            else page_radio
-        )
+        st.divider()
+        st.markdown("## 🏘️ 처분·매수 전략")
+        if st.button(
+            "처분·매수 전략 플래너",
+            width="stretch",
+            key="nav_portfolio",
+            type="primary" if st.session_state["_nav_section"] == "portfolio" else "secondary",
+        ):
+            st.session_state["_nav_section"] = "portfolio"
+
+        if st.session_state["_nav_section"] == "backtest":
+            page = "🔬 전략 백테스트"
+        elif st.session_state["_nav_section"] == "portfolio":
+            page = "🏘️ 처분·매수 전략"
+        else:
+            page = page_radio
 
         st.divider()
         if st.button("🔄 캐시 비우기", width='stretch', key="nav_clear",
@@ -1594,6 +1605,267 @@ def page_strategy_backtest():
                     st.error(f"계산 실패: {e}")
 
 
+# ─────────────────────────────────────────────────────────────
+# 처분·매수 전략 플래너
+# ─────────────────────────────────────────────────────────────
+def page_portfolio_strategy():
+    """🏘️ 처분·매수 전략 — 내 부동산 + 파트너 부동산 처분 후 신규 매수 시나리오."""
+    from src.analysis.portfolio_strategy import (
+        PropertyProfile, TargetProperty, plan_scenarios,
+    )
+
+    st.title("🏘️ 처분·매수 전략 플래너")
+    st.caption("두 부동산을 처분하고 새 집을 사는 4가지 순서 시나리오 비교")
+
+    # ── 지역 목록 (법정동 코드 → 이름) ──────────────────────
+    region_flat: dict[str, str] = {}
+    for sido, subs in REGIONS.items():
+        for name, code in subs.items():
+            region_flat[f"{sido} {name}"] = code
+
+    def _region_select(label: str, key: str, default_name: str = "서울 강남구") -> tuple[str, str]:
+        options = list(region_flat.keys())
+        default_idx = options.index(default_name) if default_name in options else 0
+        sel = st.selectbox(label, options, index=default_idx, key=key)
+        return sel, region_flat[sel]
+
+    # ── 입력 섹션 ─────────────────────────────────────────────
+    st.markdown("### 1. 보유 부동산 정보")
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        with st.container(border=True):
+            st.markdown("#### 내 부동산")
+            a_name = st.text_input("단지명", value="", key="a_apt_name",
+                                   placeholder="예: 반포자이")
+            a_region_label, a_code = _region_select("지역", "a_region", "서울 서초구")
+            a_buy = st.number_input("매수가 (만원)", min_value=0, value=80_000,
+                                    step=1_000, key="a_buy")
+            a_est = st.number_input("현재 추정 시세 (만원)", min_value=0,
+                                    value=120_000, step=1_000, key="a_est")
+            a_loan = st.number_input("현재 대출 잔액 (만원)", min_value=0,
+                                     value=30_000, step=1_000, key="a_loan")
+            c1, c2 = st.columns(2)
+            with c1:
+                a_hold = st.number_input("보유기간 (년)", min_value=0.0,
+                                         value=5.0, step=0.5, key="a_hold")
+            with c2:
+                a_resi = st.number_input("실거주 기간 (년)", min_value=0.0,
+                                          value=3.0, step=0.5, key="a_resi")
+            a_sole = st.checkbox("1세대 1주택", value=True, key="a_sole",
+                                 help="이 집만 보유 중이면 체크 (양도세 비과세 판단)")
+            a_adj = st.checkbox("조정대상지역", value=True, key="a_adj")
+            a_surcharge = st.checkbox("다주택 중과 적용", value=False, key="a_surcharge",
+                                      help="현재 한시 배제 중이나, 보수적 시뮬레이션용")
+
+    with col_b:
+        with st.container(border=True):
+            st.markdown("#### 파트너 부동산")
+            b_name = st.text_input("단지명", value="", key="b_apt_name",
+                                   placeholder="예: 마포래미안푸르지오")
+            b_region_label, b_code = _region_select("지역", "b_region", "서울 마포구")
+            b_buy = st.number_input("매수가 (만원)", min_value=0, value=60_000,
+                                    step=1_000, key="b_buy")
+            b_est = st.number_input("현재 추정 시세 (만원)", min_value=0,
+                                    value=90_000, step=1_000, key="b_est")
+            b_loan = st.number_input("현재 대출 잔액 (만원)", min_value=0,
+                                     value=20_000, step=1_000, key="b_loan")
+            c1, c2 = st.columns(2)
+            with c1:
+                b_hold = st.number_input("보유기간 (년)", min_value=0.0,
+                                         value=4.0, step=0.5, key="b_hold")
+            with c2:
+                b_resi = st.number_input("실거주 기간 (년)", min_value=0.0,
+                                          value=2.0, step=0.5, key="b_resi")
+            b_sole = st.checkbox("1세대 1주택", value=True, key="b_sole")
+            b_adj = st.checkbox("조정대상지역", value=True, key="b_adj")
+            b_surcharge = st.checkbox("다주택 중과 적용", value=False, key="b_surcharge")
+
+    st.markdown("### 2. 목표 부동산 & 재무 정보")
+    col_t, col_f = st.columns(2)
+
+    with col_t:
+        with st.container(border=True):
+            st.markdown("#### 목표 부동산")
+            t_name = st.text_input("단지명/메모", value="", key="t_name",
+                                   placeholder="예: 잠실엘스")
+            t_region_label, t_code = _region_select("목표 지역", "t_region", "서울 송파구")
+            t_min = st.number_input("목표 예산 하한 (만원)", min_value=0,
+                                    value=150_000, step=1_000, key="t_min")
+            t_max = st.number_input("목표 예산 상한 (만원)", min_value=0,
+                                    value=200_000, step=1_000, key="t_max")
+
+    with col_f:
+        with st.container(border=True):
+            st.markdown("#### 재무 정보")
+            income = st.number_input("연 소득 합산 (만원, 0이면 DSR 미계산)",
+                                     min_value=0, value=0, step=500, key="income")
+            existing_payment = st.number_input("기존 월 원리금 합계 (만원)",
+                                               min_value=0, value=0,
+                                               step=10, key="existing_pay",
+                                               help="현재 보유 대출 중 신규 주담대 외 상환액")
+
+    if st.button("시나리오 분석 실행", type="primary", use_container_width=True):
+        prop_a = PropertyProfile(
+            label=a_name or "내 부동산",
+            region_code=a_code,
+            apt_name=a_name,
+            acquisition_price_man=float(a_buy),
+            estimated_price_man=float(a_est),
+            loan_balance_man=float(a_loan),
+            hold_years=float(a_hold),
+            residency_years=float(a_resi),
+            is_sole_home=a_sole,
+            is_adjusted_area=a_adj,
+            multihome_surcharge=a_surcharge,
+        )
+        prop_b = PropertyProfile(
+            label=b_name or "파트너 부동산",
+            region_code=b_code,
+            apt_name=b_name,
+            acquisition_price_man=float(b_buy),
+            estimated_price_man=float(b_est),
+            loan_balance_man=float(b_loan),
+            hold_years=float(b_hold),
+            residency_years=float(b_resi),
+            is_sole_home=b_sole,
+            is_adjusted_area=b_adj,
+            multihome_surcharge=b_surcharge,
+        )
+        target = TargetProperty(
+            region_code=t_code,
+            label=t_name or "목표 부동산",
+            budget_min_man=float(t_min),
+            budget_max_man=float(t_max),
+        )
+
+        result = plan_scenarios(
+            prop_a=prop_a,
+            prop_b=prop_b,
+            target=target,
+            annual_income_man=float(income),
+            existing_monthly_payment_man=float(existing_payment),
+        )
+
+        # ── 매도 순수령액 요약 ──────────────────────────────
+        st.markdown("---")
+        st.markdown("### 매도 순수령액 요약")
+
+        def _eok(v: float) -> str:
+            return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
+
+        sa = result["prop_a_sale"]
+        sb = result["prop_b_sale"]
+
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric(f"{prop_a.label} 순수령액", _eok(sa["net_man"]),
+                      help=f"시세 {_eok(sa['sale_price_man'])} − 대출상환 {_eok(sa['loan_repay_man'])} − 중개 {_eok(sa['broker_fee_man'])} − 양도세 {_eok(sa['capital_gains_tax_man'])}")
+        with m2:
+            st.metric(f"{prop_b.label} 순수령액", _eok(sb["net_man"]),
+                      help=f"시세 {_eok(sb['sale_price_man'])} − 대출상환 {_eok(sb['loan_repay_man'])} − 중개 {_eok(sb['broker_fee_man'])} − 양도세 {_eok(sb['capital_gains_tax_man'])}")
+        with m3:
+            st.metric("합산 매수 자기자본", _eok(result["combined_equity_man"]))
+
+        # 상세 테이블
+        rows = []
+        for prop, sale in [(prop_a, sa), (prop_b, sb)]:
+            rows.append({
+                "구분": prop.label,
+                "현재 시세": _eok(sale["sale_price_man"]),
+                "대출 상환": _eok(sale["loan_repay_man"]),
+                "중개수수료": _eok(sale["broker_fee_man"]),
+                "양도세(추정)": _eok(sale["capital_gains_tax_man"]),
+                "순수령액": _eok(sale["net_man"]),
+                "양도세 판정": sale["tax_note"],
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("⚠️ 양도세는 추정값입니다. 실제 세액은 세무사 확인 필수.")
+
+        # ── 합산 매수력 ─────────────────────────────────────
+        st.markdown("### 합산 매수력 (시나리오 A 기준 — 무주택 매수)")
+        m4, m5, m6 = st.columns(3)
+        with m4:
+            st.metric("자기자본", _eok(result["combined_equity_man"]))
+        with m5:
+            eff_loan = result["effective_loan_man"]
+            dsr_note = f"DSR 한도 {_eok(result['dsr_loan_limit_man'])}" if income > 0 else "DSR 미입력"
+            st.metric("대출 가능액 (LTV+DSR)", _eok(eff_loan), help=dsr_note)
+        with m6:
+            st.metric("최대 매수 가능가", _eok(result["max_purchase_power_man"]))
+
+        # 목표 예산 달성 여부
+        acq_t = result["target_acquisition_cost"]["total"]
+        min_needed = t_min + acq_t
+        max_needed = t_max + acq_t
+        total_power = result["combined_equity_man"] + result["effective_loan_man"]
+        if total_power >= max_needed:
+            st.success(f"목표 상한({_eok(t_max)})까지 충분 — 부대비용({_eok(acq_t)}) 포함 {_eok(max_needed)} 충당 가능")
+        elif total_power >= min_needed:
+            st.warning(f"목표 하한({_eok(t_min)})은 가능하나 상한({_eok(t_max)})은 부족 — 예산 범위 조정 검토")
+        else:
+            st.error(f"현재 자금으로는 목표 하한도 미달 — {_eok(min_needed - total_power)} 부족")
+
+        # ── 시나리오 4개 ────────────────────────────────────
+        st.markdown("### 4가지 시나리오 비교")
+        rec = result["recommended_scenario"]
+
+        for sc in result["scenarios"]:
+            is_rec = sc["label"].startswith(rec)
+            with st.expander(
+                ("✅ **[추천]** " if is_rec else "") + sc["label"],
+                expanded=is_rec,
+            ):
+                st.markdown(f"_{sc['description']}_")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.metric("자기자본", _eok(sc["available_equity_man"]))
+                with c2:
+                    st.metric("대출 한도", _eok(sc["loan_capacity_man"]))
+                with c3:
+                    st.metric("최대 예산", _eok(sc["max_budget_man"]))
+                with c4:
+                    acq_label = "취득세 등"
+                    st.metric(acq_label, _eok(sc["acq_total_cost_man"]),
+                              help=f"취득세 {_eok(sc['acquisition_tax_man'])} 포함")
+
+                if sc["can_afford_target_max"]:
+                    st.success("목표 상한까지 매수 가능")
+                elif sc["can_afford_target_min"]:
+                    st.warning("목표 하한은 가능, 상한은 부족")
+                else:
+                    st.error("목표 하한도 자금 부족")
+
+                col_r, col_t2 = st.columns(2)
+                with col_r:
+                    st.markdown("**위험 요소**")
+                    for r in sc["risks"]:
+                        st.markdown(f"- {r}")
+                with col_t2:
+                    st.markdown("**실행 팁**")
+                    for t in sc["tips"]:
+                        st.markdown(f"- {t}")
+
+        # ── WRAP 체크리스트 ─────────────────────────────────
+        st.markdown("---")
+        st.markdown("### WRAP 의사결정 체크리스트")
+        with st.container(border=True):
+            st.markdown("""
+| | 질문 |
+|---|---|
+| **W** | 두 집 처분 외 대안(전세 전환, 한 채만 매도)도 검토했나요? |
+| **R** | 현재 시세 추정값이 실제 호가·실거래와 일치하나요? (DB 조회 권장) |
+| **A** | 지금 결정이 FOMO(시장 상승 공포)에 의한 건 아닌가요? |
+| **P** | 매도가 예상보다 20% 낮게 될 경우 자금 계획이 성립하나요? |
+""")
+
+        st.info(
+            "이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
+            "최종 매수·매도 결정은 공식 실거래 데이터, 현장 확인, "
+            "금융·세무 전문가 상담 후 내려야 합니다."
+        )
+
+
 def main():
     page = _sidebar_nav()
 
@@ -1609,6 +1881,8 @@ def main():
         page_market_signals()
     elif page.startswith("🔬"):
         page_strategy_backtest()
+    elif page.startswith("🏘️"):
+        page_portfolio_strategy()
     else:
         page_my_capacity()
 
