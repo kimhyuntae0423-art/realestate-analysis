@@ -1730,76 +1730,100 @@ def page_portfolio_strategy():
             renewal_right_used=renewal_used, notified_nonrenewal=notified,
         )
 
-    # ── 보유 부동산 수 조절 ──────────────────────────────────────
+    # ── session state 초기화 ──────────────────────────────────────
     if "n_mine" not in st.session_state:
         st.session_state["n_mine"] = 1
     if "n_partner" not in st.session_state:
+        st.session_state["n_partner"] = 0   # 기본값: 파트너 없음
+    if "show_partner" not in st.session_state:
+        st.session_state["show_partner"] = False
+
+    st.markdown("### 1. 보유 부동산")
+
+    MINE_DEFAULTS    = ["충남 천안시 동남구", "서울 강남구", "경기 성남시 분당구", "서울 송파구", "서울 서초구"]
+    PARTNER_DEFAULTS = ["서울 마포구", "서울 용산구", "서울 강동구", "인천 연수구", "경기 수원시 영통구"]
+
+    # ── 내 부동산 헤더 ──────────────────────────────────────────
+    h1, h2, h3, _ = st.columns([2, 1, 1, 4])
+    with h1:
+        st.markdown("##### 👤 내 부동산")
+    with h2:
+        if st.button("＋", key="add_mine", use_container_width=True,
+                     help="내 물건 추가"):
+            if st.session_state["n_mine"] < 5:
+                st.session_state["n_mine"] += 1
+            st.rerun()
+    with h3:
+        if st.button("－", key="del_mine", use_container_width=True,
+                     help="내 물건 삭제"):
+            if st.session_state["n_mine"] > 1:
+                st.session_state["n_mine"] -= 1
+            st.rerun()
+
+    # ── 파트너 토글 ────────────────────────────────────────────
+    show_partner = st.toggle(
+        "👥 파트너 부동산 추가",
+        value=st.session_state["show_partner"],
+        key="show_partner_toggle",
+        help="파트너(배우자/동거인)의 부동산도 함께 분석할 때 켜세요",
+    )
+    st.session_state["show_partner"] = show_partner
+
+    if show_partner and st.session_state["n_partner"] == 0:
         st.session_state["n_partner"] = 1
 
-    n_mine    = st.session_state["n_mine"]
-    n_partner = st.session_state["n_partner"]
-
-    st.markdown("### 1. 보유 부동산 전체 목록")
-
-    # 한 줄에 두 사람의 물건 수 조절 버튼
-    with st.container(border=False):
-        hc1, hc2 = st.columns(2)
-        with hc1:
-            st.markdown("##### 👤 내 부동산")
-            ba, bd, _ = st.columns([1, 1, 4])
-            with ba:
-                if st.button("＋ 추가", key="add_mine", use_container_width=True):
-                    if st.session_state["n_mine"] < 5:
-                        st.session_state["n_mine"] += 1
-                    st.rerun()
-            with bd:
-                if st.button("－ 삭제", key="del_mine", use_container_width=True):
-                    if st.session_state["n_mine"] > 1:
-                        st.session_state["n_mine"] -= 1
-                    st.rerun()
-        with hc2:
+    if show_partner:
+        hp1, hp2, hp3, _ = st.columns([2, 1, 1, 4])
+        with hp1:
             st.markdown("##### 👥 파트너 부동산")
-            bb, be, _ = st.columns([1, 1, 4])
-            with bb:
-                if st.button("＋ 추가", key="add_partner", use_container_width=True):
-                    if st.session_state["n_partner"] < 5:
-                        st.session_state["n_partner"] += 1
-                    st.rerun()
-            with be:
-                if st.button("－ 삭제", key="del_partner", use_container_width=True):
-                    if st.session_state["n_partner"] > 1:
-                        st.session_state["n_partner"] -= 1
-                    st.rerun()
+        with hp2:
+            if st.button("＋", key="add_partner", use_container_width=True):
+                if st.session_state["n_partner"] < 5:
+                    st.session_state["n_partner"] += 1
+                st.rerun()
+        with hp3:
+            if st.button("－", key="del_partner", use_container_width=True):
+                if st.session_state["n_partner"] > 1:
+                    st.session_state["n_partner"] -= 1
+                st.rerun()
 
-    # 나/파트너 물건을 2열 그리드로 나란히 배치
     n_mine    = st.session_state["n_mine"]
-    n_partner = st.session_state["n_partner"]
+    n_partner = st.session_state["n_partner"] if show_partner else 0
+
     kws_mine    = []
     kws_partner = []
 
-    MINE_DEFAULTS    = ["서울 서초구", "서울 강남구", "충남 천안시 동남구", "경기 성남시 분당구", "서울 송파구"]
-    PARTNER_DEFAULTS = ["서울 마포구", "서울 용산구", "서울 강동구", "인천 연수구", "경기 수원시 영통구"]
-
-    for i in range(max(n_mine, n_partner)):
-        c_mine, c_partner = st.columns(2)
-        with c_mine:
-            if i < n_mine:
-                label = f"👤 내 {i+1}번째 부동산" if n_mine > 1 else "👤 내 부동산"
-                with st.expander(label, expanded=True):
-                    kws_mine.append(_prop_block(
-                        f"mine_{i}",
-                        default_region=MINE_DEFAULTS[i] if i < len(MINE_DEFAULTS) else "서울 강남구",
-                    ))
-            else:
-                st.empty()
-        with c_partner:
-            if i < n_partner:
-                label = f"👥 파트너 {i+1}번째 부동산" if n_partner > 1 else "👥 파트너 부동산"
-                with st.expander(label, expanded=True):
-                    kws_partner.append(_prop_block(
-                        f"partner_{i}",
-                        default_region=PARTNER_DEFAULTS[i] if i < len(PARTNER_DEFAULTS) else "서울 마포구",
-                    ))
+    # ── 그리드 배치 ─────────────────────────────────────────────
+    # 파트너가 없으면 1열 전체, 있으면 2열 나란히
+    if not show_partner:
+        # 내 물건만 — 전체 너비 사용
+        for i in range(n_mine):
+            label = f"👤 내 {i+1}번째 부동산" if n_mine > 1 else "👤 내 부동산"
+            with st.expander(label, expanded=True):
+                kws_mine.append(_prop_block(
+                    f"mine_{i}",
+                    default_region=MINE_DEFAULTS[i % len(MINE_DEFAULTS)],
+                ))
+    else:
+        # 나/파트너 2열 나란히
+        for i in range(max(n_mine, n_partner)):
+            c_mine, c_partner = st.columns(2)
+            with c_mine:
+                if i < n_mine:
+                    label = f"👤 내 {i+1}번째" if n_mine > 1 else "👤 내 부동산"
+                    with st.expander(label, expanded=True):
+                        kws_mine.append(_prop_block(
+                            f"mine_{i}",
+                            default_region=MINE_DEFAULTS[i % len(MINE_DEFAULTS)],
+                        ))
+            with c_partner:
+                if i < n_partner:
+                    label = f"👥 파트너 {i+1}번째" if n_partner > 1 else "👥 파트너 부동산"
+                    with st.expander(label, expanded=True):
+                        kws_partner.append(_prop_block(
+                            f"partner_{i}",
+                            default_region=PARTNER_DEFAULTS[i % len(PARTNER_DEFAULTS)],
+                        ))
 
     # ── 목표 부동산 & 재무 ───────────────────────────────────────
     st.divider()
