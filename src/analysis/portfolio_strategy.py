@@ -1,37 +1,43 @@
 """보유 부동산 처분 + 신규 매수 전략 플래너
 
-내 부동산(A) + 파트너 부동산(B) → 합산 매수력 + 4가지 순서 시나리오
+내 부동산(N채) + 파트너 부동산(M채) -> 합산 매수력 + 4가지 시나리오
 모든 금액 만원.
 """
 from __future__ import annotations
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass
 
 from src.analysis.capital_gains_tax import capital_gains_tax_man
 from src.analysis.costs import broker_fee_man, total_acquisition_cost_man
 from src.analysis.loan import loan_capacity_man, dsr_loan_capacity_man
 
 
+def _fmt(v: float) -> str:
+    """만원 값을 억/만 단위 문자열로 변환."""
+    return f"{v/10000:.1f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
+
+
 @dataclass
 class PropertyProfile:
     """보유 부동산 정보"""
-    label: str                              # '내 아파트' / '파트너 아파트'
-    region_code: str                         # 법정동 시군구 5자리
+    label: str
+    region_code: str
     apt_name: str = ""
-    acquisition_price_man: float = 0.0      # 취득가 (만원)
-    estimated_price_man: float = 0.0        # 현재 추정 시세 (만원)
-    loan_balance_man: float = 0.0           # 현재 대출 잔액 (만원)
-    hold_years: float = 3.0                 # 보유기간 (년)
-    residency_years: float = 2.0            # 실거주 기간 (년)
-    is_sole_home: bool = True               # 이 집만 보유 중 (1주택 비과세 판단)
-    is_adjusted_area: bool = True           # 조정대상지역 여부
-    multihome_surcharge: bool = False       # 다주택 양도세 중과 여부
-    # ── 임대 현황 ────────────────────────────────────────────
-    tenant_type: str = "직접거주"            # "직접거주" | "전세" | "월세" | "공실"
-    jeonse_deposit_man: float = 0.0         # 전세 보증금 (만원) — 매도 시 반환 의무
-    monthly_rent_deposit_man: float = 0.0  # 월세 보증금 (만원)
-    monthly_rent_man: float = 0.0          # 월세 금액 (만원/월)
-    contract_end_date: str = ""            # 임대차 계약 만료일 "YYYY-MM-DD"
-    move_out_buffer_months: int = 2        # 계약 만료 후 이사 준비 기간 (개월)
+    acquisition_price_man: float = 0.0
+    estimated_price_man: float = 0.0
+    loan_balance_man: float = 0.0
+    hold_years: float = 3.0
+    residency_years: float = 2.0
+    is_sole_home: bool = True
+    is_adjusted_area: bool = True
+    multihome_surcharge: bool = False
+    # 임대 현황
+    tenant_type: str = "직접거주"
+    jeonse_deposit_man: float = 0.0
+    monthly_rent_deposit_man: float = 0.0
+    monthly_rent_man: float = 0.0
+    contract_end_date: str = ""
+    move_out_buffer_months: int = 2
 
 
 @dataclass
@@ -44,19 +50,14 @@ class TargetProperty:
 
 
 def net_sale_proceeds(prop: PropertyProfile) -> dict:
-    """매도 순수령액 산출.
-
-    순수령액 = 매도가 − 대출상환 − 중개수수료 − 양도세
-    """
+    """매도 순수령액 = 시세 - 대출상환 - 중개비 - 양도세 - 보증금반환"""
     sale = prop.estimated_price_man
     if sale <= 0:
         return {
-            "net_man": 0,
-            "sale_price_man": 0,
-            "loan_repay_man": 0,
-            "broker_fee_man": 0,
-            "capital_gains_tax_man": 0,
-            "tax_note": "-",
+            "net_man": 0, "sale_price_man": 0,
+            "loan_repay_man": 0, "broker_fee_man": 0,
+            "capital_gains_tax_man": 0, "deposit_return_man": 0,
+            "tenant_type": prop.tenant_type, "tax_note": "-",
         }
 
     broker = broker_fee_man(sale)
@@ -71,7 +72,6 @@ def net_sale_proceeds(prop: PropertyProfile) -> dict:
     )
     cgt = tax_info["tax_man"]
 
-    # 세입자 보증금 반환 (매도 시 매수인에게 승계 또는 직접 반환)
     deposit_return = 0.0
     if prop.tenant_type == "전세":
         deposit_return = prop.jeonse_deposit_man
@@ -93,177 +93,44 @@ def net_sale_proceeds(prop: PropertyProfile) -> dict:
     }
 
 
-def _loan_capacity(target: TargetProperty, ownership: str,
-                   dsr_cap: float) -> float:
-    """LTV + DSR 중 작은 값."""
-    ref_price = target.budget_max_man or target.budget_min_man
-    ltv_loan = loan_capacity_man(ref_price, target.region_code, ownership)
-    if dsr_cap > 0:
-        return min(ltv_loan, dsr_cap)
-    return ltv_loan
+def _loan_cap(target: TargetProperty, ownership: str, dsr_cap: float) -> float:
+    ref = target.budget_max_man or target.budget_min_man
+    ltv = loan_capacity_man(ref, target.region_code, ownership)
+    return min(ltv, dsr_cap) if dsr_cap > 0 else ltv
 
 
-def plan_scenarios(
-    prop_a: PropertyProfile,
-    prop_b: PropertyProfile,
-    target: TargetProperty,
-    annual_income_man: float = 0.0,
-    existing_monthly_payment_man: float = 0.0,
-) -> dict:
-    """4가지 처분·매수 순서 시나리오 분석.
-
-    A. 둘 다 매도 → 신규 매수  (안전 최우선)
-    B. prop_a 매도 → 매수 → prop_b 매도
-    C. prop_b 매도 → 매수 → prop_a 매도
-    D. 신규 매수 먼저 → 둘 다 매도  (고위험)
-    """
-    sale_a = net_sale_proceeds(prop_a)
-    sale_b = net_sale_proceeds(prop_b)
-
-    combined = sale_a["net_man"] + sale_b["net_man"]
-
-    # DSR 대출 한도
-    dsr_cap = 0.0
-    if annual_income_man > 0:
-        dsr_cap = dsr_loan_capacity_man(
-            annual_income_man=annual_income_man,
-            existing_monthly_payment_man=existing_monthly_payment_man,
-        )
-
-    acq_cost = total_acquisition_cost_man(
-        target.budget_max_man or target.budget_min_man,
-        ownership="무주택",
-    )
-
-    def _make_scenario(
-        label: str,
-        desc: str,
-        equity: float,
-        ownership: str,
-        risks: list[str],
-        tips: list[str],
-    ) -> dict:
-        loan = _loan_capacity(target, ownership, dsr_cap)
-        ref_price = target.budget_max_man or target.budget_min_man
-        acq = total_acquisition_cost_man(ref_price, ownership)
-        max_budget = equity + loan
-        can_afford_min = max_budget >= (target.budget_min_man + acq["total"])
-        can_afford_max = max_budget >= (target.budget_max_man + acq["total"])
-        return {
-            "label": label,
-            "description": desc,
-            "available_equity_man": round(equity),
-            "loan_capacity_man": round(loan),
-            "max_budget_man": round(max_budget),
-            "acquisition_tax_man": acq["acquisition_tax"],
-            "acq_total_cost_man": acq["total"],
-            "ownership_when_buy": ownership,
-            "can_afford_target_min": can_afford_min,
-            "can_afford_target_max": can_afford_max,
-            "risks": risks,
-            "tips": tips,
-        }
-
-    scenarios = [
-        _make_scenario(
-            label="A. 둘 다 매도 → 신규 매수",
-            desc="두 부동산 모두 매도 완료 후 신규 매수. 무주택 취득세(최저), LTV 한도 최고.",
-            equity=combined,
-            ownership="무주택",
-            risks=[
-                "이사 2번 (임시 월세 필요)",
-                "매도 → 매수 타이밍 갭: 시장 상승 시 기회 손실 가능",
-                "전세·월세 계약 기간에 따른 잔금 조율 필요",
-            ],
-            tips=[
-                "임시 거주 비용(월세 × 6~12개월)을 예산에 포함하세요",
-                "잔금일 맞추기로 이사를 1회로 줄일 수 있습니다",
-                "무주택자 LTV가 가장 유리 — 대출 한도 최대",
-            ],
-        ),
-        _make_scenario(
-            label=f"B. {prop_a.label} 매도 → 신규 매수 → {prop_b.label} 매도",
-            desc=f"{prop_a.label}만 먼저 매도 후 신규 매수, 잔여 {prop_b.label}는 이후 정리.",
-            equity=sale_a["net_man"],
-            ownership="1주택",
-            risks=[
-                "신규 매수 시 1주택 상태 → 취득세 8% 중과 가능 (조정지역)",
-                f"{prop_b.label} 매도 전까지 2주택 유지비 발생",
-                "일시적 2주택 비과세 요건: 신규 취득 후 3년 내 기존 주택 처분 필수",
-            ],
-            tips=[
-                f"일시적 2주택 특례 적용 시 {prop_b.label} 양도세 비과세 가능 (3년 내 처분)",
-                "1주택→신규 취득 취득세 중과 여부: 세무사 확인 권장",
-                f"{prop_a.label} 순수령액이 더 클 때 이 시나리오가 유리",
-            ],
-        ),
-        _make_scenario(
-            label=f"C. {prop_b.label} 매도 → 신규 매수 → {prop_a.label} 매도",
-            desc=f"{prop_b.label}만 먼저 매도 후 신규 매수, 잔여 {prop_a.label}는 이후 정리.",
-            equity=sale_b["net_man"],
-            ownership="1주택",
-            risks=[
-                "신규 매수 시 1주택 상태 → 취득세 8% 중과 가능 (조정지역)",
-                f"{prop_a.label} 매도 전까지 2주택 유지비",
-                "일시적 2주택 비과세 요건: 3년 내 처분 필수",
-            ],
-            tips=[
-                f"일시적 2주택 특례 적용 시 {prop_a.label} 양도세 비과세 가능",
-                f"{prop_b.label} 순수령액이 더 클 때 이 시나리오가 유리",
-                "순수령액 더 큰 쪽을 나중에 매도하면 자금 압박 감소",
-            ],
-        ),
-        _make_scenario(
-            label="D. 신규 매수 먼저 → 두 부동산 매도 (고위험)",
-            desc="신규 매수 후 기존 2채 매도. 3주택 상태 발생, 자금·세금 부담 최대.",
-            equity=combined,
-            ownership="다주택",
-            risks=[
-                "3주택 취득세: 12% 중과",
-                "3채 동시 대출이자 + 관리비 부담",
-                "매도 지연 시 현금흐름 심각 위협",
-                "다주택 양도세 중과(+20%) 적용 가능",
-            ],
-            tips=[
-                "자금 여유가 충분한 경우에만 고려하세요",
-                "세무사·법무사 사전 상담 필수",
-                "매도 시점을 미리 계약서에 명시하는 방법도 있음",
-            ],
-        ),
-    ]
-
-    # 추천 순서 (can_afford_target_min True + 위험 최소)
-    recommended = next(
-        (s["label"][0] for s in scenarios if s["can_afford_target_min"]),
-        "A",
-    )
-
+def _make_sc(target: TargetProperty, dsr_cap: float,
+             label: str, desc: str, equity: float, ownership: str,
+             risks: list, tips: list) -> dict:
+    loan = _loan_cap(target, ownership, dsr_cap)
+    ref  = target.budget_max_man or target.budget_min_man
+    acq  = total_acquisition_cost_man(ref, ownership)
+    mb   = equity + loan
     return {
-        "prop_a_sale": sale_a,
-        "prop_b_sale": sale_b,
-        "combined_equity_man": round(combined),
-        "dsr_loan_limit_man": round(dsr_cap),
-        "ltv_loan_limit_man": round(_loan_capacity(target, "무주택", 0)),
-        "effective_loan_man": round(_loan_capacity(target, "무주택", dsr_cap)),
-        "max_purchase_power_man": round(combined + _loan_capacity(target, "무주택", dsr_cap)),
-        "target_acquisition_cost": acq_cost,
-        "scenarios": scenarios,
-        "recommended_scenario": recommended,
+        "label": label, "description": desc,
+        "available_equity_man": round(equity),
+        "loan_capacity_man": round(loan),
+        "max_budget_man": round(mb),
+        "acquisition_tax_man": acq["acquisition_tax"],
+        "acq_total_cost_man": acq["total"],
+        "ownership_when_buy": ownership,
+        "can_afford_target_min": mb >= (target.budget_min_man + acq["total"]),
+        "can_afford_target_max": mb >= (target.budget_max_man + acq["total"]),
+        "risks": risks, "tips": tips,
     }
 
 
-# ── 다중 부동산 버전 ────────────────────────────────────────────
 def plan_scenarios_multi(
-    props_mine: list[PropertyProfile],
-    props_partner: list[PropertyProfile],
+    props_mine: list,
+    props_partner: list,
     target: TargetProperty,
     annual_income_man: float = 0.0,
     existing_monthly_payment_man: float = 0.0,
 ) -> dict:
     """여러 부동산을 보유한 두 사람의 처분·매수 시나리오.
 
-    props_mine: 내 부동산 목록 (1개 이상)
-    props_partner: 파트너 부동산 목록 (0개 이상)
+    props_mine: 내 부동산 목록
+    props_partner: 파트너 부동산 목록
     """
     sales_mine    = [net_sale_proceeds(p) for p in props_mine]
     sales_partner = [net_sale_proceeds(p) for p in props_partner]
@@ -271,20 +138,7 @@ def plan_scenarios_multi(
     equity_mine    = sum(s["net_man"] for s in sales_mine)
     equity_partner = sum(s["net_man"] for s in sales_partner)
     combined       = equity_mine + equity_partner
-
-    total_count = len(props_mine) + len(props_partner)
-
-    # 매도 후 잔여 주택 수 기준 ownership 결정
-    def _ownership_after_selling(sold_group: str) -> str:
-        if sold_group == "mine":
-            remain = len(props_partner)
-        else:
-            remain = len(props_mine)
-        if remain == 0:
-            return "무주택"
-        if remain == 1:
-            return "1주택"
-        return "다주택"
+    total_count    = len(props_mine) + len(props_partner)
 
     dsr_cap = 0.0
     if annual_income_man > 0:
@@ -298,76 +152,75 @@ def plan_scenarios_multi(
         ownership="무주택",
     )
 
-    mine_label    = "내 부동산" + (f" ({len(props_mine)}채)" if len(props_mine) > 1 else "")
-    partner_label = "파트너 부동산" + (f" ({len(props_partner)}채)" if len(props_partner) > 1 else "")
+    n_mine    = len(props_mine)
+    n_partner = len(props_partner)
+    mine_label    = "내 부동산" + (f" ({n_mine}채)" if n_mine > 1 else "")
+    partner_label = "파트너 부동산" + (f" ({n_partner}채)" if n_partner > 1 else "")
 
-    def _sc(label, desc, equity, ownership, risks, tips):
-        loan = _loan_capacity(target, ownership, dsr_cap)
-        ref  = target.budget_max_man or target.budget_min_man
-        acq  = total_acquisition_cost_man(ref, ownership)
-        mb   = equity + loan
-        return {
-            "label": label, "description": desc,
-            "available_equity_man": round(equity),
-            "loan_capacity_man": round(loan),
-            "max_budget_man": round(mb),
-            "acquisition_tax_man": acq["acquisition_tax"],
-            "acq_total_cost_man": acq["total"],
-            "ownership_when_buy": ownership,
-            "can_afford_target_min": mb >= (target.budget_min_man + acq["total"]),
-            "can_afford_target_max": mb >= (target.budget_max_man + acq["total"]),
-            "risks": risks, "tips": tips,
-        }
+    def _own_remain(sold: str) -> str:
+        remain = n_partner if sold == "mine" else n_mine
+        if remain == 0:
+            return "무주택"
+        if remain == 1:
+            return "1주택"
+        return "다주택"
 
-    own_after_mine    = _ownership_after_selling("mine")
-    own_after_partner = _ownership_after_selling("partner")
-    own_buy_first     = ("다주택" if total_count >= 2 else "1주택")
+    own_a = "무주택"
+    own_b = _own_remain("mine")
+    own_c = _own_remain("partner")
+    own_d = "다주택" if total_count >= 2 else "1주택"
+
+    own_b_tax = "8%" if own_b == "1주택" else "12%"
+    own_c_tax = "8%" if own_c == "1주택" else "12%"
+
+    def sc(label, desc, equity, ownership, risks, tips):
+        return _make_sc(target, dsr_cap, label, desc, equity, ownership, risks, tips)
 
     scenarios = [
-        _sc(
-            "A. 전체 매도 → 신규 매수",
+        sc(
+            "A. 전체 매도 -> 신규 매수",
             f"총 {total_count}채 모두 매도 후 무주택으로 신규 매수. 취득세 최저, LTV 최고.",
-            equity=combined, ownership="무주택",
-            risks=["이사 여러 번 (임시 거주 필요)", "매도 타이밍 분산 → 자금 묶임 기간 발생"],
+            equity=combined, ownership=own_a,
+            risks=["이사 여러 번 (임시 거주 필요)", "매도 타이밍 분산 -> 자금 묶임"],
             tips=["무주택 LTV 최대 활용", "잔금일 조율로 이사 횟수 최소화"],
         ),
-        _sc(
-            f"B. {mine_label} 먼저 매도 → 신규 매수 → {partner_label} 매도",
+        sc(
+            f"B. {mine_label} 먼저 매도 -> 신규 매수 -> {partner_label} 매도",
             f"{mine_label} 먼저 처분, {partner_label}는 신규 취득 후 정리.",
-            equity=equity_mine, ownership=own_after_mine,
+            equity=equity_mine, ownership=own_b,
             risks=[
-                f"매수 시 {own_after_mine} 상태 → 취득세 {'8%' if own_after_mine == '1주택' else '12%'} 중과 가능",
+                f"매수 시 {own_b} 상태 -> 취득세 {own_b_tax} 중과 가능",
                 f"{partner_label} 처분 완료까지 다주택 유지비",
                 "일시적 2주택 특례: 신규 취득 후 3년 내 처분 필수",
             ],
             tips=[
                 "일시적 2주택 특례 적용 시 양도세 비과세 가능",
-                f"{mine_label} 순수령액({_eok_plain(equity_mine)})이 클수록 유리",
+                f"{mine_label} 순수령액({_fmt(equity_mine)})이 클수록 유리",
             ],
         ),
-        _sc(
-            f"C. {partner_label} 먼저 매도 → 신규 매수 → {mine_label} 매도",
+        sc(
+            f"C. {partner_label} 먼저 매도 -> 신규 매수 -> {mine_label} 매도",
             f"{partner_label} 먼저 처분, {mine_label}는 신규 취득 후 정리.",
-            equity=equity_partner, ownership=own_after_partner,
+            equity=equity_partner, ownership=own_c,
             risks=[
-                f"매수 시 {own_after_partner} 상태 → 취득세 중과 가능",
+                f"매수 시 {own_c} 상태 -> 취득세 {own_c_tax} 중과 가능",
                 f"{mine_label} 처분 완료까지 다주택 유지비",
             ],
             tips=[
-                f"{partner_label} 순수령액({_eok_plain(equity_partner)})이 클수록 유리",
+                f"{partner_label} 순수령액({_fmt(equity_partner)})이 클수록 유리",
                 "순수령액 큰 쪽을 마지막에 팔면 자금 압박 감소",
             ],
         ),
-        _sc(
-            "D. 신규 매수 먼저 → 전체 매도 (고위험)",
+        sc(
+            "D. 신규 매수 먼저 -> 전체 매도 (고위험)",
             f"신규 매수 후 {total_count}채 순차 처분. 최대 {total_count + 1}주택 상태 발생.",
-            equity=combined, ownership=own_buy_first,
+            equity=combined, ownership=own_d,
             risks=[
-                f"취득 시 {own_buy_first} → 취득세 최중과",
-                f"{total_count + 1}채 동시 이자·관리비",
+                f"취득 시 {own_d} -> 취득세 최중과",
+                f"{total_count + 1}채 동시 이자/관리비",
                 "매도 지연 시 현금흐름 위기",
             ],
-            tips=["자금 여유 충분할 때만 고려", "세무사·법무사 사전 상담 필수"],
+            tips=["자금 여유 충분할 때만 고려", "세무사/법무사 사전 상담 필수"],
         ),
     ]
 
@@ -384,16 +237,24 @@ def plan_scenarios_multi(
         "equity_partner_man": round(equity_partner),
         "combined_equity_man": round(combined),
         "dsr_loan_limit_man": round(dsr_cap),
-        "effective_loan_man": round(_loan_capacity(target, "무주택", dsr_cap)),
-        "max_purchase_power_man": round(combined + _loan_capacity(target, "무주택", dsr_cap)),
+        "effective_loan_man": round(_loan_cap(target, "무주택", dsr_cap)),
+        "max_purchase_power_man": round(combined + _loan_cap(target, "무주택", dsr_cap)),
         "target_acquisition_cost": acq_cost,
         "scenarios": scenarios,
         "recommended_scenario": recommended,
-        # backward compat
         "prop_a_sale": sales_mine[0] if sales_mine else {},
         "prop_b_sale": sales_partner[0] if sales_partner else {},
     }
 
 
-def _eok_plain(v: float) -> str:
-    return f"{v/10000:.1f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
+# 하위 호환 래퍼
+def plan_scenarios(prop_a: PropertyProfile, prop_b: PropertyProfile,
+                   target: TargetProperty,
+                   annual_income_man: float = 0.0,
+                   existing_monthly_payment_man: float = 0.0) -> dict:
+    return plan_scenarios_multi(
+        props_mine=[prop_a], props_partner=[prop_b],
+        target=target,
+        annual_income_man=annual_income_man,
+        existing_monthly_payment_man=existing_monthly_payment_man,
+    )
