@@ -1853,52 +1853,55 @@ def page_portfolio_strategy():
     st.divider()
     st.markdown("### 2. 살 집 & 재무 정보")
 
-    col_t, col_f = st.columns(2)
-    with col_t:
-        with st.container(border=True):
-            st.markdown("#### 🏡 살 집 (목표 부동산)")
-            t_name  = st.text_input("단지명/메모", value="", key="t_name",
-                                    placeholder="예: 잠실엘스")
-            t_code  = _rsel("지역", "t_region", "서울 송파구")
-            ca, cb  = st.columns(2)
-            with ca:
-                t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
-                                        step=1_000, key="t_min")
-            with cb:
-                t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
-                                        step=1_000, key="t_max")
+    with st.container(border=True):
+        st.markdown("#### 🏡 살 집 (목표 부동산)")
+        ca, cb, cc = st.columns(3)
+        with ca:
+            t_name = st.text_input("단지명/메모", value="", key="t_name",
+                                   placeholder="예: 잠실엘스")
+        with cb:
+            t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
+                                    step=1_000, key="t_min")
+        with cc:
+            t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
+                                    step=1_000, key="t_max")
+        cd, ce = st.columns(2)
+        with cd:
+            t_code = _rsel("지역", "t_region", "서울 송파구")
+        with ce:
             t_close = st.date_input("희망 잔금일 (비우면 자동)", value=None,
                                     key="t_close")
 
-    with col_f:
-        with st.container(border=True):
-            st.markdown("#### 💰 자금 & 소득")
-            cc1, cc2 = st.columns(2)
-            with cc1:
-                my_cash_seed = st.number_input(
-                    "👤 내 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
-                    help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
-                )
-            with cc2:
-                partner_cash_seed = st.number_input(
-                    "👥 파트너 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
-                    help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
-                )
-            cash_seed = my_cash_seed + partner_cash_seed
-            st.caption(f"합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
-            st.divider()
+    with st.container(border=True):
+        st.markdown("#### 💰 자금 & 소득")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            my_cash_seed = st.number_input(
+                "👤 내 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
+                help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+            )
+        with c2:
+            partner_cash_seed = st.number_input(
+                "👥 파트너 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
+                help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+            )
+        with c3:
             income = st.number_input(
                 "연 소득 합산 (만원)", 0, value=0, step=500, key="income",
-                help="0 입력 시 DSR 대출 한도 계산 생략"
+                help="0 입력 시 DSR 대출 한도 계산 생략",
             )
+        with c4:
             ex_pay = st.number_input(
                 "기존 월 원리금 (만원)", 0, value=0, step=10, key="ex_pay",
-                help="이미 갚고 있는 대출 원리금 (신규 주담대 제외)"
+                help="이미 갚고 있는 대출 원리금 (신규 주담대 제외)",
             )
+        with c5:
             int_rent = st.number_input(
-                "임시 거주 예상 월세 (만원/월)", 0, value=0, step=10, key="int_rent",
-                help="전체 매도 후 입주 전까지 임시로 살 곳의 월세"
+                "임시 거주 월세 (만원/월)", 0, value=0, step=10, key="int_rent",
+                help="전체 매도 후 입주 전까지 임시로 살 곳의 월세",
             )
+        cash_seed = my_cash_seed + partner_cash_seed
+        st.caption(f"현금 합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
 
     if st.button("시나리오 분석 실행", type="primary", use_container_width=True):
         from datetime import date as _date
