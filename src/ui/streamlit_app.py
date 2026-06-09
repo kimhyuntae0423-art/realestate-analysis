@@ -1873,12 +1873,27 @@ def page_portfolio_strategy():
     with col_f:
         with st.container(border=True):
             st.markdown("#### 💰 자금 & 소득")
-            cash_seed = st.number_input(
-                "현재 보유 현금 (만원)",
-                0, value=0, step=1_000, key="cash_seed",
-                help="부동산 매도 전부터 갖고 있는 현금·예금. 계약금으로 바로 쓸 수 있어요."
-            )
-            st.caption(f"현금 포함 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                with st.container(border=True):
+                    st.markdown("👤 **내 현금**")
+                    my_cash_seed = st.number_input(
+                        "내 보유 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
+                        help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+                        label_visibility="collapsed",
+                    )
+                    st.caption("현금·예금 (만원)")
+            with cc2:
+                with st.container(border=True):
+                    st.markdown("👥 **파트너 현금**")
+                    partner_cash_seed = st.number_input(
+                        "파트너 보유 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
+                        help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+                        label_visibility="collapsed",
+                    )
+                    st.caption("현금·예금 (만원)")
+            cash_seed = my_cash_seed + partner_cash_seed
+            st.caption(f"합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
             st.divider()
             income = st.number_input(
                 "연 소득 합산 (만원)", 0, value=0, step=500, key="income",
@@ -1938,14 +1953,16 @@ def page_portfolio_strategy():
                 })
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
             st.caption("⚠️ 양도세 추정값. 실제 세액은 세무사 확인 필수.")
-            m1, m2, m3, m4, m5 = st.columns(5)
+            m1, m2, m3, m4, m5, m6 = st.columns(6)
             with m1: st.metric("내 부동산 합계",  _eok(result["equity_mine_man"]))
             with m2: st.metric("파트너 합계",      _eok(result["equity_partner_man"]))
-            with m3: st.metric("현금 시드",        _eok(result["current_cash_man"]),
-                               help="직접 입력한 보유 현금")
-            with m4: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
+            with m3: st.metric("👤 내 현금",       _eok(my_cash_seed),
+                               help="직접 입력한 내 보유 현금")
+            with m4: st.metric("👥 파트너 현금",   _eok(partner_cash_seed),
+                               help="직접 입력한 파트너 보유 현금")
+            with m5: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
                                help="내 부동산 + 파트너 + 현금 합계")
-            with m5: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
+            with m6: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
             acq_t = result["target_acquisition_cost"]["total"]
             min_needed = t_min + acq_t; max_needed = t_max + acq_t
             total_power = result["combined_equity_man"] + result["effective_loan_man"]
