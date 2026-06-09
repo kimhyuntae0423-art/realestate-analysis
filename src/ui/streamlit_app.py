@@ -1875,23 +1875,15 @@ def page_portfolio_strategy():
             st.markdown("#### 💰 자금 & 소득")
             cc1, cc2 = st.columns(2)
             with cc1:
-                with st.container(border=True):
-                    st.markdown("👤 **내 현금**")
-                    my_cash_seed = st.number_input(
-                        "내 보유 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
-                        help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
-                        label_visibility="collapsed",
-                    )
-                    st.caption("현금·예금 (만원)")
+                my_cash_seed = st.number_input(
+                    "👤 내 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
+                    help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+                )
             with cc2:
-                with st.container(border=True):
-                    st.markdown("👥 **파트너 현금**")
-                    partner_cash_seed = st.number_input(
-                        "파트너 보유 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
-                        help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
-                        label_visibility="collapsed",
-                    )
-                    st.caption("현금·예금 (만원)")
+                partner_cash_seed = st.number_input(
+                    "👥 파트너 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
+                    help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+                )
             cash_seed = my_cash_seed + partner_cash_seed
             st.caption(f"합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
             st.divider()
