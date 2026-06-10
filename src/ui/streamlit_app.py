@@ -1889,28 +1889,36 @@ def page_portfolio_strategy():
             t_close = st.date_input("희망 잔금일 (비우면 자동)", value=None,
                                     key="t_close")
 
-    with col_f:
-        with st.container(border=True):
-            st.markdown("#### 💰 자금 & 소득")
-            cash_seed = st.number_input(
-                "현재 보유 현금 (만원)",
-                0, value=0, step=1_000, key="cash_seed",
-                help="부동산 매도 전부터 갖고 있는 현금·예금. 계약금으로 바로 쓸 수 있어요."
+    with st.container(border=True):
+        st.markdown("#### 💰 자금 & 소득")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            my_cash_seed = st.number_input(
+                "👤 내 현금 (만원)", 0, value=0, step=1_000, key="my_cash_seed",
+                help="나의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
             )
-            st.caption(f"현금 포함 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
-            st.divider()
+        with c2:
+            partner_cash_seed = st.number_input(
+                "👥 파트너 현금 (만원)", 0, value=0, step=1_000, key="partner_cash_seed",
+                help="파트너의 현금·예금. 계약금으로 바로 쓸 수 있어요.",
+            )
+        with c3:
             income = st.number_input(
                 "연 소득 합산 (만원)", 0, value=0, step=500, key="income",
-                help="0 입력 시 DSR 대출 한도 계산 생략"
+                help="0 입력 시 DSR 대출 한도 계산 생략",
             )
+        with c4:
             ex_pay = st.number_input(
                 "기존 월 원리금 (만원)", 0, value=0, step=10, key="ex_pay",
-                help="이미 갚고 있는 대출 원리금 (신규 주담대 제외)"
+                help="이미 갚고 있는 대출 원리금 (신규 주담대 제외)",
             )
+        with c5:
             int_rent = st.number_input(
-                "임시 거주 예상 월세 (만원/월)", 0, value=0, step=10, key="int_rent",
-                help="전체 매도 후 입주 전까지 임시로 살 곳의 월세"
+                "임시 거주 월세 (만원/월)", 0, value=0, step=10, key="int_rent",
+                help="전체 매도 후 입주 전까지 임시로 살 곳의 월세",
             )
+        cash_seed = my_cash_seed + partner_cash_seed
+        st.caption(f"현금 합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
 
     from datetime import date as _date
     props_mine    = [PropertyProfile(**kw) for kw in kws_mine]
@@ -1937,6 +1945,7 @@ def page_portfolio_strategy():
         st.session_state["_port_inputs"]  = dict(
             t_min=t_min, t_max=t_max, t_kb=t_kb, t_close=t_close,
             income=income, ex_pay=ex_pay, int_rent=int_rent, cash_seed=cash_seed,
+            my_cash_seed=my_cash_seed, partner_cash_seed=partner_cash_seed,
         )
 
     if "_port_result" not in st.session_state:
@@ -1949,6 +1958,8 @@ def page_portfolio_strategy():
     t_min   = _pi["t_min"];  t_max   = _pi["t_max"];  t_kb    = _pi["t_kb"]
     t_close = _pi["t_close"]; income  = _pi["income"]; ex_pay  = _pi["ex_pay"]
     int_rent = _pi["int_rent"]; cash_seed = _pi["cash_seed"]
+    my_cash_seed      = _pi.get("my_cash_seed", cash_seed)
+    partner_cash_seed = _pi.get("partner_cash_seed", 0)
 
     def _eok(v: float) -> str:
         return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
@@ -1977,14 +1988,16 @@ def page_portfolio_strategy():
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         st.caption("⚠️ 양도세 추정값. 실제 세액은 세무사 확인 필수.")
-        m1, m2, m3, m4, m5 = st.columns(5)
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
         with m1: st.metric("내 부동산 합계",  _eok(result["equity_mine_man"]))
         with m2: st.metric("파트너 합계",      _eok(result["equity_partner_man"]))
-        with m3: st.metric("현금 시드",        _eok(result["current_cash_man"]),
-                           help="직접 입력한 보유 현금")
-        with m4: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
+        with m3: st.metric("👤 내 현금",       _eok(my_cash_seed),
+                           help="직접 입력한 내 보유 현금")
+        with m4: st.metric("👥 파트너 현금",   _eok(partner_cash_seed),
+                           help="직접 입력한 파트너 보유 현금")
+        with m5: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
                            help="내 부동산 + 파트너 + 현금 합계")
-        with m5: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
+        with m6: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
         acq_t = result["target_acquisition_cost"]["total"]
         min_needed = t_min + acq_t; max_needed = t_max + acq_t
         total_power = result["combined_equity_man"] + result["effective_loan_man"]
