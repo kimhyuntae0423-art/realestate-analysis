@@ -862,13 +862,20 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
             "DSR 40% 적용", value=True, key=f"{key_prefix}_dsr",
             help="체크 권장. 미체크 시 LTV/한도cap만",
         )
-    kb_ratio_pct = st.slider(
-        "KB시세 / 실거래가 비율 (%)", min_value=75, max_value=100, value=95, step=1,
+    # KB시세 보정
+    kbc1, kbc2 = st.columns([3, 2])
+    kb_direct_eok = kbc1.number_input(
+        "KB시세 직접 입력 (억원)", min_value=0.0, max_value=300.0,
+        value=0.0, step=0.5, format="%.1f", key=f"{key_prefix}_kb_direct",
+        help="KB부동산 앱 → 단지 검색 → 시세 탭. 은행은 이 값 기준으로 LTV 계산. 0이면 오른쪽 비율 보정 사용.",
+    )
+    kb_ratio_pct = kbc2.slider(
+        "KB시세/실거래가 (%)", min_value=75, max_value=100, value=95, step=1,
         key=f"{key_prefix}_kb",
-        help="추천 테이블 전체에 일괄 적용하는 보정값. "
-             "특정 단지는 아래 '특정 매물 대출 계산기'에서 KB시세를 직접 입력하면 더 정확합니다. 통상 90~97%.",
+        help="직접 입력이 없을 때 일괄 보정값. 통상 90~97%.",
     )
     kb_ratio = kb_ratio_pct / 100
+    kb_direct_man = int(kb_direct_eok * 10000) if kb_direct_eok > 0 else 0
 
     # 합산 소득 (DSR/정책대출 기준)
     household_income = annual_income + (spouse_income if is_couple else 0)
@@ -893,6 +900,7 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
         interest_rate=interest_rate, use_dsr=use_dsr,
         dsr_cap_man=dsr_cap_man,
         kb_ratio=kb_ratio, kb_ratio_pct=kb_ratio_pct,
+        kb_direct_man=kb_direct_man,
     )
 
 
@@ -2560,6 +2568,11 @@ def _render_loan_simulator(p: dict):
         "실제 대출 가능액과 **어떤 제약이 binding인지** 보여줍니다."
     )
 
+    # 위 입력 블록에서 KB시세 직접 입력한 값이 있으면 자동 채워줌
+    _kb_preset = p.get("kb_direct_man", 0)
+    if _kb_preset > 0 and st.session_state.get("sim_kb", 0.0) == 0.0:
+        st.session_state["sim_kb"] = float(_kb_preset / 10000)
+
     with st.container(border=True):
         c1, c2, c3 = st.columns(3)
         price_eok = c1.number_input(
@@ -2720,6 +2733,14 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
     )
 
     st.markdown("## 💰 최대 매수 가능 시뮬레이션")
+
+    # kb_direct_man 입력 시 아래 계산기와 연동 안내
+    kb_direct_man = inputs.get("kb_direct_man", 0)
+    if kb_direct_man > 0:
+        st.info(
+            f"💡 KB시세 **{kb_direct_man/10000:.1f}억** 입력 반영 → "
+            "아래 '특정 매물 대출 계산기'에 자동 적용됩니다."
+        )
 
     cc1, cc2 = st.columns([1, 1])
     with cc1:
