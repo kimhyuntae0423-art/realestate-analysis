@@ -1010,12 +1010,8 @@ def page_invest():
     render_recommend_tab(inputs)
 
 
-def invest_sidebar_inputs() -> dict:
-    """투자 시뮬레이션 사이드바 입력만 수집.
-
-    - 시드, 주택, 생애최초, 대출, 전략, DSR, 인적사항
-    - 검색 버튼 눌렀을 때만 갱신
-    """
+def _invest_sidebar_inputs_UNUSED() -> dict:
+    """미사용. _personal_inputs_block으로 대체됨."""
     with st.sidebar:
         st.markdown("### 💎 투자 조건")
         months = st.slider(
