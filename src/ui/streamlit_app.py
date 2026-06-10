@@ -2725,8 +2725,26 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
     children = inputs.get("children", 0)
 
     # 규제/비규제 양쪽 매수가능 최고가 (KB시세 비율 반영)
-    p_reg = calc_max_purchase(seed_man, "11680", ownership, first_time, dsr_cap_man, kb_ratio)
-    p_nonreg = calc_max_purchase(seed_man, "99999", ownership, first_time, dsr_cap_man, kb_ratio)
+    try:
+        p_reg = calc_max_purchase(
+            float(seed_man), "11680", str(ownership), bool(first_time),
+            float(dsr_cap_man) if dsr_cap_man is not None else None,
+            float(kb_ratio),
+        )
+        p_nonreg = calc_max_purchase(
+            float(seed_man), "99999", str(ownership), bool(first_time),
+            float(dsr_cap_man) if dsr_cap_man is not None else None,
+            float(kb_ratio),
+        )
+    except Exception as _e:
+        st.error(
+            f"**대출 계산 오류** — {type(_e).__name__}: {_e}\n\n"
+            f"seed={seed_man!r} ({type(seed_man).__name__}), "
+            f"ownership={ownership!r}, first_time={first_time!r}, "
+            f"dsr_cap={dsr_cap_man!r} ({type(dsr_cap_man).__name__}), "
+            f"kb_ratio={kb_ratio!r} ({type(kb_ratio).__name__})"
+        )
+        return
 
     # 부대비용 (규제지역 기준)
     costs = total_acquisition_cost_man(p_reg, ownership, first_time)
