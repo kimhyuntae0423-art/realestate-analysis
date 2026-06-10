@@ -1867,20 +1867,20 @@ def page_portfolio_strategy():
     st.divider()
     st.markdown("### 2. 살 집 & 재무 정보")
 
-    col_t, col_f = st.columns(2)
-    with col_t:
-        with st.container(border=True):
-            st.markdown("#### 🏡 살 집 (목표 부동산)")
-            t_name  = st.text_input("단지명/메모", value="", key="t_name",
-                                    placeholder="예: 잠실엘스")
-            t_code  = _rsel("지역", "t_region", "서울 송파구")
-            ca, cb  = st.columns(2)
-            with ca:
-                t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
-                                        step=1_000, key="t_min")
-            with cb:
-                t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
-                                        step=1_000, key="t_max")
+    with st.container(border=True):
+        st.markdown("#### 🏡 살 집 (목표 부동산)")
+        ca, cb, cc, cd = st.columns(4)
+        with ca:
+            t_name = st.text_input("단지명/메모", value="", key="t_name",
+                                   placeholder="예: 잠실엘스")
+        with cb:
+            t_code = _rsel("지역", "t_region", "서울 송파구")
+        with cc:
+            t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
+                                    step=1_000, key="t_min")
+            t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
+                                    step=1_000, key="t_max")
+        with cd:
             t_kb = st.number_input(
                 "KB시세 (만원, 선택)", 0, value=0, step=1_000, key="t_kb",
                 help="KB부동산 앱에서 목표 단지 시세 확인 후 입력. 0이면 예산 상한 기준으로 계산. "
