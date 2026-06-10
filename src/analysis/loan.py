@@ -146,6 +146,73 @@ def price_loan(price_man: float, ltv: float, zone: str, caps: dict,
     return loan
 
 
+# ─── 상세 내역 (binding 제약 포함) ────────────────────
+def loan_breakdown_man(price_man: float, region_code: str,
+                        ownership: str = "무주택",
+                        first_time_buyer: bool = False,
+                        dsr_cap_man: float | None = None,
+                        kb_price_man: float | None = None,
+                        interest_rate_pct: float = 4.5,
+                        loan_years: int = 30) -> dict:
+    """LTV / 한도캡 / DSR 세 제약을 각각 계산해 binding 제약과 최종 대출액 반환.
+
+    Returns:
+        price_man, kb_price_man (담보가), ltv_pct, zone,
+        ltv_limit_man, cap_limit_man, dsr_limit_man (None=미적용),
+        final_loan_man, binding ("LTV"|"한도캡"|"DSR"),
+        required_equity_man, monthly_payment_man, annual_interest_man
+    """
+    if price_man <= 0:
+        return {}
+    appraisal = kb_price_man if (kb_price_man and kb_price_man > 0) else price_man
+    ltv_pct = get_ltv_pct(region_code, ownership, first_time_buyer)
+    ltv = ltv_pct / 100.0
+    zone = get_zone(region_code)
+
+    ltv_limit = round(appraisal * ltv)
+    cap_limit_raw = _loan_cap_for(zone, appraisal)
+    cap_limit = round(cap_limit_raw)
+
+    # 세 제약 중 최솟값
+    limits = {"LTV": ltv_limit, "한도캡": cap_limit}
+    if dsr_cap_man is not None:
+        limits["DSR"] = round(dsr_cap_man)
+
+    final_loan = min(limits.values())
+    binding = min(limits, key=lambda k: limits[k])
+
+    required_equity = price_man - final_loan
+
+    # 원리금 균등 상환 월 납부액
+    r = interest_rate_pct / 100 / 12
+    n = loan_years * 12
+    if r > 0 and n > 0 and final_loan > 0:
+        growth = (1 + r) ** n
+        monthly_payment = round(final_loan * r * growth / (growth - 1))
+    else:
+        monthly_payment = round(final_loan / n) if n > 0 else 0
+
+    annual_interest = round(final_loan * interest_rate_pct / 100)
+
+    return {
+        "price_man": price_man,
+        "kb_price_man": appraisal,
+        "ltv_pct": ltv_pct,
+        "zone": zone,
+        "ltv_limit_man": ltv_limit,
+        "cap_limit_man": cap_limit,
+        "cap_is_inf": cap_limit_raw == float("inf"),
+        "dsr_limit_man": limits.get("DSR"),
+        "final_loan_man": final_loan,
+        "binding": binding,
+        "required_equity_man": required_equity,
+        "monthly_payment_man": monthly_payment,
+        "annual_interest_man": annual_interest,
+        "interest_rate_pct": interest_rate_pct,
+        "loan_years": loan_years,
+    }
+
+
 # ─── DSR 한도 계산 ─────────────────────────────────────
 def dsr_loan_capacity_man(annual_income_man: float,
                             existing_monthly_payment_man: float = 0,
