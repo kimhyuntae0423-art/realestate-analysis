@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from src.analysis.capital_gains_tax import capital_gains_tax_man
 from src.analysis.costs import broker_fee_man, total_acquisition_cost_man
-from src.analysis.loan import loan_capacity_man, dsr_loan_capacity_man
+from src.analysis.loan import loan_capacity_man, dsr_loan_capacity_man, loan_breakdown_man
 
 
 def _fmt(v: float) -> str:
@@ -50,6 +50,7 @@ class TargetProperty:
     label: str = "목표 부동산"
     budget_min_man: float = 0.0
     budget_max_man: float = 0.0
+    kb_price_man: float = 0.0   # KB시세 (0이면 budget_max 기준)
 
 
 def net_sale_proceeds(prop: PropertyProfile) -> dict:
@@ -217,7 +218,8 @@ def calc_renewal_risk(prop: PropertyProfile, today=None) -> dict:
 
 def _loan_cap(target: TargetProperty, ownership: str, dsr_cap: float) -> float:
     ref = target.budget_max_man or target.budget_min_man
-    ltv = loan_capacity_man(ref, target.region_code, ownership)
+    kb = target.kb_price_man if target.kb_price_man > 0 else None
+    ltv = loan_capacity_man(ref, target.region_code, ownership, kb_price_man=kb)
     return min(ltv, dsr_cap) if dsr_cap > 0 else ltv
 
 
@@ -351,6 +353,17 @@ def plan_scenarios_multi(
         (s["label"][0] for s in scenarios if s["can_afford_target_min"]), "A"
     )
 
+    effective_loan = _loan_cap(target, "무주택", dsr_cap)
+    ref_price = target.budget_max_man or target.budget_min_man
+    kb_for_breakdown = target.kb_price_man if target.kb_price_man > 0 else None
+    target_loan_bd = loan_breakdown_man(
+        price_man=ref_price,
+        region_code=target.region_code,
+        ownership="무주택",
+        dsr_cap_man=dsr_cap if dsr_cap > 0 else None,
+        kb_price_man=kb_for_breakdown,
+    ) if ref_price > 0 else {}
+
     return {
         "sales_mine": sales_mine,
         "sales_partner": sales_partner,
@@ -361,9 +374,10 @@ def plan_scenarios_multi(
         "current_cash_man": round(current_cash_man),
         "combined_equity_man": round(combined),
         "dsr_loan_limit_man": round(dsr_cap),
-        "effective_loan_man": round(_loan_cap(target, "무주택", dsr_cap)),
-        "max_purchase_power_man": round(combined + _loan_cap(target, "무주택", dsr_cap)),
+        "effective_loan_man": round(effective_loan),
+        "max_purchase_power_man": round(combined + effective_loan),
         "target_acquisition_cost": acq_cost,
+        "target_loan_breakdown": target_loan_bd,
         "scenarios": scenarios,
         "recommended_scenario": recommended,
         "prop_a_sale": sales_mine[0] if sales_mine else {},
