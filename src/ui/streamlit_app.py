@@ -862,6 +862,13 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
             "DSR 40% 적용", value=True, key=f"{key_prefix}_dsr",
             help="체크 권장. 미체크 시 LTV/한도cap만",
         )
+    kb_ratio_pct = st.slider(
+        "KB시세 / 실거래가 비율 (%)", min_value=75, max_value=100, value=95, step=1,
+        key=f"{key_prefix}_kb",
+        help="은행은 KB시세 기준으로 LTV 계산. KB시세가 실거래가보다 낮으면 대출이 그만큼 덜 나옴. "
+             "KB부동산 앱에서 단지별 확인 가능. 통상 90~97%.",
+    )
+    kb_ratio = kb_ratio_pct / 100
 
     # 합산 소득 (DSR/정책대출 기준)
     household_income = annual_income + (spouse_income if is_couple else 0)
@@ -885,6 +892,7 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
         existing_debt_monthly=existing_debt_monthly,
         interest_rate=interest_rate, use_dsr=use_dsr,
         dsr_cap_man=dsr_cap_man,
+        kb_ratio=kb_ratio, kb_ratio_pct=kb_ratio_pct,
     )
 
 
@@ -1028,7 +1036,7 @@ def invest_sidebar_inputs() -> dict:
                 index=0,
                 help="🔀 전략 비교 = 3전략 동시 실행 후 교집합 하이라이트",
             )
-            with st.expander("💳 DSR (선택) - 정확한 대출 한도"):
+            with st.expander("💳 DSR + KB시세 — 정확한 대출 한도"):
                 use_dsr = st.checkbox(
                     "DSR 적용", value=False,
                     help="체크 시 LTV·한도cap·DSR 모두 적용. 미체크 시 LTV·한도cap만"
@@ -1049,6 +1057,10 @@ def invest_sidebar_inputs() -> dict:
                 )
                 dsr_limit = st.slider("DSR 한도 (%)", 30, 50, 40,
                                         help="1금융 40, 2금융 50")
+                kb_ratio_pct = st.slider(
+                    "KB시세 / 실거래가 (%)", 75, 100, 95, step=1,
+                    help="은행은 KB시세 기준으로 LTV 계산. KB부동산 앱에서 단지별 확인 가능. 통상 90~97%.",
+                )
 
             with st.expander("👤 인적 사항 (선택)"):
                 age = st.number_input("나이", min_value=20, max_value=80, value=35)
@@ -1103,6 +1115,7 @@ def invest_sidebar_inputs() -> dict:
         age=age, family_size=family_size,
         residence_type=residence_type, risk_profile=risk_profile,
         commute_hubs=commute_hubs,
+        kb_ratio=kb_ratio_pct / 100, kb_ratio_pct=kb_ratio_pct,
     )
 
 
@@ -2311,15 +2324,16 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
     """최대 매수가 헤드라인 카드. 강남구 기준 예시 + 일반 비규제 기준 비교."""
     ownership = inputs["ownership"]
     first_time = inputs["first_time"]
+    kb_ratio = inputs.get("kb_ratio", 1.0)
     # 정책대출은 부부합산 소득 기준
     household_income = inputs.get("household_income", inputs.get("annual_income", 0))
     is_couple = inputs.get("is_couple", False)
     is_newlywed = inputs.get("is_newlywed", False)
     children = inputs.get("children", 0)
 
-    # 규제/비규제 양쪽 매수가능 최고가
-    p_reg = calc_max_purchase(seed_man, "11680", ownership, first_time, dsr_cap_man)
-    p_nonreg = calc_max_purchase(seed_man, "99999", ownership, first_time, dsr_cap_man)
+    # 규제/비규제 양쪽 매수가능 최고가 (KB시세 비율 반영)
+    p_reg = calc_max_purchase(seed_man, "11680", ownership, first_time, dsr_cap_man, kb_ratio)
+    p_nonreg = calc_max_purchase(seed_man, "99999", ownership, first_time, dsr_cap_man, kb_ratio)
 
     # 부대비용 (규제지역 기준)
     costs = total_acquisition_cost_man(p_reg, ownership, first_time)
@@ -2348,7 +2362,8 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
                     ))
         st.metric("최대 매수가", f"{actual_p_reg/10000:.2f} 억",
                   help=f"부대비용 {costs['total']/10000:.2f}억 차감 후 실매수가")
-        loan_reg = loan_capacity_man(p_reg, "11680", ownership, first_time, dsr_cap_man)
+        loan_reg = loan_capacity_man(p_reg, "11680", ownership, first_time, dsr_cap_man,
+                                      kb_price_man=p_reg * kb_ratio)
         st.caption(
             f"매매가 {p_reg/10000:.2f}억 = 시드 {seed_man/10000:.1f}억 + 대출 {loan_reg/10000:.2f}억 - 부대비 {costs['total']/10000:.2f}억"
         )
@@ -2362,7 +2377,8 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
         st.markdown("##### 🏞️ 비규제지역 (수도권 외곽 등)")
         st.metric("최대 매수가", f"{actual_p_nonreg/10000:.2f} 억",
                   help="LTV 70%로 더 큰 레버리지 가능")
-        loan_nonreg = loan_capacity_man(p_nonreg, "99999", ownership, first_time, dsr_cap_man)
+        loan_nonreg = loan_capacity_man(p_nonreg, "99999", ownership, first_time, dsr_cap_man,
+                                         kb_price_man=p_nonreg * kb_ratio)
         st.caption(
             f"매매가 {p_nonreg/10000:.2f}억 = 시드 {seed_man/10000:.1f}억 + 대출 {loan_nonreg/10000:.2f}억 - 부대비 {actual_p_nonreg_costs['total']/10000:.2f}억"
         )
@@ -2405,8 +2421,18 @@ def _render_stress_test(inputs: dict, selected_row: dict):
     st.markdown(f"### 🧪 스트레스 테스트 — {selected_row.get('apt_name', '?')}")
 
     price_man = float(selected_row.get("trade_median", 0))
+    kb_ratio_st = inputs.get("kb_ratio", 1.0)
     loan_man = float(selected_row.get("loan_capacity", 0))
-    equity_man = float(selected_row.get("required_equity", price_man - loan_man))
+    # loan_capacity가 kb_ratio 미반영 캐시 값일 경우 직접 재계산
+    if kb_ratio_st < 1.0 and price_man > 0:
+        from src.analysis.loan import loan_capacity_man as _lcm_st
+        region_code_st = selected_row.get("region_code", "11680")
+        ownership_st = inputs.get("ownership", "무주택")
+        ft_st = inputs.get("first_time", False)
+        dsr_st = inputs.get("dsr_cap_man")
+        loan_man = _lcm_st(price_man, region_code_st, ownership_st, ft_st, dsr_st,
+                            kb_price_man=price_man * kb_ratio_st)
+    equity_man = round(price_man - loan_man)
     growth_pct = float(selected_row.get("price_growth_%", 0))
     interest_rate = inputs.get("interest_rate", 4.5)
 
@@ -2956,6 +2982,7 @@ def render_recommend_tab(inputs: dict):
     use_dsr = inputs.get("use_dsr", False)
     # DSR 한도는 _personal_inputs_block 에서 이미 계산해서 전달
     dsr_cap_man = inputs.get("dsr_cap_man")
+    kb_ratio = inputs.get("kb_ratio", 1.0)
 
     if not submitted and not st.session_state.get("rec_has_run", False):
         st.info(
@@ -2970,15 +2997,15 @@ def render_recommend_tab(inputs: dict):
     from src.analysis.loan import get_ltv_pct, max_purchase_man
     ltv_규제 = get_ltv_pct("11680", ownership, first_time)
     ltv_비규제 = get_ltv_pct("99999", ownership, first_time)
-    max_buy_reg = max_purchase_man(seed_man, "11680", ownership, first_time, dsr_cap_man) if use_loan else seed_man
-    max_buy_nonreg = max_purchase_man(seed_man, "99999", ownership, first_time, dsr_cap_man) if use_loan else seed_man
+    max_buy_reg = max_purchase_man(seed_man, "11680", ownership, first_time, dsr_cap_man, kb_ratio) if use_loan else seed_man
+    max_buy_nonreg = max_purchase_man(seed_man, "99999", ownership, first_time, dsr_cap_man, kb_ratio) if use_loan else seed_man
 
     from src.analysis.costs import total_acquisition_cost_man as _tacm
     from src.analysis.loan import loan_capacity_man as _lcm
-    def _max_buy_net(seed, rc, own, ft, dsr, loan_ok):
+    def _max_buy_net(seed, rc, own, ft, dsr, loan_ok, kr=kb_ratio):
         best = 0
         for p in range(1000, 300000, 1000):
-            lv = _lcm(p, rc, own, ft, dsr) if loan_ok else 0
+            lv = _lcm(p, rc, own, ft, dsr, kb_price_man=p * kr) if loan_ok else 0
             eq = p - lv
             if eq > seed:
                 break
@@ -3131,6 +3158,19 @@ def render_recommend_tab(inputs: dict):
     # 지역명 컬럼 추가
     rec_disp = rec.copy()
     rec_disp["region"] = rec_disp["region_code"].map(REGION_MAP).fillna(rec_disp["region_code"])
+
+    # KB시세 비율이 100% 미만이면 대출 컬럼 재계산 (캐시 결과는 kb_ratio=1.0 기준)
+    if kb_ratio < 1.0 and "trade_median" in rec_disp.columns and "region_code" in rec_disp.columns:
+        from src.analysis.loan import annotate_loan_columns
+        rec_disp = annotate_loan_columns(
+            rec_disp, seed_man, ownership, first_time,
+            trade_col="trade_median", dsr_cap_man=dsr_cap_man, kb_ratio=kb_ratio,
+        )
+        if kb_ratio < 0.99:
+            st.caption(
+                f"💡 대출 계산 기준: KB시세 = 실거래가 × {kb_ratio:.0%} "
+                f"(KB부동산 앱 미확인 시 실제 대출은 표시보다 적을 수 있음)"
+            )
 
     # 입지 점수 (카카오 키 있을 때만 활성)
     if is_kakao_ready():
@@ -3459,7 +3499,7 @@ def render_recommend_tab(inputs: dict):
     # 지역코드별 max_purchase 캐싱 (rec에 등장한 지역만)
     unique_codes = rec_disp["region_code"].unique() if "region_code" in rec_disp.columns else []
     max_buy_by_region = {
-        c: max_purchase_man(seed_man, c, ownership, first_time, dsr_cap_man) if use_loan else seed_man
+        c: max_purchase_man(seed_man, c, ownership, first_time, dsr_cap_man, kb_ratio) if use_loan else seed_man
         for c in unique_codes
     }
     if "required_equity" in rec_disp.columns:
