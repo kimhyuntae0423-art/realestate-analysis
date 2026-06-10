@@ -6,6 +6,7 @@
 - 규제지역(서울25 + 경기12): LTV 무주택 50% / 1주택 50% / 다주택 0%
 - 주담대 한도 cap: 15억 이하 6억 / 15~25억 4억 / 25억 초과 2억
 - DSR 40% (1금융), 스트레스 +3%
+- max_purchase_man: kb_ratio 파라미터 지원 (v2, 2026-06-11)
 """
 from __future__ import annotations
 import json
