@@ -1908,266 +1908,285 @@ def page_portfolio_strategy():
                 help="전체 매도 후 입주 전까지 임시로 살 곳의 월세"
             )
 
+    from datetime import date as _date
+    props_mine    = [PropertyProfile(**kw) for kw in kws_mine]
+    props_partner = [PropertyProfile(**kw) for kw in kws_partner]
+    _target_now = TargetProperty(
+        region_code=t_code,
+        label=t_name or "목표 부동산",
+        budget_min_man=float(t_min),
+        budget_max_man=float(t_max),
+        kb_price_man=float(t_kb),
+    )
+
     if st.button("시나리오 분석 실행", type="primary", use_container_width=True):
-        from datetime import date as _date
-        props_mine    = [PropertyProfile(**kw) for kw in kws_mine]
-        props_partner = [PropertyProfile(**kw) for kw in kws_partner]
-        target = TargetProperty(
-            region_code=t_code,
-            label=t_name or "목표 부동산",
-            budget_min_man=float(t_min),
-            budget_max_man=float(t_max),
-            kb_price_man=float(t_kb),
-        )
         result = plan_scenarios_multi(
             props_mine=props_mine,
             props_partner=props_partner,
-            target=target,
+            target=_target_now,
             annual_income_man=float(income),
             existing_monthly_payment_man=float(ex_pay),
             current_cash_man=float(cash_seed),
         )
+        st.session_state["_port_result"]  = result
+        st.session_state["_port_props"]   = (props_mine, props_partner, _target_now)
+        st.session_state["_port_inputs"]  = dict(
+            t_min=t_min, t_max=t_max, t_kb=t_kb, t_close=t_close,
+            income=income, ex_pay=ex_pay, int_rent=int_rent, cash_seed=cash_seed,
+        )
 
-        def _eok(v: float) -> str:
-            return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
+    if "_port_result" not in st.session_state:
+        st.info("위 정보를 입력하고 **시나리오 분석 실행** 버튼을 누르세요.")
+        return
 
-        rec = result["recommended_scenario"]
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "💰 순수령액 & 매수력", "🏆 최적 매도 순서", "📋 시나리오 비교", "📅 타임라인 & 자금흐름"
-        ])
+    result        = st.session_state["_port_result"]
+    props_mine, props_partner, target = st.session_state["_port_props"]
+    _pi           = st.session_state["_port_inputs"]
+    t_min   = _pi["t_min"];  t_max   = _pi["t_max"];  t_kb    = _pi["t_kb"]
+    t_close = _pi["t_close"]; income  = _pi["income"]; ex_pay  = _pi["ex_pay"]
+    int_rent = _pi["int_rent"]; cash_seed = _pi["cash_seed"]
 
-        with tab1:
-            st.markdown("#### 부동산별 매도 순수령액")
-            rows = []
-            for prop, sale in list(zip(props_mine, result["sales_mine"])) + list(zip(props_partner, result["sales_partner"])):
-                rows.append({
-                    "소유자":      "나" if prop in props_mine else "파트너",
-                    "단지명":      prop.label,
-                    "임대":        sale.get("tenant_type", "-"),
-                    "시세":        _eok(sale["sale_price_man"]),
-                    "대출상환":    _eok(sale["loan_repay_man"]),
-                    "보증금반환":  _eok(sale.get("deposit_return_man", 0)),
-                    "중개비":      _eok(sale["broker_fee_man"]),
-                    "양도세(추정)": _eok(sale["capital_gains_tax_man"]),
-                    "순수령액":    _eok(sale["net_man"]),
-                    "양도세 판정": sale["tax_note"],
-                })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-            st.caption("⚠️ 양도세 추정값. 실제 세액은 세무사 확인 필수.")
-            m1, m2, m3, m4, m5 = st.columns(5)
-            with m1: st.metric("내 부동산 합계",  _eok(result["equity_mine_man"]))
-            with m2: st.metric("파트너 합계",      _eok(result["equity_partner_man"]))
-            with m3: st.metric("현금 시드",        _eok(result["current_cash_man"]),
-                               help="직접 입력한 보유 현금")
-            with m4: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
-                               help="내 부동산 + 파트너 + 현금 합계")
-            with m5: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
-            acq_t = result["target_acquisition_cost"]["total"]
-            min_needed = t_min + acq_t; max_needed = t_max + acq_t
-            total_power = result["combined_equity_man"] + result["effective_loan_man"]
-            if total_power >= max_needed:
-                st.success(f"목표 상한({_eok(t_max)}) 충분 — 부대비용({_eok(acq_t)}) 포함 충당 가능")
-            elif total_power >= min_needed:
-                st.warning(f"목표 하한({_eok(t_min)}) 가능 / 상한({_eok(t_max)}) 부족")
-            else:
-                st.error(f"목표 하한도 미달 — {_eok(min_needed - total_power)} 부족")
+    def _eok(v: float) -> str:
+        return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
 
-            # ── 대출 한도 binding 분석 ──────────────────────────
-            bd = result.get("target_loan_breakdown", {})
-            if bd:
-                st.markdown("---")
-                st.markdown("#### 대출 한도 — 어떤 제약이 binding인가?")
-                kb_note = (
-                    f"KB시세 {bd['kb_price_man']/10000:.2f}억 기준"
-                    if t_kb > 0 else
-                    f"KB시세 미입력 → 예산 상한 {t_max/10000:.1f}억 기준 (실제보다 과대 추정 가능)"
-                )
-                st.caption(kb_note)
+    rec = result["recommended_scenario"]
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "💰 순수령액 & 매수력", "🏆 최적 매도 순서", "📋 시나리오 비교",
+        "📅 타임라인 & 자금흐름", "🏠 추천 매물",
+    ])
 
-                binding = bd["binding"]
-                def _badge(name): return "🔴 binding" if name == binding else "✅ 여유"
+    with tab1:
+        st.markdown("#### 부동산별 매도 순수령액")
+        rows = []
+        for prop, sale in list(zip(props_mine, result["sales_mine"])) + list(zip(props_partner, result["sales_partner"])):
+            rows.append({
+                "소유자":      "나" if prop in props_mine else "파트너",
+                "단지명":      prop.label,
+                "임대":        sale.get("tenant_type", "-"),
+                "시세":        _eok(sale["sale_price_man"]),
+                "대출상환":    _eok(sale["loan_repay_man"]),
+                "보증금반환":  _eok(sale.get("deposit_return_man", 0)),
+                "중개비":      _eok(sale["broker_fee_man"]),
+                "양도세(추정)": _eok(sale["capital_gains_tax_man"]),
+                "순수령액":    _eok(sale["net_man"]),
+                "양도세 판정": sale["tax_note"],
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("⚠️ 양도세 추정값. 실제 세액은 세무사 확인 필수.")
+        m1, m2, m3, m4, m5 = st.columns(5)
+        with m1: st.metric("내 부동산 합계",  _eok(result["equity_mine_man"]))
+        with m2: st.metric("파트너 합계",      _eok(result["equity_partner_man"]))
+        with m3: st.metric("현금 시드",        _eok(result["current_cash_man"]),
+                           help="직접 입력한 보유 현금")
+        with m4: st.metric("합산 자기자본",    _eok(result["combined_equity_man"]),
+                           help="내 부동산 + 파트너 + 현금 합계")
+        with m5: st.metric("최대 매수 가능",   _eok(result["max_purchase_power_man"]))
+        acq_t = result["target_acquisition_cost"]["total"]
+        min_needed = t_min + acq_t; max_needed = t_max + acq_t
+        total_power = result["combined_equity_man"] + result["effective_loan_man"]
+        if total_power >= max_needed:
+            st.success(f"목표 상한({_eok(t_max)}) 충분 — 부대비용({_eok(acq_t)}) 포함 충당 가능")
+        elif total_power >= min_needed:
+            st.warning(f"목표 하한({_eok(t_min)}) 가능 / 상한({_eok(t_max)}) 부족")
+        else:
+            st.error(f"목표 하한도 미달 — {_eok(min_needed - total_power)} 부족")
 
-                bc1, bc2, bc3 = st.columns(3)
-                with bc1:
-                    st.metric(f"① LTV {bd['ltv_pct']:.0f}% 한도",
-                               f"{bd['ltv_limit_man']/10000:.2f} 억",
-                               delta=_badge("LTV"), delta_color="off")
-                with bc2:
-                    cap_str = "없음(비규제)" if bd["cap_is_inf"] else f"{bd['cap_limit_man']/10000:.0f} 억"
-                    st.metric("② 한도 캡", cap_str,
-                               delta=_badge("한도캡") if not bd["cap_is_inf"] else "✅ 해당없음",
-                               delta_color="off")
-                with bc3:
-                    if bd["dsr_limit_man"]:
-                        st.metric("③ DSR 40% 한도",
-                                   f"{bd['dsr_limit_man']/10000:.2f} 억",
-                                   delta=_badge("DSR"), delta_color="off")
-                    else:
-                        st.metric("③ DSR 한도", "미적용 (소득 0)")
-
-                br1, br2, br3, br4 = st.columns(4)
-                br1.metric("최종 대출",     _eok(bd["final_loan_man"]))
-                br2.metric("필요 자기자본", _eok(bd["required_equity_man"]),
-                            help="목표 상한 매매가 − 대출")
-                br3.metric("월 원리금",     f"{bd['monthly_payment_man']:,} 만원",
-                            help="원리금 균등 30년 / 4.5%")
-                br4.metric("연 이자",       _eok(bd["annual_interest_man"]))
-
-            # ── 자금 준비 로드맵 ────────────────────────────────
+        # ── 대출 한도 binding 분석 ──────────────────────────
+        bd = result.get("target_loan_breakdown", {})
+        if bd:
             st.markdown("---")
-            st.markdown("#### 자금 준비 로드맵")
-            equity = result["combined_equity_man"]
-            loan   = result["effective_loan_man"]
-            shortage_max = max(0, max_needed - (equity + loan))
-            shortage_min = max(0, min_needed - (equity + loan))
+            st.markdown("#### 대출 한도 — 어떤 제약이 binding인가?")
+            kb_note = (
+                f"KB시세 {bd['kb_price_man']/10000:.2f}억 기준"
+                if t_kb > 0 else
+                f"KB시세 미입력 → 예산 상한 {t_max/10000:.1f}억 기준 (실제보다 과대 추정 가능)"
+            )
+            st.caption(kb_note)
 
-            if bd and binding == "DSR" and bd.get("dsr_limit_man"):
-                st.warning(
-                    f"**DSR이 binding — 소득이 핵심 병목입니다.**  \n"
-                    f"현재 DSR 한도 {_eok(bd['dsr_limit_man'])}. "
-                    f"기존 부채 {_eok(float(ex_pay) * 12)}/년을 상환하거나 소득을 늘리면 한도가 올라갑니다."
-                )
-            elif bd and binding == "한도캡" and not bd.get("cap_is_inf"):
-                st.warning(
-                    f"**한도캡이 binding — 개인 조건으로 극복 불가합니다.**  \n"
-                    f"최대 대출 {_eok(bd['cap_limit_man'])}. 자기자본을 더 준비하거나 매물 가격대를 낮춰야 합니다."
-                )
-            elif bd and binding == "LTV":
-                st.info(
-                    f"**LTV가 binding** — 자기자본 확보가 핵심입니다.  \n"
-                    f"담보가 기준 {bd['ltv_pct']:.0f}% 한도이므로 자기자본이 늘수록 매수력이 올라갑니다."
-                )
+            binding = bd["binding"]
+            def _badge(name): return "🔴 binding" if name == binding else "✅ 여유"
 
-            if shortage_max > 0:
-                st.markdown(f"**목표 상한 매수까지 부족분: {_eok(shortage_max)}**")
-                tips = []
-                if bd and binding in ("LTV", "한도캡"):
-                    tips.append(f"추가 저축·투자로 자기자본 {_eok(shortage_max)} 확보")
-                if bd and binding == "DSR":
-                    tips.append("기존 부채 조기 상환 → DSR 여유 확보")
-                    tips.append("2금융권(DSR 50%) 검토 (금리 높음 주의)")
-                tips.append("목표 예산 하한으로 조정 검토")
-                tips.append("파트너 추가 부동산 매도 또는 현금 기여 검토")
-                for t in tips:
-                    st.markdown(f"- {t}")
-            elif shortage_min > 0:
-                st.markdown(f"**목표 하한은 가능, 상한까지 {_eok(shortage_max + (max_needed - min_needed))} 부족**")
-                st.markdown("- 예산 상한을 낮추거나, 추가 저축으로 격차 해소 가능합니다.")
-            else:
-                st.success("현재 자금 계획으로 목표 상한도 충당 가능합니다.")
+            bc1, bc2, bc3 = st.columns(3)
+            with bc1:
+                st.metric(f"① LTV {bd['ltv_pct']:.0f}% 한도",
+                           f"{bd['ltv_limit_man']/10000:.2f} 억",
+                           delta=_badge("LTV"), delta_color="off")
+            with bc2:
+                cap_str = "없음(비규제)" if bd["cap_is_inf"] else f"{bd['cap_limit_man']/10000:.0f} 억"
+                st.metric("② 한도 캡", cap_str,
+                           delta=_badge("한도캡") if not bd["cap_is_inf"] else "✅ 해당없음",
+                           delta_color="off")
+            with bc3:
+                if bd["dsr_limit_man"]:
+                    st.metric("③ DSR 40% 한도",
+                               f"{bd['dsr_limit_man']/10000:.2f} 억",
+                               delta=_badge("DSR"), delta_color="off")
+                else:
+                    st.metric("③ DSR 한도", "미적용 (소득 0)")
 
-            st.caption(
-                "이 분석은 의사결정 보조 자료입니다. "
-                "실제 대출·세금은 은행·세무사와 함께 확인하세요."
+            br1, br2, br3, br4 = st.columns(4)
+            br1.metric("최종 대출",     _eok(bd["final_loan_man"]))
+            br2.metric("필요 자기자본", _eok(bd["required_equity_man"]),
+                        help="목표 상한 매매가 − 대출")
+            br3.metric("월 원리금",     f"{bd['monthly_payment_man']:,} 만원",
+                        help="원리금 균등 30년 / 4.5%")
+            br4.metric("연 이자",       _eok(bd["annual_interest_man"]))
+
+        # ── 자금 준비 로드맵 ────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### 자금 준비 로드맵")
+        equity = result["combined_equity_man"]
+        loan   = result["effective_loan_man"]
+        shortage_max = max(0, max_needed - (equity + loan))
+        shortage_min = max(0, min_needed - (equity + loan))
+
+        if bd and binding == "DSR" and bd.get("dsr_limit_man"):
+            st.warning(
+                f"**DSR이 binding — 소득이 핵심 병목입니다.**  \n"
+                f"현재 DSR 한도 {_eok(bd['dsr_limit_man'])}. "
+                f"기존 부채 {_eok(float(ex_pay) * 12)}/년을 상환하거나 소득을 늘리면 한도가 올라갑니다."
+            )
+        elif bd and binding == "한도캡" and not bd.get("cap_is_inf"):
+            st.warning(
+                f"**한도캡이 binding — 개인 조건으로 극복 불가합니다.**  \n"
+                f"최대 대출 {_eok(bd['cap_limit_man'])}. 자기자본을 더 준비하거나 매물 가격대를 낮춰야 합니다."
+            )
+        elif bd and binding == "LTV":
+            st.info(
+                f"**LTV가 binding** — 자기자본 확보가 핵심입니다.  \n"
+                f"담보가 기준 {bd['ltv_pct']:.0f}% 한도이므로 자기자본이 늘수록 매수력이 올라갑니다."
             )
 
-        # ══ TAB 2: 최적 매도 순서 ══════════════════════════════
-        with tab2:
-            from src.analysis.portfolio_strategy import recommend_sell_order
-            order = recommend_sell_order(
-                props_mine=props_mine,
-                props_partner=props_partner,
-                sales_mine=result["sales_mine"],
-                sales_partner=result["sales_partner"],
-                target=target,
-                current_cash_man=float(cash_seed),
+        if shortage_max > 0:
+            st.markdown(f"**목표 상한 매수까지 부족분: {_eok(shortage_max)}**")
+            tips = []
+            if bd and binding in ("LTV", "한도캡"):
+                tips.append(f"추가 저축·투자로 자기자본 {_eok(shortage_max)} 확보")
+            if bd and binding == "DSR":
+                tips.append("기존 부채 조기 상환 → DSR 여유 확보")
+                tips.append("2금융권(DSR 50%) 검토 (금리 높음 주의)")
+            tips.append("목표 예산 하한으로 조정 검토")
+            tips.append("파트너 추가 부동산 매도 또는 현금 기여 검토")
+            for t in tips:
+                st.markdown(f"- {t}")
+        elif shortage_min > 0:
+            st.markdown(f"**목표 하한은 가능, 상한까지 {_eok(shortage_max + (max_needed - min_needed))} 부족**")
+            st.markdown("- 예산 상한을 낮추거나, 추가 저축으로 격차 해소 가능합니다.")
+        else:
+            st.success("현재 자금 계획으로 목표 상한도 충당 가능합니다.")
+
+        st.caption(
+            "이 분석은 의사결정 보조 자료입니다. "
+            "실제 대출·세금은 은행·세무사와 함께 확인하세요."
+        )
+
+    # ══ TAB 2: 최적 매도 순서 ══════════════════════════════
+    with tab2:
+        from src.analysis.portfolio_strategy import recommend_sell_order
+        order = recommend_sell_order(
+            props_mine=props_mine,
+            props_partner=props_partner,
+            sales_mine=result["sales_mine"],
+            sales_partner=result["sales_partner"],
+            target=target,
+            current_cash_man=float(cash_seed),
+        )
+
+        st.markdown("#### 전략적 매도 순서 추천")
+
+        # ── 전략 요약 문단 ──────────────────────────────
+        if order:
+            with st.container(border=True):
+                st.markdown("##### 전략 요약")
+                st.markdown(order[0].get("strategy_summary", ""))
+
+        st.divider()
+        st.caption("아래는 각 물건별 상세 근거입니다.")
+
+        # ── 순서별 카드 ──────────────────────────────────
+        MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"]
+        for item in order:
+            medal = MEDALS[min(item["rank"] - 1, 5)]
+            rank_label = "먼저 파세요" if item["rank"] == 1 else (
+                "마지막에 파세요" if item["rank"] == len(order) else f"{item['rank']}번째"
             )
+            with st.expander(
+                f"{medal} **{rank_label}** — {item['owner']}의 {item['label']}  "
+                f"(순수령액 {_eok(item['net_man'])})",
+                expanded=(item["rank"] == 1),
+            ):
+                # 수치 요약
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("순수령액", _eok(item["net_man"]))
+                with c2:
+                    st.metric("양도세", _eok(item["tax_man"]),
+                              help=item["tax_note"])
+                with c3:
+                    color = "normal" if item["can_buy_target"] else "off"
+                    st.metric(
+                        "이 시점 누적 자금", _eok(item["cumulative_cash_man"]),
+                        delta="새 집 계약 가능" if item["can_buy_target"] else "아직 부족",
+                        delta_color=color,
+                    )
 
-            st.markdown("#### 전략적 매도 순서 추천")
+                # 갱신 리스크 배너
+                renewal = item.get("renewal", {})
+                rl = renewal.get("risk_level", "none")
+                if rl == "critical":
+                    st.error(f"🚨 **묵시적 갱신 위험** — {renewal.get('message','')}")
+                elif rl == "high":
+                    st.warning(f"⚠️ **갱신 거절 통보 마감 임박** — {renewal.get('message','')}")
+                elif rl == "medium" and renewal.get("days_to_deadline") is not None:
+                    st.info(f"📌 **갱신청구권 주의** — {renewal.get('message','')}")
 
-            # ── 전략 요약 문단 ──────────────────────────────
-            if order:
-                with st.container(border=True):
-                    st.markdown("##### 전략 요약")
-                    st.markdown(order[0].get("strategy_summary", ""))
+                st.markdown("**왜 이 순서인가요?**")
+                for ex in item.get("explains", item.get("reasons", [])):
+                    st.markdown(f"> {ex}")
 
-            st.divider()
-            st.caption("아래는 각 물건별 상세 근거입니다.")
-
-            # ── 순서별 카드 ──────────────────────────────────
-            MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"]
-            for item in order:
-                medal = MEDALS[min(item["rank"] - 1, 5)]
-                rank_label = "먼저 파세요" if item["rank"] == 1 else (
-                    "마지막에 파세요" if item["rank"] == len(order) else f"{item['rank']}번째"
-                )
-                with st.expander(
-                    f"{medal} **{rank_label}** — {item['owner']}의 {item['label']}  "
-                    f"(순수령액 {_eok(item['net_man'])})",
-                    expanded=(item["rank"] == 1),
-                ):
-                    # 수치 요약
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        st.metric("순수령액", _eok(item["net_man"]))
-                    with c2:
-                        st.metric("양도세", _eok(item["tax_man"]),
-                                  help=item["tax_note"])
-                    with c3:
-                        color = "normal" if item["can_buy_target"] else "off"
-                        st.metric(
-                            "이 시점 누적 자금", _eok(item["cumulative_cash_man"]),
-                            delta="새 집 계약 가능" if item["can_buy_target"] else "아직 부족",
-                            delta_color=color,
+                # 만약 이 순서대로 안 하면?
+                if item["rank"] == 1 and len(order) > 1:
+                    with st.expander("만약 이 집을 나중에 팔면 어떻게 되나요?", expanded=False):
+                        last_item = order[-1]
+                        st.warning(
+                            f"**{last_item['label']}를 먼저 팔고 {item['label']}를 나중에 파는 경우:**\n\n"
+                            f"초기 자금이 {_eok(last_item['net_man'])}로 시작됩니다. "
+                            f"{'이 금액으로 새 집 계약금을 낼 수 있지만, ' if last_item['can_buy_target'] else '이 금액만으로는 새 집 계약이 어렵고, '}"
+                            f"{item['label']}의 {item['tenant_type']} 계약 문제가 해결되지 않은 상태에서 "
+                            f"새 집과 기존 집을 동시에 보유하는 기간이 길어질 수 있습니다. "
+                            f"취득세 중과(1주택 이상 상태에서 매수) 위험도 확인이 필요합니다."
                         )
 
-                    # 갱신 리스크 배너
-                    renewal = item.get("renewal", {})
-                    rl = renewal.get("risk_level", "none")
-                    if rl == "critical":
-                        st.error(f"🚨 **묵시적 갱신 위험** — {renewal.get('message','')}")
-                    elif rl == "high":
-                        st.warning(f"⚠️ **갱신 거절 통보 마감 임박** — {renewal.get('message','')}")
-                    elif rl == "medium" and renewal.get("days_to_deadline") is not None:
-                        st.info(f"📌 **갱신청구권 주의** — {renewal.get('message','')}")
+        st.caption(
+            "⚠️ 이 순서는 분석 모델 기반 참고용입니다. "
+            "실제 매도 순서는 세무사·중개사와 함께 결정하세요."
+        )
 
-                    st.markdown("**왜 이 순서인가요?**")
-                    for ex in item.get("explains", item.get("reasons", [])):
-                        st.markdown(f"> {ex}")
-
-                    # 만약 이 순서대로 안 하면?
-                    if item["rank"] == 1 and len(order) > 1:
-                        with st.expander("만약 이 집을 나중에 팔면 어떻게 되나요?", expanded=False):
-                            last_item = order[-1]
-                            st.warning(
-                                f"**{last_item['label']}를 먼저 팔고 {item['label']}를 나중에 파는 경우:**\n\n"
-                                f"초기 자금이 {_eok(last_item['net_man'])}로 시작됩니다. "
-                                f"{'이 금액으로 새 집 계약금을 낼 수 있지만, ' if last_item['can_buy_target'] else '이 금액만으로는 새 집 계약이 어렵고, '}"
-                                f"{item['label']}의 {item['tenant_type']} 계약 문제가 해결되지 않은 상태에서 "
-                                f"새 집과 기존 집을 동시에 보유하는 기간이 길어질 수 있습니다. "
-                                f"취득세 중과(1주택 이상 상태에서 매수) 위험도 확인이 필요합니다."
-                            )
-
-            st.caption(
-                "⚠️ 이 순서는 분석 모델 기반 참고용입니다. "
-                "실제 매도 순서는 세무사·중개사와 함께 결정하세요."
-            )
-
-        with tab3:
-            for sc in result["scenarios"]:
-                is_rec = sc["label"].startswith(rec)
-                with st.expander(("✅ **[추천]** " if is_rec else "") + sc["label"], expanded=is_rec):
-                    st.markdown(f"_{sc['description']}_")
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1: st.metric("자기자본",  _eok(sc["available_equity_man"]))
-                    with c2: st.metric("대출 한도", _eok(sc["loan_capacity_man"]))
-                    with c3: st.metric("최대 예산", _eok(sc["max_budget_man"]))
-                    with c4: st.metric("취득세 등", _eok(sc["acq_total_cost_man"]),
-                                       help=f"취득세 {_eok(sc['acquisition_tax_man'])} 포함")
-                    if sc["can_afford_target_max"]: st.success("목표 상한까지 매수 가능")
-                    elif sc["can_afford_target_min"]: st.warning("목표 하한 가능, 상한 부족")
-                    else: st.error("목표 하한도 자금 부족")
-                    col_r, col_tip = st.columns(2)
-                    with col_r:
-                        st.markdown("**위험 요소**")
-                        for r in sc["risks"]: st.markdown(f"- {r}")
-                    with col_tip:
-                        st.markdown("**실행 팁**")
-                        for tip in sc["tips"]: st.markdown(f"- {tip}")
-            st.markdown("---")
-            with st.container(border=True):
-                st.markdown("##### WRAP 체크리스트")
-                st.markdown("""
+    with tab3:
+        for sc in result["scenarios"]:
+            is_rec = sc["label"].startswith(rec)
+            with st.expander(("✅ **[추천]** " if is_rec else "") + sc["label"], expanded=is_rec):
+                st.markdown(f"_{sc['description']}_")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: st.metric("자기자본",  _eok(sc["available_equity_man"]))
+                with c2: st.metric("대출 한도", _eok(sc["loan_capacity_man"]))
+                with c3: st.metric("최대 예산", _eok(sc["max_budget_man"]))
+                with c4: st.metric("취득세 등", _eok(sc["acq_total_cost_man"]),
+                                   help=f"취득세 {_eok(sc['acquisition_tax_man'])} 포함")
+                if sc["can_afford_target_max"]: st.success("목표 상한까지 매수 가능")
+                elif sc["can_afford_target_min"]: st.warning("목표 하한 가능, 상한 부족")
+                else: st.error("목표 하한도 자금 부족")
+                col_r, col_tip = st.columns(2)
+                with col_r:
+                    st.markdown("**위험 요소**")
+                    for r in sc["risks"]: st.markdown(f"- {r}")
+                with col_tip:
+                    st.markdown("**실행 팁**")
+                    for tip in sc["tips"]: st.markdown(f"- {tip}")
+        st.markdown("---")
+        with st.container(border=True):
+            st.markdown("##### WRAP 체크리스트")
+            st.markdown("""
 | | 질문 |
 |---|---|
 | **W** | 처분 외 대안(전세 유지, 일부만 매도)도 검토했나요? |
@@ -2176,65 +2195,183 @@ def page_portfolio_strategy():
 | **P** | 매도가 20% 낮아도 자금 계획이 성립하나요? |
 """)
 
-        with tab4:
-            sc_labels   = [s["label"] for s in result["scenarios"]]
-            default_idx = next((i for i, l in enumerate(sc_labels) if l.startswith(rec)), 0)
-            chosen      = st.selectbox("시나리오 선택", sc_labels, index=default_idx, key="tl_sc")
-            closing     = t_close if t_close else None
-            equity_needed = max(0.0, float(t_max) - result["effective_loan_man"])
+    with tab4:
+        sc_labels   = [s["label"] for s in result["scenarios"]]
+        default_idx = next((i for i, l in enumerate(sc_labels) if l.startswith(rec)), 0)
+        chosen      = st.selectbox("시나리오 선택", sc_labels, index=default_idx, key="tl_sc")
+        closing     = t_close if t_close else None
+        equity_needed = max(0.0, float(t_max) - result["effective_loan_man"])
 
-            tl_events, tl_sum = build_timeline(
-                props_mine=props_mine, props_partner=props_partner,
-                sales_mine=result["sales_mine"], sales_partner=result["sales_partner"],
-                target=target, scenario_label=chosen, today=_date.today(),
-                interim_rent_man=float(int_rent),
-                target_closing_date=closing, equity_needed_man=equity_needed,
+        tl_events, tl_sum = build_timeline(
+            props_mine=props_mine, props_partner=props_partner,
+            sales_mine=result["sales_mine"], sales_partner=result["sales_partner"],
+            target=target, scenario_label=chosen, today=_date.today(),
+            interim_rent_man=float(int_rent),
+            target_closing_date=closing, equity_needed_man=equity_needed,
+        )
+        s1, s2, s3 = st.columns(3)
+        with s1: st.metric("매도 수입 합계", _eok(tl_sum["total_in_man"]))
+        with s2: st.metric("지출 합계",      _eok(tl_sum["total_out_man"]))
+        with s3:
+            ncf = tl_sum["net_cashflow_man"]
+            st.metric("순 현금흐름", _eok(ncf))
+
+        ICON = {"계약만료":"📋","매도":"💵","매수":"🏠",
+                "임시거주":"🏨","월세수입":"💰","비용":"💸","갱신주의":"⚠️"}
+        tl_rows = [{
+            "시점":     e["ym"],
+            "이벤트":   ICON.get(e["category"], "•") + " " + e["event"],
+            "내용":     e["description"],
+            "입금(만)": f"+{e['cash_in_man']:,.0f}"  if e["cash_in_man"]  else "-",
+            "출금(만)": f"-{e['cash_out_man']:,.0f}" if e["cash_out_man"] else "-",
+            "잔고(만)": f"{e['running_balance_man']:,.0f}",
+            "비고":     e["note"],
+        } for e in tl_events]
+
+        if tl_rows:
+            st.dataframe(pd.DataFrame(tl_rows), use_container_width=True, hide_index=True,
+                         height=min(420, 55 + len(tl_rows) * 40))
+        else:
+            st.info("계약 만료일이나 임대 현황을 입력하면 타임라인이 생성됩니다.")
+
+        if len(tl_events) >= 2:
+            chart_df = pd.DataFrame([
+                {"시점": e["ym"], "잔고(만원)": e["running_balance_man"]}
+                for e in tl_events if e["cash_in_man"] or e["cash_out_man"]
+            ])
+            if not chart_df.empty:
+                import plotly.express as px
+                fig = px.bar(chart_df, x="시점", y="잔고(만원)",
+                             title="시점별 누적 자금 잔고",
+                             color="잔고(만원)",
+                             color_continuous_scale=["#e74c3c","#f39c12","#2ecc71"],
+                             height=300)
+                fig.update_layout(showlegend=False, coloraxis_showscale=False)
+                st.plotly_chart(fig, use_container_width=True)
+
+        st.caption(
+            "⚠️ 이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
+            "최종 매수·매도 결정은 공식 실거래 데이터, 현장 확인, "
+            "금융·세무 전문가 상담 후 내려야 합니다."
+        )
+
+    # ══ TAB 5: 추천 매물 ════════════════════════════════════
+    with tab5:
+        seed_man_port  = int(result["combined_equity_man"])
+        dsr_cap_port   = result["dsr_loan_limit_man"]
+        dsr_cap_man_port = float(dsr_cap_port) if dsr_cap_port > 0 else None
+        # KB비율: 목표 KB시세 입력했으면 그걸로, 아니면 0.95 기본
+        kb_ratio_port  = (t_kb / t_max) if (t_kb > 0 and t_max > 0) else 0.95
+
+        st.markdown("### 🏠 이 자금으로 살 수 있는 집 추천")
+        st.caption(
+            f"분석된 자기자본 **{_eok(seed_man_port)}** 기준으로 "
+            f"LTV·DSR·한도캡을 반영해 실제 매수 가능한 단지를 추천합니다."
+        )
+
+        with st.container(border=True):
+            rc1, rc2, rc3, rc4 = st.columns(4)
+            rec_strategy = rc1.selectbox(
+                "전략", ["🚀 투자수익", "갭투자", "임대수익", "자가매입"],
+                key="port_rec_strat",
+                help="투자수익=레버리지 상승 노림 / 갭투자=전세끼고 / 임대수익=월세 / 자가매입=실거주",
             )
-            s1, s2, s3 = st.columns(3)
-            with s1: st.metric("매도 수입 합계", _eok(tl_sum["total_in_man"]))
-            with s2: st.metric("지출 합계",      _eok(tl_sum["total_out_man"]))
-            with s3:
-                ncf = tl_sum["net_cashflow_man"]
-                st.metric("순 현금흐름", _eok(ncf))
+            rec_months  = rc2.slider("분석 기간 (개월)", 6, 36, 24, key="port_rec_mo")
+            rec_min_deals = rc3.slider("최소 거래수",  10, 200, 30, step=10, key="port_rec_md")
+            rec_top_n   = rc4.slider("추천 수", 5, 50, 20, key="port_rec_n")
 
-            ICON = {"계약만료":"📋","매도":"💵","매수":"🏠",
-                    "임시거주":"🏨","월세수입":"💰","비용":"💸","갱신주의":"⚠️"}
-            tl_rows = [{
-                "시점":     e["ym"],
-                "이벤트":   ICON.get(e["category"], "•") + " " + e["event"],
-                "내용":     e["description"],
-                "입금(만)": f"+{e['cash_in_man']:,.0f}"  if e["cash_in_man"]  else "-",
-                "출금(만)": f"-{e['cash_out_man']:,.0f}" if e["cash_out_man"] else "-",
-                "잔고(만)": f"{e['running_balance_man']:,.0f}",
-                "비고":     e["note"],
-            } for e in tl_events]
+        if seed_man_port <= 0:
+            st.warning("자기자본이 0입니다. 보유 부동산 시세를 입력하세요.")
+        else:
+            with st.spinner("추천 계산 중..."):
+                if rec_strategy == "🚀 투자수익":
+                    rec_df = _cached_investment(
+                        seed_man_port, rec_months, rec_min_deals,
+                        "무주택", False, True,
+                        catalyst_weight=0.10, tier_weight=0.7,
+                        prestige_weight=0.10, dsr_cap_man=dsr_cap_man_port,
+                    )
+                elif rec_strategy == "갭투자":
+                    rec_df = _cached_gap(
+                        seed_man_port, rec_months, rec_min_deals,
+                        "무주택", False, dsr_cap_man_port,
+                    )
+                elif rec_strategy == "임대수익":
+                    rec_df = _cached_yield(
+                        seed_man_port, rec_months, rec_min_deals,
+                        "무주택", False, True, dsr_cap_man_port,
+                    )
+                else:
+                    rec_df = _cached_outright(
+                        seed_man_port, rec_months, rec_min_deals,
+                        "무주택", False, True, dsr_cap_man_port,
+                    )
 
-            if tl_rows:
-                st.dataframe(pd.DataFrame(tl_rows), use_container_width=True, hide_index=True,
-                             height=min(420, 55 + len(tl_rows) * 40))
+            if rec_df is None or rec_df.empty:
+                st.warning(
+                    f"자기자본 {_eok(seed_man_port)}로 매수 가능한 매물이 없습니다. "
+                    "보유 부동산 시세를 확인하거나 전략을 바꿔보세요."
+                )
             else:
-                st.info("계약 만료일이나 임대 현황을 입력하면 타임라인이 생성됩니다.")
+                # KB비율 재계산 (캐시 결과는 kb_ratio=1.0 기준)
+                if kb_ratio_port < 0.99 and "trade_median" in rec_df.columns:
+                    from src.analysis.loan import annotate_loan_columns
+                    rec_df = annotate_loan_columns(
+                        rec_df, seed_man_port, "무주택", False,
+                        kb_ratio=kb_ratio_port, dsr_cap_man=dsr_cap_man_port,
+                    )
 
-            if len(tl_events) >= 2:
-                chart_df = pd.DataFrame([
-                    {"시점": e["ym"], "잔고(만원)": e["running_balance_man"]}
-                    for e in tl_events if e["cash_in_man"] or e["cash_out_man"]
-                ])
-                if not chart_df.empty:
-                    import plotly.express as px
-                    fig = px.bar(chart_df, x="시점", y="잔고(만원)",
-                                 title="시점별 누적 자금 잔고",
-                                 color="잔고(만원)",
-                                 color_continuous_scale=["#e74c3c","#f39c12","#2ecc71"],
-                                 height=300)
-                    fig.update_layout(showlegend=False, coloraxis_showscale=False)
-                    st.plotly_chart(fig, use_container_width=True)
+                # 매수 가능 필터 + 취득비용 포함
+                if "trade_median" in rec_df.columns:
+                    from src.analysis.costs import total_acquisition_cost_man as _tacm2
+                    rec_df = rec_df.copy()
+                    rec_df["_acq2"] = rec_df["trade_median"].apply(
+                        lambda p: _tacm2(p, "무주택", False)["total"]
+                    )
+                    if "required_equity" in rec_df.columns:
+                        rec_df = rec_df[
+                            (rec_df["required_equity"] > 0)
+                            & (rec_df["required_equity"] + rec_df["_acq2"] <= seed_man_port)
+                        ].drop(columns=["_acq2"]).reset_index(drop=True)
 
-            st.caption(
-                "⚠️ 이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
-                "최종 매수·매도 결정은 공식 실거래 데이터, 현장 확인, "
-                "금융·세무 전문가 상담 후 내려야 합니다."
-            )
+                if rec_df.empty:
+                    st.warning(
+                        f"부대비용 포함 시 자기자본 {_eok(seed_man_port)} 내 매물이 없습니다. "
+                        "취득세·중개비까지 고려하면 실제 매수 가능 범위가 좁아집니다."
+                    )
+                    if dsr_cap_man_port:
+                        st.caption(f"DSR 한도 {_eok(dsr_cap_man_port)} 적용 중")
+                else:
+                    rec_df["region"] = rec_df["region_code"].map(REGION_MAP).fillna(rec_df["region_code"])
+                    rec_df["rank"] = range(1, len(rec_df) + 1)
+                    rec_df["naver_url"] = [
+                        naver_land_url(r.get("region"), r.get("apt_name"))
+                        for r in rec_df.to_dict("records")
+                    ]
+
+                    # 전략별 컬럼 선택
+                    base_cols = ["naver_url", "rank", "region", "apt_name",
+                                 "trade_median", "required_equity", "loan_capacity",
+                                 "area_bucket", "build_year", "score"]
+                    if rec_strategy == "갭투자":
+                        extra = ["deposit_median", "gap", "jeonse_ratio_%", "jeonse_risk"]
+                    elif rec_strategy == "임대수익":
+                        extra = ["deposit_median", "monthly_median", "annual_yield_%"]
+                    else:
+                        extra = ["price_growth_%", "expected_roi_%"]
+                    show_cols = [c for c in base_cols + extra if c in rec_df.columns]
+
+                    st.caption(
+                        f"매수 가능 단지 {len(rec_df)}개 · "
+                        f"KB시세 비율 {kb_ratio_port:.0%} 반영 · "
+                        f"상위 {rec_top_n}개 표시"
+                    )
+                    render_table(rec_df[show_cols].head(rec_top_n), height=600)
+
+                    st.caption(
+                        "이 추천은 투자 판단 보조 자료입니다. "
+                        "최종 결정은 공식 실거래 데이터·현장 확인·전문가 상담 후 내려야 합니다."
+                    )
 
 def main():
     page = _sidebar_nav()
