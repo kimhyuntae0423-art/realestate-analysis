@@ -1806,52 +1806,53 @@ def page_portfolio_strategy():
     MINE_DEFAULTS    = ["충남 천안시 동남구", "서울 강남구", "경기 성남시 분당구", "서울 송파구", "서울 서초구"]
     PARTNER_DEFAULTS = ["서울 마포구", "서울 용산구", "서울 강동구", "인천 연수구", "경기 수원시 영통구"]
 
-    # ── 내 부동산 헤더 + 파트너 토글 한 줄 ───────────────────────
-    h1, h2, h3, h_gap, h_toggle = st.columns([2, 0.7, 0.7, 0.5, 3])
+    # ── 헤더 2행: 내 부동산 / 파트너 부동산 (동일 레이아웃) ────────
+    h1, h2, h3, _hsp = st.columns([3, 1, 1, 5])
     with h1:
         st.markdown("##### 👤 내 부동산")
     with h2:
-        if st.button("＋", key="add_mine", use_container_width=True,
-                     help="내 물건 추가"):
+        if st.button("＋", key="add_mine", use_container_width=True, help="내 물건 추가"):
             if st.session_state["n_mine"] < 5:
                 st.session_state["n_mine"] += 1
             st.rerun()
     with h3:
-        if st.button("－", key="del_mine", use_container_width=True,
-                     help="내 물건 삭제"):
+        if st.button("－", key="del_mine", use_container_width=True, help="내 물건 삭제"):
             if st.session_state["n_mine"] > 1:
                 st.session_state["n_mine"] -= 1
             st.rerun()
-    with h_toggle:
+
+    p1, p2, p3, p4, _psp = st.columns([0.25, 2.75, 1, 1, 5])
+    with p1:
+        show_partner = st.toggle(
+            "", value=st.session_state["show_partner"],
+            key="show_partner_toggle",
+            help="배우자·동거인 명의 부동산이 있으면 켜세요.",
+        )
+    with p2:
         st.markdown(
-            "<style>.partner-toggle label{font-size:16px!important;font-weight:600!important}</style>",
+            f"##### {'👥 파트너 부동산' if show_partner else '<span style=\"color:#aaa\">👥 파트너 부동산</span>'}",
             unsafe_allow_html=True,
         )
-        show_partner = st.toggle(
-            "👥 파트너 부동산 함께 분석",
-            value=st.session_state["show_partner"],
-            key="show_partner_toggle",
-            help="배우자·동거인 명의 부동산이 있으면 켜세요. 합산 매수력·양도 순서에 반영됩니다.",
-        )
+    with p3:
+        _partner_add = st.button("＋", key="add_partner", use_container_width=True,
+                                  help="파트너 물건 추가", disabled=not show_partner)
+    with p4:
+        _partner_del = st.button("－", key="del_partner", use_container_width=True,
+                                  help="파트너 물건 삭제", disabled=not show_partner)
+
     st.session_state["show_partner"] = show_partner
 
     if show_partner and st.session_state["n_partner"] == 0:
         st.session_state["n_partner"] = 1
+    if not show_partner:
+        st.session_state["n_partner"] = 0
 
-    if show_partner:
-        hp1, hp2, hp3, _ = st.columns([2, 1, 1, 4])
-        with hp1:
-            st.markdown("##### 👥 파트너 부동산")
-        with hp2:
-            if st.button("＋", key="add_partner", use_container_width=True):
-                if st.session_state["n_partner"] < 5:
-                    st.session_state["n_partner"] += 1
-                st.rerun()
-        with hp3:
-            if st.button("－", key="del_partner", use_container_width=True):
-                if st.session_state["n_partner"] > 1:
-                    st.session_state["n_partner"] -= 1
-                st.rerun()
+    if _partner_add and show_partner and st.session_state["n_partner"] < 5:
+        st.session_state["n_partner"] += 1
+        st.rerun()
+    if _partner_del and show_partner and st.session_state["n_partner"] > 1:
+        st.session_state["n_partner"] -= 1
+        st.rerun()
 
     n_mine    = st.session_state["n_mine"]
     n_partner = st.session_state["n_partner"] if show_partner else 0
