@@ -1981,6 +1981,18 @@ def page_portfolio_strategy():
         return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
 
     rec = result["recommended_scenario"]
+
+    # 탭 공용: 매도 순서·타임라인은 탭 밖에서 미리 계산
+    from src.analysis.portfolio_strategy import recommend_sell_order as _rso
+    _order = _rso(
+        props_mine=props_mine,
+        props_partner=props_partner,
+        sales_mine=result["sales_mine"],
+        sales_partner=result["sales_partner"],
+        target=target,
+        current_cash_man=float(cash_seed),
+    )
+
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "💰 순수령액 & 매수력", "🏆 최적 매도 순서", "📋 시나리오 비교",
         "📅 타임라인 & 자금흐름", "🏠 추천 매물",
@@ -2157,17 +2169,105 @@ def page_portfolio_strategy():
             "실제 대출·세금은 은행·세무사와 함께 확인하세요."
         )
 
+        # ── 시간순 실행 플랜 ─────────────────────────────────
+        if _order:
+            st.markdown("---")
+            st.markdown("#### 📅 시간순 실행 플랜 — 무엇을 언제, 어떤 순서로?")
+
+            from datetime import date as _today_dt
+            _today = _today_dt.today()
+            MEDALS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"]
+
+            # 현재 직접거주 중인 집 목록
+            _living_now = [p.label for p in list(props_mine) + list(props_partner)
+                           if p.tenant_type == "직접거주"]
+
+            # 현재 상태 표시
+            _cash_str = _eok(float(cash_seed))
+            _living_str = f" · 현재 거주: {', '.join(_living_now)}" if _living_now else ""
+            st.info(f"**지금** — 보유 현금 **{_cash_str}**{_living_str}")
+
+            for _i, _item in enumerate(_order):
+                _medal = MEDALS[min(_i, 5)]
+
+                # 매도 가능 시점
+                _end = _item.get("contract_end_date") or ""
+                _ttype = _item["tenant_type"]
+                if _ttype in ("전세", "월세") and _end:
+                    try:
+                        from datetime import date as _dparse
+                        _edt = _dparse.fromisoformat(_end)
+                        _timing = f"{_edt.strftime('%Y년 %m월')} 계약 만료 후" if _edt > _today else "계약 만료 (즉시 가능)"
+                    except Exception:
+                        _timing = "계약 만료 후"
+                elif _ttype == "공실":
+                    _timing = "즉시 매도 가능 (공실)"
+                elif _ttype == "직접거주":
+                    _timing = "이사 준비 후 즉시"
+                else:
+                    _timing = "계약 조율 필요"
+
+                # 이 집 팔고 나서 어디서 사나
+                _after = [o for o in _order if o["rank"] > _item["rank"]]
+                _next_home = next((o["label"] for o in _after if o["tenant_type"] == "직접거주"), None)
+                if _ttype == "직접거주":
+                    _move = f"→ **{_next_home}로 이사해 거주**" if _next_home else "→ **임시 전세·월세 필요** (목표 아파트 잔금 전까지)"
+                else:
+                    _cur_home = _living_now[0] if _living_now else None
+                    # 팔고 나서도 남아있는 직접거주 집이 있으면 유지
+                    _still_living = [o["label"] for o in _after if o["tenant_type"] == "직접거주"]
+                    if _still_living:
+                        _move = f"→ **{_still_living[0]} 계속 거주**"
+                    elif _cur_home and _cur_home != _item["label"]:
+                        _move = f"→ **{_cur_home} 계속 거주**"
+                    else:
+                        _move = "→ 거주지 별도 확보 필요"
+
+                _can_buy = _item["can_buy_target"]
+
+                with st.container(border=True):
+                    _ca, _cb, _cc = st.columns([0.4, 3.5, 2])
+                    with _ca:
+                        st.markdown(f"<div style='font-size:28px;text-align:center'>{_medal}</div>",
+                                     unsafe_allow_html=True)
+                    with _cb:
+                        st.markdown(f"**{_item['owner']}의 '{_item['label']}' 매도**")
+                        st.caption(f"🕐 시점: {_timing}")
+                        if _item.get("reasons"):
+                            st.caption(f"이유: {' · '.join(_item['reasons'][:2])}")
+                        st.markdown(_move)
+                    with _cc:
+                        st.metric("순수령액", _eok(_item["net_man"]))
+                        st.metric("이후 누적 자금", _eok(_item["cumulative_cash_man"]))
+
+                    if _can_buy:
+                        st.success(f"✅ **이 시점부터 목표 아파트 계약 가능!** (누적 자금 {_eok(_item['cumulative_cash_man'])} + 대출 {_eok(result['effective_loan_man'])})")
+
+                if _i < len(_order) - 1:
+                    st.markdown("<div style='text-align:center;color:#aaa;font-size:18px'>↓</div>",
+                                 unsafe_allow_html=True)
+
+            # 최종 매수 단계
+            _final_equity = _order[-1]["cumulative_cash_man"]
+            _final_budget = _final_equity + result["effective_loan_man"]
+            st.markdown("<div style='text-align:center;color:#aaa;font-size:18px'>↓</div>",
+                         unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("**🏠 최종 — 목표 아파트 매수**")
+                _fc1, _fc2, _fc3 = st.columns(3)
+                _fc1.metric("확보 자기자본", _eok(_final_equity))
+                _fc2.metric("대출", _eok(result["effective_loan_man"]))
+                _fc3.metric("총 예산", _eok(_final_budget))
+                if _final_budget >= float(t_max):
+                    st.success(f"목표 상한 {_eok(float(t_max))} 매수 가능 ✅")
+                elif _final_budget >= float(t_min):
+                    st.warning(f"목표 하한 {_eok(float(t_min))} 가능 / 상한까지 {_eok(float(t_max) - _final_budget)} 부족")
+                else:
+                    st.error(f"목표 하한 {_eok(float(t_min))}도 {_eok(float(t_min) - _final_budget)} 부족 — 추가 자금 마련 필요")
+
     # ══ TAB 2: 최적 매도 순서 ══════════════════════════════
     with tab2:
-        from src.analysis.portfolio_strategy import recommend_sell_order
-        order = recommend_sell_order(
-            props_mine=props_mine,
-            props_partner=props_partner,
-            sales_mine=result["sales_mine"],
-            sales_partner=result["sales_partner"],
-            target=target,
-            current_cash_man=float(cash_seed),
-        )
+        order = _order  # 탭 바깥에서 미리 계산됨
 
         st.markdown("#### 전략적 매도 순서 추천")
 
