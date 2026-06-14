@@ -3480,6 +3480,7 @@ def render_recommend_tab(inputs: dict):
             year_range=year_range,
             max_buy_reg_net=max_buy_reg_net,
             max_buy_nonreg_net=max_buy_nonreg_net,
+            kb_ratio=kb_ratio,
         )
         return
 
@@ -3719,7 +3720,7 @@ def render_recommend_tab(inputs: dict):
         # 지역별 매매가 한도 컷 (단지 추천표와 동일 규칙 적용 — 일관성)
         if not buyable_rec.empty:
             mb_map = {
-                c: (max_purchase_man(seed_man, c, ownership, first_time, dsr_cap_man)
+                c: (max_purchase_man(seed_man, c, ownership, first_time, dsr_cap_man, kb_ratio)
                     if use_loan else seed_man)
                 for c in buyable_rec["region_code"].unique()
             }
