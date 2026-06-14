@@ -3202,6 +3202,7 @@ def _render_compare_view(
         over = inv[inv["일치"] == "🏆 3전략"][_inv_cols].copy()
         over.insert(0, "순위", range(1, len(over) + 1))
         over["매매가(억)"] = (over["trade_median"] / 10000).round(2)
+        over["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in over.to_dict("records")]
 
         # 갭투자 데이터 병합 (gap + jeonse_ratio)
         if not gap.empty and "gap" in gap.columns:
@@ -3266,10 +3267,11 @@ def _render_compare_view(
         _thead = """
 <tr>
   <th rowspan="2" class="base">순위</th>
+  <th rowspan="2" class="base">🔗</th>
   <th rowspan="2" class="base">지역</th>
   <th rowspan="2" class="base">단지</th>
-  <th rowspan="2" class="base">면적(㎡)</th>
   <th rowspan="2" class="base">매매가(억)</th>
+  <th rowspan="2" class="base">면적(㎡)</th>
   <th colspan="2" class="inv">🚀 투자수익</th>
   <th colspan="3" class="gap">🏠 갭투자</th>
   <th colspan="2" class="yld">💰 임대수익</th>
@@ -3290,9 +3292,11 @@ def _render_compare_view(
             gv = _n(r["🏠 갭(억)"])               if has_gap_v else "—"
             yg = _n(r["💰 연수익금(억)"])          if has_yld_g else "—"
             yr = _n(r["annual_yield_%"])           if has_yld_r else "—"
+            _url = r.get("naver_url") or ""
+            _link = f"<a href='{_url}' target='_blank' style='color:#2563eb;text-decoration:none'>🔗</a>" if _url else "—"
             _rows.append(
-                f"<tr><td>{int(r['순위'])}</td><td>{r['지역']}</td><td>{r['apt_name']}</td>"
-                f"<td>{r['area_bucket']:.0f}</td><td>{r['매매가(억)']:.2f}</td>"
+                f"<tr><td>{int(r['순위'])}</td><td>{_link}</td><td>{r['지역']}</td><td>{r['apt_name']}</td>"
+                f"<td>{r['매매가(억)']:.2f}</td><td>{r['area_bucket']:.0f}</td>"
                 f"<td>{ig}</td><td>{ir}</td>"
                 f"<td>{gg}</td><td>{gr}</td><td>{gv}</td>"
                 f"<td>{yg}</td><td>{yr}</td><td>{r['score']:.1f}</td></tr>"
@@ -3340,23 +3344,18 @@ def _render_compare_view(
             st.warning("해당 조건의 투자수익 매물 없음")
         else:
             show = inv.copy()
-            show.insert(0, "순위", range(1, len(show) + 1))
-            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
+            show["rank"] = range(1, len(show) + 1)
+            show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
             if "expected_roi_%" in show.columns and "required_equity" in show.columns:
                 show["연수익률(%)"] = (show["expected_roi_%"] * ann).round(2)
                 show["연수익금(억)"] = (
                     show["expected_roi_%"] * ann * show["required_equity"] / 100 / 10000
                 ).round(2)
-            if "required_equity" in show.columns:
-                show["필요자기자본(억)"] = (show["required_equity"] / 10000).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "필요자기자본(억)", "area_bucket", "score"]
+            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
-            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
-                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
-                "tier_label": "지역등급",
-            }))
+            render_table(show[[c for c in cols if c in show.columns]], height=500)
             st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세)")
 
     with tab_gap:
@@ -3364,9 +3363,8 @@ def _render_compare_view(
             st.warning("해당 조건의 갭투자 매물 없음")
         else:
             show = gap.copy()
-            show.insert(0, "순위", range(1, len(show) + 1))
-            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
-            show["갭(억)"] = (show["gap"] / 10000).round(2)
+            show["rank"] = range(1, len(show) + 1)
+            show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
             # price_growth_%는 inv에서 조인 (갭투자 결과엔 없음)
             _key = ["apt_name", "region_code", "area_bucket"]
             if not inv.empty and "price_growth_%" in inv.columns:
@@ -3376,15 +3374,12 @@ def _render_compare_view(
                 gain = show["trade_median"] * show["price_growth_%"] / 100
                 show["연수익금(억)"] = (gain / 10000 * ann).round(2)
                 show["연수익률(%)"] = (gain / show["gap"] * 100 * ann).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "갭(억)", "area_bucket", "score"]
+            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "gap", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             cols += ["jeonse_ratio"]
             if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
-            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
-                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
-                "jeonse_ratio": "전세가율(%)", "jeonse_risk": "역전세리스크",
-            }))
+            render_table(show[[c for c in cols if c in show.columns]], height=500)
             st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본).")
 
     with tab_yld:
@@ -3392,16 +3387,11 @@ def _render_compare_view(
             st.warning("해당 조건의 임대수익 매물 없음")
         else:
             show = yld.copy()
-            show.insert(0, "순위", range(1, len(show) + 1))
-            show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
-            if "required_equity" in show.columns:
-                show["필요자본(억)"] = (show["required_equity"] / 10000).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "필요자본(억)", "area_bucket", "score"]
+            show["rank"] = range(1, len(show) + 1)
+            show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
+            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
             if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
-            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
-                "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
-                "annual_yield_%": "연수익률(%)",
-            }))
+            render_table(show[[c for c in cols if c in show.columns]], height=500)
 
 
 def render_recommend_tab(inputs: dict):
