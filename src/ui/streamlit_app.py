@@ -800,11 +800,11 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     c1, c2, c3 = st.columns(3)
     seed_eok = c1.number_input(
         "자기자본 시드 (억원)", min_value=0.1, max_value=200.0,
-        value=5.0, step=0.5, format="%.1f", key=f"{key_prefix}_seed",
+        value=2.5, step=0.5, format="%.1f", key=f"{key_prefix}_seed",
     )
     annual_income = c2.number_input(
         "본인 연소득 (만원)", min_value=0, max_value=100000,
-        value=6000, step=500, key=f"{key_prefix}_inc",
+        value=7500, step=500, key=f"{key_prefix}_inc",
         help="세전 연소득",
     )
     is_couple = c3.checkbox(
@@ -870,7 +870,7 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
         help="KB부동산 앱 → 단지 검색 → 시세 탭. 은행은 이 값 기준으로 LTV 계산. 0이면 오른쪽 비율 보정 사용.",
     )
     kb_ratio_pct = kbc2.slider(
-        "KB시세/실거래가 (%)", min_value=75, max_value=100, value=95, step=1,
+        "KB시세/실거래가 (%)", min_value=75, max_value=100, value=90, step=1,
         key=f"{key_prefix}_kb",
         help="직접 입력이 없을 때 일괄 보정값. 통상 90~97%.",
     )
