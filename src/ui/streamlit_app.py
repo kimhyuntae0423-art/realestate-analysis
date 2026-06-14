@@ -1886,7 +1886,7 @@ def page_portfolio_strategy():
     with st.container(border=True):
         st.markdown("#### 🏡 살 집 (목표 부동산)")
         _t_def_sido, _t_def_gu = _parse_region("서울 송파구")
-        ca, cb, cc, cd, ce = st.columns(5)
+        ca, cb, cc, cd, ce, cf, cg = st.columns([2, 1.2, 1.5, 1.5, 1.5, 1.5, 1.5])
         with ca:
             t_name = st.text_input("단지명/메모", value="", key="t_name",
                                    placeholder="예: 잠실엘스")
@@ -1904,15 +1904,16 @@ def page_portfolio_strategy():
         with cd:
             t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
                                     step=1_000, key="t_min")
+        with ce:
             t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
                                     step=1_000, key="t_max")
-        with ce:
+        with cf:
             t_kb = st.number_input(
                 "KB시세 (만원, 선택)", 0, value=0, step=1_000, key="t_kb",
-                help="KB부동산 앱에서 목표 단지 시세 확인 후 입력. 0이면 예산 상한 기준으로 계산. "
-                     "KB시세 < 매매가이면 실제 대출이 더 적게 나옴.",
+                help="KB부동산 앱에서 목표 단지 시세 확인 후 입력. 0이면 예산 상한 기준으로 계산.",
             )
-            t_close = st.date_input("희망 잔금일 (비우면 자동)", value=None,
+        with cg:
+            t_close = st.date_input("희망 잔금일 (선택)", value=None,
                                     key="t_close")
 
     with st.container(border=True):
