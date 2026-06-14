@@ -1826,7 +1826,6 @@ def page_portfolio_strategy():
         show_partner = st.toggle(
             "", value=st.session_state["show_partner"],
             key="show_partner_toggle",
-            help="배우자·동거인 명의 부동산이 있으면 켜세요.",
         )
     with p2:
         st.markdown(
