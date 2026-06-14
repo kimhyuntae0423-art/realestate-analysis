@@ -2087,73 +2087,99 @@ def page_portfolio_strategy():
         else:
             st.error(f"목표 하한도 미달 — {_eok(min_needed - total_power)} 부족")
 
-        # ── 대출 한도 binding 분석 ──────────────────────────
+        # ── 대출 한도 분석 ────────────────────────────────────
         bd = result.get("target_loan_breakdown", {})
         if bd:
             st.markdown("---")
-            st.markdown("#### 대출 한도 — 어떤 제약이 binding인가?")
-            kb_note = (
-                f"KB시세 {bd['kb_price_man']/10000:.2f}억 기준"
-                if t_kb > 0 else
-                f"KB시세 미입력 → 예산 상한 {t_max/10000:.1f}억 기준 (실제보다 과대 추정 가능)"
-            )
-            st.caption(kb_note)
-
             binding = bd["binding"]
-            def _badge(name): return "🔴 binding" if name == binding else "✅ 여유"
-            # 비규제 sentinel(999999999) 또는 실제 inf 모두 "한도 없음"으로 처리
             _cap_none = bd["cap_is_inf"] or bd.get("cap_limit_man", 0) >= 500_000_000
 
-            st.markdown(
-                "세 가지 제약 중 **가장 작은 값**이 실제 대출 한도입니다. "
-                "🔴 binding = 지금 당신의 대출을 제한하는 실제 병목."
-            )
-            bc1, bc2, bc3 = st.columns(3)
-            with bc1:
-                st.metric(
-                    f"① LTV {bd['ltv_pct']:.0f}% 한도",
-                    f"{bd['ltv_limit_man']/10000:.2f} 억",
-                    delta=_badge("LTV"), delta_color="off",
-                    help=f"은행은 KB시세의 {bd['ltv_pct']:.0f}%까지만 대출합니다. "
-                         f"KB시세 {bd['kb_price_man']/10000:.2f}억 × {bd['ltv_pct']:.0f}% = {bd['ltv_limit_man']/10000:.2f}억",
-                )
-            with bc2:
-                if _cap_none:
-                    st.metric("② 정책 한도캡", "없음 (비규제)",
-                               delta="✅ 해당없음", delta_color="off",
-                               help="비규제지역은 정부의 주담대 한도캡 적용 대상이 아닙니다.")
-                else:
-                    st.metric(
-                        "② 정책 한도캡", f"{bd['cap_limit_man']/10000:.0f} 억",
-                        delta=_badge("한도캡"), delta_color="off",
-                        help="규제지역 정책: 15억 이하 6억 / 15~25억 4억 / 25억 초과 2억 한도.",
-                    )
-            with bc3:
-                if bd["dsr_limit_man"]:
-                    st.metric(
-                        "③ DSR 40% 한도", f"{bd['dsr_limit_man']/10000:.2f} 억",
-                        delta=_badge("DSR"), delta_color="off",
-                        help="연 소득의 40%를 원리금으로 쓴다고 가정할 때 빌릴 수 있는 최대 원금. "
-                             "소득이 높을수록, 기존 부채가 적을수록 한도가 올라갑니다.",
-                    )
-                else:
-                    st.metric("③ DSR 한도", "미적용",
-                               help="연 소득을 0으로 입력하면 DSR 계산이 생략됩니다.")
+            # binding → 한국어 레이블
+            _BINDING_KO = {"LTV": f"LTV {bd['ltv_pct']:.0f}%", "한도캡": "정책 상한", "DSR": "소득(DSR)"}
+            _binding_name = _BINDING_KO.get(binding, binding)
 
-            st.markdown("---")
-            br1, br2, br3, br4 = st.columns(4)
-            br1.metric("최종 대출",
+            kb_note = (f"KB시세 {bd['kb_price_man']/10000:.2f}억 기준"
+                       if t_kb > 0 else f"매매가 {t_max/10000:.1f}억 기준 (KB시세 미입력 — 실제보다 클 수 있음)")
+
+            st.markdown(
+                f"#### 대출 가능 금액  "
+                f"<span style='font-size:13px;color:#888'>{kb_note}</span>",
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                f"은행은 아래 세 조건을 동시에 적용하고, **그 중 가장 낮은 금액**만 대출합니다. "
+                f"지금은 **{_binding_name} 조건**이 실제 한도를 결정하고 있습니다."
+            )
+
+            with st.container(border=True):
+                # 행 1: 세 가지 제약 + 최종 대출 (4열)
+                _c1, _c2, _c3, _c4 = st.columns(4)
+
+                def _limit_label(name):
+                    return "← 지금 이 한도 적용 중" if name == binding else "여유 있음"
+                def _limit_color(name):
+                    return "inverse" if name == binding else "off"
+
+                with _c1:
+                    st.metric(
+                        f"① LTV {bd['ltv_pct']:.0f}% 한도",
+                        f"{bd['ltv_limit_man']/10000:.2f}억",
+                        delta=_limit_label("LTV"), delta_color=_limit_color("LTV"),
+                        help=(f"KB시세 {bd['kb_price_man']/10000:.2f}억의 {bd['ltv_pct']:.0f}%까지 대출 가능. "
+                              f"KB시세가 낮을수록 한도도 줄어듭니다."),
+                    )
+                with _c2:
+                    if _cap_none:
+                        st.metric("② 정책 상한", "없음 (비규제)",
+                                   delta="해당없음", delta_color="off",
+                                   help="비규제지역은 정부 한도캡 미적용입니다.")
+                    else:
+                        st.metric(
+                            "② 정책 상한", f"{bd['cap_limit_man']/10000:.0f}억",
+                            delta=_limit_label("한도캡"), delta_color=_limit_color("한도캡"),
+                            help="규제지역 한도: 15억 이하→6억 / 15~25억→4억 / 25억 초과→2억.",
+                        )
+                with _c3:
+                    if bd["dsr_limit_man"]:
+                        st.metric(
+                            "③ 소득(DSR) 한도", f"{bd['dsr_limit_man']/10000:.2f}억",
+                            delta=_limit_label("DSR"), delta_color=_limit_color("DSR"),
+                            help="연 소득의 40%를 원리금으로 낼 때 빌릴 수 있는 최대 금액. "
+                                 "소득이 높거나 기존 부채가 적으면 한도가 올라갑니다.",
+                        )
+                    else:
+                        st.metric("③ 소득(DSR) 한도", "미입력",
+                                   delta="소득 입력 시 계산", delta_color="off",
+                                   help="연 소득을 0으로 입력하면 DSR 계산이 생략됩니다.")
+                with _c4:
+                    st.metric(
+                        "✅ 최종 대출 가능액",
                         _eok(bd["final_loan_man"]),
-                        help="① LTV · ② 한도캡 · ③ DSR 세 한도 중 가장 작은 값.")
-            br2.metric("필요 자기자본",
+                        help=f"세 한도 중 가장 낮은 값 ({_binding_name} 기준).",
+                    )
+
+                st.divider()
+
+                # 행 2: 실질 숫자 3가지
+                _r1, _r2, _r3 = st.columns(3)
+                with _r1:
+                    st.metric(
+                        "내가 직접 내야 할 돈",
                         _eok(bd["required_equity_man"]),
-                        help="매매가 − 최종 대출. 계약금·잔금으로 직접 내야 할 금액 (취득세·중개비 별도).")
-            br3.metric("월 원리금",
-                        f"{bd['monthly_payment_man']:,} 만원",
-                        help=f"원리금 균등 30년 / 금리 4.5% 기준. 실제 금리에 따라 달라집니다.")
-            br4.metric("연 이자 부담",
+                        help="매매가 − 대출. 계약금·잔금으로 내 돈을 써야 하는 금액. 취득세·중개비는 별도.",
+                    )
+                with _r2:
+                    st.metric(
+                        "월 상환액 (30년 / 4.5%)",
+                        f"{bd['monthly_payment_man']:,}만원",
+                        help="원리금 균등 30년 기준. 실제 금리·만기에 따라 달라집니다.",
+                    )
+                with _r3:
+                    st.metric(
+                        "연간 이자 부담",
                         _eok(bd["annual_interest_man"]),
-                        help=f"명목 금리 4.5% × 대출원금 기준. 원금 상환에 따라 점차 줄어듭니다.")
+                        help="명목 금리 4.5% × 대출원금. 원금 상환 진행에 따라 매년 줄어듭니다.",
+                    )
 
         # ── 자금 준비 로드맵 ────────────────────────────────
         st.markdown("---")
