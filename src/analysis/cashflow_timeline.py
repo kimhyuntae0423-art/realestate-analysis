@@ -103,25 +103,39 @@ def _contract_expiry_event(prop, today: date) -> list[dict]:
     return events
 
 
-def _sell_event(prop, sell_date: date, sale: dict) -> dict:
+def _sell_event(prop, sell_date: date, sale: dict) -> list[dict]:
+    """매도 완료 이벤트 + 양도세 납부 이벤트(2개월 후) 반환."""
     parts = [f"매도가 {sale['sale_price_man']:,.0f}만"]
     if sale.get("loan_repay_man", 0):
         parts.append(f"대출상환 {sale['loan_repay_man']:,.0f}만")
-    if sale.get("capital_gains_tax_man", 0):
-        parts.append(f"양도세 {sale['capital_gains_tax_man']:,.0f}만")
     if sale.get("deposit_return_man", 0):
         parts.append(f"보증금반환 {sale['deposit_return_man']:,.0f}만")
 
-    net = sale["net_man"]
-    return _ev(
+    cgt = sale.get("capital_gains_tax_man", 0)
+    # 잔금일에는 대출상환·보증금반환·중개비만 빠지고 양도세는 아직 미납
+    net_before_tax = sale["net_man"] + cgt  # 양도세 제외 수령액
+    events = [_ev(
         d=sell_date,
-        event=f"[{prop.label}] 매도 완료",
-        desc=" / ".join(parts),
-        cash_in=max(0, net),
-        cash_out=max(0, -net),
-        note=f"순수령액 {net:,.0f}만원 ({sale.get('tax_note', '')})",
+        event=f"[{prop.label}] 매도 잔금",
+        desc=" / ".join(parts) + (f" (양도세 {cgt:,.0f}만은 2개월 후 납부)" if cgt > 0 else ""),
+        cash_in=max(0, net_before_tax),
+        cash_out=max(0, -net_before_tax),
+        note=f"순수령액(세전) {net_before_tax:,.0f}만 / {sale.get('tax_note', '')}",
         category="매도",
-    )
+    )]
+    # 양도세 신고·납부: 잔금일 다음 달 말일 기준 2개월 내 신고
+    if cgt > 0:
+        tax_date = _add_months(sell_date, 2)
+        events.append(_ev(
+            d=tax_date,
+            event=f"[{prop.label}] 양도세 납부",
+            desc=f"양도소득세 {cgt:,.0f}만원 신고·납부 (잔금일 기준 2개월 이내)",
+            cash_in=0,
+            cash_out=cgt,
+            note=f"{sale.get('tax_note', '')} — 세무사 확인 권장",
+            category="비용",
+        ))
+    return events
 
 
 def _buy_equity_event(target, buy_date: date, equity_needed: float) -> dict:

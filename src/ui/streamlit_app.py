@@ -1690,22 +1690,29 @@ def page_portfolio_strategy():
             loan = st.number_input("대출 잔액(만원)", 0, value=default_loan,
                                    step=1_000, key=f"{prefix}_loan")
 
-        # 행 3: 보유기간 / 실거주 / 체크박스 3개
-        r3a, r3b, r3c, r3d, r3e = st.columns([1.2, 1.2, 1.5, 1.5, 1.5])
+        # 행 3: 취득일 / 실거주 / 체크박스 3개
+        _5y_ago = date(date.today().year - 5, date.today().month, date.today().day)
+        r3a, r3b, r3c, r3d, r3e = st.columns([1.8, 1.2, 1.3, 1.3, 1.3])
         with r3a:
-            hold = st.number_input("보유(년)", 0.0, value=5.0,
-                                   step=0.5, key=f"{prefix}_hold")
+            acq_date = st.date_input(
+                "취득일 (잔금 기준)", value=_5y_ago, key=f"{prefix}_acq",
+                help="등기 완료일. 장기보유공제·단기양도세율·비과세 2년 요건에 직접 사용됩니다.",
+            )
+            hold = max(0.0, (date.today() - acq_date).days / 365.25)
+            st.caption(f"보유 {hold:.1f}년 자동계산")
         with r3b:
-            resi = st.number_input("실거주(년)", 0.0, value=2.0,
-                                   step=0.5, key=f"{prefix}_resi")
+            resi = st.number_input(
+                "실거주(년)", 0.0, value=2.0, step=0.5, key=f"{prefix}_resi",
+                help="주민등록 전입 기준 실거주 기간. 조정지역 비과세는 2년 이상 필요.",
+            )
         with r3c:
             sole = st.checkbox("1주택", value=True, key=f"{prefix}_sole",
-                               help="이 집만 보유 중 (양도세 비과세 판단)")
+                               help="이 집 매도 시점에 1세대 1주택인지 여부")
         with r3d:
             adj = st.checkbox("조정지역", value=True, key=f"{prefix}_adj")
         with r3e:
             sur = st.checkbox("중과 적용", value=False, key=f"{prefix}_sur",
-                              help="다주택 양도세 중과 (보수적 시뮬레이션용)")
+                              help="다주택 양도세 중과 (현재 2026까지 배제 연장 중)")
 
         st.caption("임대 현황")
         # 행 4: 임대 유형 선택
@@ -1936,6 +1943,47 @@ def page_portfolio_strategy():
         cash_seed = my_cash_seed + partner_cash_seed
         st.caption(f"현금 합계 {cash_seed:,}만원 — 총 자기자본은 매도 순수령액 합산 후 계산됩니다.")
 
+    with st.container(border=True):
+        st.markdown("#### 🏠 주택 현황 & 매수 전략")
+        _default_hh = len(kws_mine) + len(kws_partner)
+        sx1, sx2, sx3 = st.columns(3)
+        with sx1:
+            household_homes = st.number_input(
+                "가구 총 보유 주택 수 (본인 + 배우자 합산)", 1, 10,
+                value=_default_hh, step=1, key="household_homes",
+                help="등기 기준 모든 주택 합산. 1주택 비과세·중과 여부 자동 판단에 사용됩니다.",
+            )
+        with sx2:
+            buy_strategy = st.radio(
+                "매수 전략",
+                ["전량 매도 후 매수", "새 집 먼저 계약 후 순차 매도 (일시적 2주택 특례)"],
+                index=0, key="buy_strategy", horizontal=False,
+                help=(
+                    "**전량 매도 후 매수**: 기존 주택을 모두 팔고 새 집 계약. 자금 확보 확실, 임시 거주 필요.\n\n"
+                    "**일시적 2주택**: 새 집 계약 → 기존 주택을 1~3년 내 매도. "
+                    "기존 집이 1주택 비과세 요건 충족 시 세금 절감 가능. 단, 일시적으로 대출이 2건."
+                ),
+            )
+        with sx3:
+            if household_homes == 1:
+                st.success("✅ 1주택: 비과세 요건(보유 2년·조정지역 거주 2년) 충족 시 양도세 없음")
+            elif household_homes == 2:
+                st.info(
+                    "📌 2주택: 먼저 파는 집은 다주택 세율 적용.\n"
+                    "마지막 남은 집이 비과세 요건 충족 시 혜택 적용 가능."
+                )
+            else:
+                st.warning(
+                    f"⚠️ {household_homes}주택: 중과 세율 적용 가능성 높음.\n"
+                    "각 집의 '중과 적용' 체크박스로 개별 조정하세요."
+                )
+            if buy_strategy.startswith("새 집 먼저"):
+                st.info(
+                    "💡 일시적 2주택 특례:\n"
+                    "새 집 취득 후 **3년 이내** 기존 주택 매도 시 기존 집에 1주택 비과세 적용 가능.\n"
+                    "취득세도 1주택 세율(1~3%) 적용."
+                )
+
     from datetime import date as _date
     props_mine    = [PropertyProfile(**kw) for kw in kws_mine]
     props_partner = [PropertyProfile(**kw) for kw in kws_partner]
@@ -1962,6 +2010,7 @@ def page_portfolio_strategy():
             t_min=t_min, t_max=t_max, t_kb=t_kb, t_close=t_close,
             income=income, ex_pay=ex_pay, int_rent=int_rent, cash_seed=cash_seed,
             my_cash_seed=my_cash_seed, partner_cash_seed=partner_cash_seed,
+            household_homes=household_homes, buy_strategy=buy_strategy,
         )
 
     if "_port_result" not in st.session_state:
@@ -1976,6 +2025,8 @@ def page_portfolio_strategy():
     int_rent = _pi["int_rent"]; cash_seed = _pi["cash_seed"]
     my_cash_seed      = _pi.get("my_cash_seed", cash_seed)
     partner_cash_seed = _pi.get("partner_cash_seed", 0)
+    household_homes   = _pi.get("household_homes", 1)
+    buy_strategy      = _pi.get("buy_strategy", "전량 매도 후 매수")
 
     def _eok(v: float) -> str:
         return f"{v/10000:.2f}억" if abs(v) >= 10000 else f"{v:,.0f}만"
