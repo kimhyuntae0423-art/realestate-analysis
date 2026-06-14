@@ -3099,6 +3099,7 @@ def _render_compare_view(
     catalyst_weight: float, tier_weight: float, prestige_weight: float,
     dsr_cap_man, top_n: int, area_range, year_range,
     max_buy_reg_net: int = 0, max_buy_nonreg_net: int = 0,
+    kb_ratio: float = 1.0,
 ):
     """3전략 동시 비교 — 겹치는 단지가 높은 확신도."""
     st.markdown("### 🔀 3전략 동시 비교")
@@ -3113,14 +3114,33 @@ def _render_compare_view(
         _ca.metric("🏙️ 규제지역 최대 매수가 (부대비용 포함)", f"{max_buy_reg_net/10000:.2f} 억")
         _cb.metric("🏞️ 비규제지역 최대 매수가 (부대비용 포함)", f"{max_buy_nonreg_net/10000:.2f} 억")
 
+    # kb_ratio 적용 부대비용 필터: 캐시 결과는 kb_ratio=1.0 기준이므로 여기서 재필터
+    def _filter_affordable(df: pd.DataFrame, is_gap: bool = False) -> pd.DataFrame:
+        """required_equity + 부대비용 ≤ 시드 조건으로 매수 불가 매물 제거.
+
+        is_gap=True면 required_equity = gap 그대로 사용 (갭투자는 주담대 아닌 전세보증금 기준).
+        is_gap=False면 kb_ratio < 1.0일 때 대출 재계산.
+        """
+        if df.empty:
+            return df
+        df = df.copy()
+        from src.analysis.costs import total_acquisition_cost_man as _tacm2
+        df["_acq_cost2"] = df["trade_median"].apply(lambda p: _tacm2(p, ownership, first_time)["total"])
+        if not is_gap and kb_ratio < 1.0 and "trade_median" in df.columns and "region_code" in df.columns:
+            from src.analysis.loan import annotate_loan_columns as _alc
+            df = _alc(df, seed_man, ownership, first_time, "trade_median", dsr_cap_man, kb_ratio)
+        if "required_equity" in df.columns:
+            df = df[(df["required_equity"] > 0) & (df["required_equity"] + df["_acq_cost2"] <= seed_man)]
+        return df.drop(columns=["_acq_cost2"], errors="ignore")
+
     _prog = st.progress(0, text="🚀 투자수익 계산 중…")
     try:
-        rec_inv = _cached_investment(seed_man, months, min_deals, ownership, first_time,
-                                      use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man)
+        rec_inv = _filter_affordable(_cached_investment(seed_man, months, min_deals, ownership, first_time,
+                                      use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man))
         _prog.progress(34, text="🏠 갭투자 계산 중…")
-        rec_gap = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
+        rec_gap = _filter_affordable(_cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man), is_gap=True)
         _prog.progress(67, text="💰 임대수익 계산 중…")
-        rec_yld = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
+        rec_yld = _filter_affordable(_cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man))
         _prog.progress(100, text="✅ 완료")
         _prog.empty()
     except MemoryError:
