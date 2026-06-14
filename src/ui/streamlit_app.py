@@ -610,40 +610,37 @@ def _sidebar_nav() -> str:
         def _on_analysis_nav():
             st.session_state["_nav_section"] = "analysis"
 
-        st.markdown("## 🏠 부동산 분석")
+        _sec = st.session_state["_nav_section"]
+
+        # ── 섹션 1: 부동산 분석 ──────────────────────────────
+        st.markdown("#### 🏠 부동산 분석")
         page_radio = st.radio(
             "페이지",
-            [
-                "💰 나의 한도",
-                "🚀 투자 추천",
-                "📊 지역 분석",
-                "🗺️ 지도",
-                "🚦 시장 진단",
-            ],
+            ["💰 나의 한도", "🚀 투자 추천", "📊 지역 분석", "🗺️ 지도", "🚦 시장 진단"],
             label_visibility="collapsed",
             key="nav_page",
             on_change=_on_analysis_nav,
         )
 
-        st.divider()
-        st.markdown("## 🔬 전략 백테스트")
+        # ── 섹션 2: 도구 ─────────────────────────────────────
+        st.markdown("#### 🛠️ 도구")
         if st.button(
-            "전략 백테스트",
-            width="stretch",
+            "🔬 전략 백테스트",
+            use_container_width=True,
             key="nav_backtest",
-            type="primary" if st.session_state["_nav_section"] == "backtest" else "secondary",
+            type="primary" if _sec == "backtest" else "secondary",
         ):
             st.session_state["_nav_section"] = "backtest"
+            st.rerun()
 
-        st.divider()
-        st.markdown("## 🏘️ 처분·매수 전략")
         if st.button(
-            "처분·매수 전략 플래너",
-            width="stretch",
+            "🏘️ 처분·매수 전략 플래너",
+            use_container_width=True,
             key="nav_portfolio",
-            type="primary" if st.session_state["_nav_section"] == "portfolio" else "secondary",
+            type="primary" if _sec == "portfolio" else "secondary",
         ):
             st.session_state["_nav_section"] = "portfolio"
+            st.rerun()
 
         if st.session_state["_nav_section"] == "backtest":
             page = "🔬 전략 백테스트"
@@ -652,14 +649,13 @@ def _sidebar_nav() -> str:
         else:
             page = page_radio
 
-        st.divider()
-        if st.button("🔄 캐시 비우기", width='stretch', key="nav_clear",
+        # ── 섹션 3: 유틸 ─────────────────────────────────────
+        st.markdown("#### ⚙️ 유틸")
+        if st.button("🔄 캐시 비우기", use_container_width=True, key="nav_clear",
                      help="데이터 수집 후 또는 강제 재계산 시"):
             st.cache_data.clear()
             st.success("캐시 비움")
 
-        # ── 데이터 최신화 섹션 ──────────────────────────────
-        st.divider()
         with st.expander("🗓️ 데이터 최신화", expanded=False):
             fresh = _data_freshness()
             st.caption("권장 주기: **분기 1회**")
@@ -742,8 +738,6 @@ def _sidebar_nav() -> str:
                             f"- [{_art['datetime']}] [{_art['title']}]({_art['url']})"
                         )
 
-        # ── 개발 히스토리 ─────────────────────────────────
-        st.divider()
         with st.expander("📜 개발 히스토리", expanded=False):
             st.markdown(
                 """
@@ -777,7 +771,6 @@ def _sidebar_nav() -> str:
             )
             st.caption("자세한 백테스트 결과/메서드는 별도 메모리에 저장됨.")
 
-        st.divider()
         st.caption(
             "각 페이지가 자체 입력을 가집니다.\n\n"
             "💰 한도 = 시드/소득 기반 매수가\n"
