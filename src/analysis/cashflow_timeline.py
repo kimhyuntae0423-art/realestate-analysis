@@ -219,7 +219,7 @@ def build_timeline(
         for p, sd in zip(props, sell_dates):
             events.extend(_contract_expiry_event(p, today_))
         for p, sd, sale in zip(props, sell_dates, sales):
-            events.append(_sell_event(p, sd, sale))
+            events.extend(_sell_event(p, sd, sale))   # list 반환
         return max(sell_dates) if sell_dates else today_
 
     if sc == "A":
@@ -239,7 +239,7 @@ def build_timeline(
             events.extend(_contract_expiry_event(p, today))
         for p, sd, sale in zip(props_partner, sell_dates_partner, sales_partner):
             late = max(sd, _add_months(buy_date, 1))
-            events.append(_sell_event(p, late, sale))
+            events.extend(_sell_event(p, late, sale))
 
     elif sc == "C":
         last_partner = _add_group_events(props_partner, sell_dates_partner, sales_partner, today)
@@ -248,7 +248,7 @@ def build_timeline(
             events.extend(_contract_expiry_event(p, today))
         for p, sd, sale in zip(props_mine, sell_dates_mine, sales_mine):
             late = max(sd, _add_months(buy_date, 1))
-            events.append(_sell_event(p, late, sale))
+            events.extend(_sell_event(p, late, sale))
 
     elif sc == "D":
         buy_date = target_closing_date or _add_months(today, 2)

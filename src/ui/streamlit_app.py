@@ -2223,7 +2223,18 @@ def page_portfolio_strategy():
         # ── 시간순 실행 플랜 ─────────────────────────────────
         if _order:
             st.markdown("---")
-            st.markdown("#### 📅 시간순 실행 플랜 — 무엇을 언제, 어떤 순서로?")
+            _is_temp2 = buy_strategy.startswith("새 집 먼저")
+            if _is_temp2:
+                st.markdown("#### 📅 시간순 실행 플랜 — 새 집 먼저 계약 후 순차 매도 (일시적 2주택)")
+                st.info(
+                    "**일시적 2주택 전략**: 새 집 계약금을 먼저 치르고, "
+                    "기존 주택을 **3년 이내**에 순차 매도합니다.  \n"
+                    "기존 집이 1주택 비과세 요건(보유 2년·거주 2년)을 충족하면 "
+                    "매도 순서에 관계없이 비과세 적용이 가능합니다.  \n"
+                    "⚠️ 새 집 취득 후 3년 초과하면 특례 소멸 → 반드시 세무사 확인."
+                )
+            else:
+                st.markdown("#### 📅 시간순 실행 플랜 — 무엇을 언제, 어떤 순서로?")
 
             from datetime import date as _today_dt
             _today = _today_dt.today()
@@ -2237,6 +2248,21 @@ def page_portfolio_strategy():
             _cash_str = _eok(float(cash_seed))
             _living_str = f" · 현재 거주: {', '.join(_living_now)}" if _living_now else ""
             st.info(f"**지금** — 보유 현금 **{_cash_str}**{_living_str}")
+
+            # 일시적 2주택: 첫 번째 스텝으로 "새 집 계약" 표시
+            if _is_temp2:
+                with st.container(border=True):
+                    _sc1, _sc2 = st.columns([4, 2])
+                    with _sc1:
+                        st.markdown("**🏠 Step 0 — 목표 아파트 계약 (계약금 지불)**")
+                        st.caption("기존 주택 매도 전에 먼저 계약금을 넣어 새 집을 확보합니다.")
+                        st.markdown(f"→ 이후 **3년 이내**에 아래 기존 주택들을 순차 매도")
+                    with _sc2:
+                        _contract_deposit = float(t_max) * 0.10  # 통상 10%
+                        st.metric("계약금 (시세 10%)", _eok(_contract_deposit))
+                        st.metric("현금 잔여", _eok(float(cash_seed) - _contract_deposit))
+                st.markdown("<div style='text-align:center;color:#aaa;font-size:18px'>↓</div>",
+                             unsafe_allow_html=True)
 
             for _i, _item in enumerate(_order):
                 _medal = MEDALS[min(_i, 5)]
