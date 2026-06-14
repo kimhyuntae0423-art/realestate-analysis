@@ -3396,9 +3396,8 @@ def _render_compare_view(
             show["매매가(억)"] = (show["trade_median"] / 10000).round(2)
             if "required_equity" in show.columns:
                 show["필요자본(억)"] = (show["required_equity"] / 10000).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
+            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "필요자본(억)", "area_bucket", "score"]
             if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
-            if "필요자본(억)" in show.columns: cols.append("필요자본(억)")
             render_df(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "annual_yield_%": "연수익률(%)",
