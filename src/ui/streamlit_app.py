@@ -1806,8 +1806,8 @@ def page_portfolio_strategy():
     MINE_DEFAULTS    = ["충남 천안시 동남구", "서울 강남구", "경기 성남시 분당구", "서울 송파구", "서울 서초구"]
     PARTNER_DEFAULTS = ["서울 마포구", "서울 용산구", "서울 강동구", "인천 연수구", "경기 수원시 영통구"]
 
-    # ── 내 부동산 헤더 ──────────────────────────────────────────
-    h1, h2, h3, _ = st.columns([2, 1, 1, 4])
+    # ── 내 부동산 헤더 + 파트너 토글 한 줄 ───────────────────────
+    h1, h2, h3, h_gap, h_toggle = st.columns([2, 0.7, 0.7, 0.5, 3])
     with h1:
         st.markdown("##### 👤 내 부동산")
     with h2:
@@ -1822,21 +1822,17 @@ def page_portfolio_strategy():
             if st.session_state["n_mine"] > 1:
                 st.session_state["n_mine"] -= 1
             st.rerun()
-
-    # ── 파트너 토글 ────────────────────────────────────────────
-    st.markdown("---")
-    _pt_col, _pt_info = st.columns([2, 5])
-    with _pt_col:
+    with h_toggle:
+        st.markdown(
+            "<style>.partner-toggle label{font-size:16px!important;font-weight:600!important}</style>",
+            unsafe_allow_html=True,
+        )
         show_partner = st.toggle(
-            "👥 파트너 부동산 추가",
+            "👥 파트너 부동산 함께 분석",
             value=st.session_state["show_partner"],
             key="show_partner_toggle",
+            help="배우자·동거인 명의 부동산이 있으면 켜세요. 합산 매수력·양도 순서에 반영됩니다.",
         )
-    with _pt_info:
-        if not show_partner:
-            st.info("배우자·동거인 명의 부동산이 있으면 켜세요. 합산 매수력·양도 순서에 반영됩니다.")
-        else:
-            st.success("파트너 부동산 포함해서 분석합니다.")
     st.session_state["show_partner"] = show_partner
 
     if show_partner and st.session_state["n_partner"] == 0:
