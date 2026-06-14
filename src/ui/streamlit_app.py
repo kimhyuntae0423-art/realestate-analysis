@@ -950,7 +950,7 @@ def page_invest():
             c1, c2, c3 = st.columns(3)
             strategy = c1.selectbox(
                 "투자 전략",
-                ["🔀 전략 비교", "🚀 투자수익", "갭투자", "임대수익", "자가매입"],
+                ["🔀 전략 비교", "🚀 투자수익", "갭투자", "임대수익"],
                 index=0,
                 help="🔀 전략 비교 = 3전략 동시 실행 후 교집합 하이라이트",
             )
@@ -3347,11 +3347,13 @@ def _render_compare_view(
                 show["연수익금(억)"] = (
                     show["expected_roi_%"] * ann * show["required_equity"] / 100 / 10000
                 ).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "score"]
+            if "required_equity" in show.columns:
+                show["필요자기자본(억)"] = (show["required_equity"] / 10000).round(2)
+            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "필요자기자본(억)", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
-            render_df(show[cols].rename(columns={
+            render_df(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
                 "tier_label": "지역등급",
             }))
@@ -3374,10 +3376,10 @@ def _render_compare_view(
                 gain = show["trade_median"] * show["price_growth_%"] / 100
                 show["연수익금(억)"] = (gain / 10000 * ann).round(2)
                 show["연수익률(%)"] = (gain / show["gap"] * 100 * ann).round(2)
-            cols = ["순위", "일치", "지역", "apt_name", "area_bucket", "매매가(억)", "갭(억)"]
+            cols = ["순위", "일치", "지역", "apt_name", "매매가(억)", "갭(억)", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
-            cols += ["jeonse_ratio", "score"]
+            cols += ["jeonse_ratio"]
             if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
             render_df(show[[c for c in cols if c in show.columns]].rename(columns={
                 "apt_name": "단지", "area_bucket": "면적(㎡)", "score": "점수",
