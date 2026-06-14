@@ -2038,32 +2038,59 @@ def page_portfolio_strategy():
 
             binding = bd["binding"]
             def _badge(name): return "🔴 binding" if name == binding else "✅ 여유"
+            # 비규제 sentinel(999999999) 또는 실제 inf 모두 "한도 없음"으로 처리
+            _cap_none = bd["cap_is_inf"] or bd.get("cap_limit_man", 0) >= 500_000_000
 
+            st.markdown(
+                "세 가지 제약 중 **가장 작은 값**이 실제 대출 한도입니다. "
+                "🔴 binding = 지금 당신의 대출을 제한하는 실제 병목."
+            )
             bc1, bc2, bc3 = st.columns(3)
             with bc1:
-                st.metric(f"① LTV {bd['ltv_pct']:.0f}% 한도",
-                           f"{bd['ltv_limit_man']/10000:.2f} 억",
-                           delta=_badge("LTV"), delta_color="off")
+                st.metric(
+                    f"① LTV {bd['ltv_pct']:.0f}% 한도",
+                    f"{bd['ltv_limit_man']/10000:.2f} 억",
+                    delta=_badge("LTV"), delta_color="off",
+                    help=f"은행은 KB시세의 {bd['ltv_pct']:.0f}%까지만 대출합니다. "
+                         f"KB시세 {bd['kb_price_man']/10000:.2f}억 × {bd['ltv_pct']:.0f}% = {bd['ltv_limit_man']/10000:.2f}억",
+                )
             with bc2:
-                cap_str = "없음(비규제)" if bd["cap_is_inf"] else f"{bd['cap_limit_man']/10000:.0f} 억"
-                st.metric("② 한도 캡", cap_str,
-                           delta=_badge("한도캡") if not bd["cap_is_inf"] else "✅ 해당없음",
-                           delta_color="off")
+                if _cap_none:
+                    st.metric("② 정책 한도캡", "없음 (비규제)",
+                               delta="✅ 해당없음", delta_color="off",
+                               help="비규제지역은 정부의 주담대 한도캡 적용 대상이 아닙니다.")
+                else:
+                    st.metric(
+                        "② 정책 한도캡", f"{bd['cap_limit_man']/10000:.0f} 억",
+                        delta=_badge("한도캡"), delta_color="off",
+                        help="규제지역 정책: 15억 이하 6억 / 15~25억 4억 / 25억 초과 2억 한도.",
+                    )
             with bc3:
                 if bd["dsr_limit_man"]:
-                    st.metric("③ DSR 40% 한도",
-                               f"{bd['dsr_limit_man']/10000:.2f} 억",
-                               delta=_badge("DSR"), delta_color="off")
+                    st.metric(
+                        "③ DSR 40% 한도", f"{bd['dsr_limit_man']/10000:.2f} 억",
+                        delta=_badge("DSR"), delta_color="off",
+                        help="연 소득의 40%를 원리금으로 쓴다고 가정할 때 빌릴 수 있는 최대 원금. "
+                             "소득이 높을수록, 기존 부채가 적을수록 한도가 올라갑니다.",
+                    )
                 else:
-                    st.metric("③ DSR 한도", "미적용 (소득 0)")
+                    st.metric("③ DSR 한도", "미적용",
+                               help="연 소득을 0으로 입력하면 DSR 계산이 생략됩니다.")
 
+            st.markdown("---")
             br1, br2, br3, br4 = st.columns(4)
-            br1.metric("최종 대출",     _eok(bd["final_loan_man"]))
-            br2.metric("필요 자기자본", _eok(bd["required_equity_man"]),
-                        help="목표 상한 매매가 − 대출")
-            br3.metric("월 원리금",     f"{bd['monthly_payment_man']:,} 만원",
-                        help="원리금 균등 30년 / 4.5%")
-            br4.metric("연 이자",       _eok(bd["annual_interest_man"]))
+            br1.metric("최종 대출",
+                        _eok(bd["final_loan_man"]),
+                        help="① LTV · ② 한도캡 · ③ DSR 세 한도 중 가장 작은 값.")
+            br2.metric("필요 자기자본",
+                        _eok(bd["required_equity_man"]),
+                        help="매매가 − 최종 대출. 계약금·잔금으로 직접 내야 할 금액 (취득세·중개비 별도).")
+            br3.metric("월 원리금",
+                        f"{bd['monthly_payment_man']:,} 만원",
+                        help=f"원리금 균등 30년 / 금리 4.5% 기준. 실제 금리에 따라 달라집니다.")
+            br4.metric("연 이자 부담",
+                        _eok(bd["annual_interest_man"]),
+                        help=f"명목 금리 4.5% × 대출원금 기준. 원금 상환에 따라 점차 줄어듭니다.")
 
         # ── 자금 준비 로드맵 ────────────────────────────────
         st.markdown("---")
@@ -2073,38 +2100,55 @@ def page_portfolio_strategy():
         shortage_max = max(0, max_needed - (equity + loan))
         shortage_min = max(0, min_needed - (equity + loan))
 
+        # binding 설명 — 무엇이 문제이고, 어떻게 풀 수 있는지
         if bd and binding == "DSR" and bd.get("dsr_limit_man"):
             st.warning(
-                f"**DSR이 binding — 소득이 핵심 병목입니다.**  \n"
-                f"현재 DSR 한도 {_eok(bd['dsr_limit_man'])}. "
-                f"기존 부채 {_eok(float(ex_pay) * 12)}/년을 상환하거나 소득을 늘리면 한도가 올라갑니다."
+                f"**🔴 DSR이 병목 — 소득이 대출 한도를 결정하고 있습니다.**  \n"
+                f"현재 연 소득 기준 DSR 40% 한도: **{_eok(bd['dsr_limit_man'])}**  \n"
+                f"→ **해결 방법**: ① 기존 부채 월납입({_eok(float(ex_pay))}/월)을 먼저 상환해 DSR 여유를 만들거나, "
+                f"② 부부 공동명의로 소득 합산, ③ 2금융권(DSR 50%, 단 금리 높음) 검토"
             )
-        elif bd and binding == "한도캡" and not bd.get("cap_is_inf"):
+        elif bd and binding == "한도캡" and not _cap_none:
             st.warning(
-                f"**한도캡이 binding — 개인 조건으로 극복 불가합니다.**  \n"
-                f"최대 대출 {_eok(bd['cap_limit_man'])}. 자기자본을 더 준비하거나 매물 가격대를 낮춰야 합니다."
+                f"**🔴 정책 한도캡이 병목 — 개인 조건으로는 극복 불가합니다.**  \n"
+                f"이 가격대 규제지역 최대 대출: **{_eok(bd['cap_limit_man'])}**  \n"
+                f"→ **해결 방법**: ① 목표 매매가를 낮춰 한도캡이 낮은 구간으로 이동, "
+                f"② 부족분({_eok(shortage_max)})을 자기자본으로 추가 준비"
             )
         elif bd and binding == "LTV":
             st.info(
-                f"**LTV가 binding** — 자기자본 확보가 핵심입니다.  \n"
-                f"담보가 기준 {bd['ltv_pct']:.0f}% 한도이므로 자기자본이 늘수록 매수력이 올라갑니다."
+                f"**🔵 LTV가 병목 — 자기자본을 늘릴수록 매수 가능 가격이 올라갑니다.**  \n"
+                f"KB시세의 {bd['ltv_pct']:.0f}%만 대출 가능 → 나머지 {100 - bd['ltv_pct']:.0f}%는 자기자본으로 충당.  \n"
+                f"→ **해결 방법**: ① 보유 부동산 매도로 현금 확보, "
+                f"② 생애최초 요건 충족 시 LTV +20%p 가산 확인"
             )
 
+        # 자금 부족 여부 및 구체적 행동 지침
         if shortage_max > 0:
-            st.markdown(f"**목표 상한 매수까지 부족분: {_eok(shortage_max)}**")
+            st.error(
+                f"**목표 상한({_eok(max_needed)}) 매수까지 부족: {_eok(shortage_max)}**  \n"
+                f"현재 동원 가능 자금: 자기자본 {_eok(equity)} + 대출 {_eok(loan)} = {_eok(equity + loan)}"
+            )
+            st.markdown("**지금 할 수 있는 것:**")
             tips = []
             if bd and binding in ("LTV", "한도캡"):
-                tips.append(f"추가 저축·투자로 자기자본 {_eok(shortage_max)} 확보")
+                tips.append(f"✅ 추가 저축·투자로 자기자본 **{_eok(shortage_max)}** 확보 (가장 직접적)")
             if bd and binding == "DSR":
-                tips.append("기존 부채 조기 상환 → DSR 여유 확보")
-                tips.append("2금융권(DSR 50%) 검토 (금리 높음 주의)")
-            tips.append("목표 예산 하한으로 조정 검토")
-            tips.append("파트너 추가 부동산 매도 또는 현금 기여 검토")
+                tips.append(f"✅ 기존 부채 월납입({_eok(float(ex_pay))}/월) 조기 상환 → DSR 여유 확보")
+                tips.append("✅ 2금융권(DSR 50%) 검토 — 단, 금리가 1~2%p 높아 월납입 부담 증가")
+            tips.append(f"✅ 예산 하한({_eok(min_needed)})으로 목표 낮추기 — 부족분 {_eok(shortage_min)} 으로 줄어듦")
+            tips.append("✅ 파트너 보유 부동산 추가 매도 또는 현금 기여 검토")
             for t in tips:
                 st.markdown(f"- {t}")
         elif shortage_min > 0:
-            st.markdown(f"**목표 하한은 가능, 상한까지 {_eok(shortage_max + (max_needed - min_needed))} 부족**")
-            st.markdown("- 예산 상한을 낮추거나, 추가 저축으로 격차 해소 가능합니다.")
+            gap = max_needed - min_needed
+            st.warning(
+                f"**목표 하한({_eok(min_needed)})은 가능하지만, 상한까지는 {_eok(gap)} 부족합니다.**  \n"
+                f"현재 자금: {_eok(equity + loan)}"
+            )
+            st.markdown(
+                f"- 예산 상한을 낮추거나, **{_eok(gap)}** 추가 저축으로 목표 상한도 달성 가능합니다."
+            )
         else:
             st.success("현재 자금 계획으로 목표 상한도 충당 가능합니다.")
 
