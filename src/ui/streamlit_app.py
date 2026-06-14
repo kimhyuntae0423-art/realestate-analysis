@@ -1824,12 +1824,19 @@ def page_portfolio_strategy():
             st.rerun()
 
     # ── 파트너 토글 ────────────────────────────────────────────
-    show_partner = st.toggle(
-        "👥 파트너 부동산 추가",
-        value=st.session_state["show_partner"],
-        key="show_partner_toggle",
-        help="파트너(배우자/동거인)의 부동산도 함께 분석할 때 켜세요",
-    )
+    st.markdown("---")
+    _pt_col, _pt_info = st.columns([2, 5])
+    with _pt_col:
+        show_partner = st.toggle(
+            "👥 파트너 부동산 추가",
+            value=st.session_state["show_partner"],
+            key="show_partner_toggle",
+        )
+    with _pt_info:
+        if not show_partner:
+            st.info("배우자·동거인 명의 부동산이 있으면 켜세요. 합산 매수력·양도 순서에 반영됩니다.")
+        else:
+            st.success("파트너 부동산 포함해서 분석합니다.")
     st.session_state["show_partner"] = show_partner
 
     if show_partner and st.session_state["n_partner"] == 0:
