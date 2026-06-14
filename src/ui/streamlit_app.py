@@ -1645,18 +1645,14 @@ def page_portfolio_strategy():
         return
     st.caption("보유 부동산 전체를 처분하고 새 집을 사는 시나리오 · 타임라인 · 자금 흐름 분석")
 
-    # ── 지역 목록 (코드→이름 올바르게 매핑) ─────────────────────
-    region_flat: dict[str, str] = {}        # "서울 강남구" → "11680"
-    for sido, subs in REGIONS.items():
-        for code, name in subs.items():     # regions.json: {코드: 이름}
-            region_flat[f"{sido} {name}"] = code
+    _SIDO_LIST = list(REGIONS.keys())
 
-    region_options = sorted(region_flat.keys())
-
-    def _rsel(label: str, key: str, default: str = "서울 강남구") -> str:
-        idx = region_options.index(default) if default in region_options else 0
-        sel = st.selectbox(label, region_options, index=idx, key=key)
-        return region_flat[sel]
+    def _parse_region(default: str) -> tuple[str, str]:
+        """'서울 강남구' → ('서울', '강남구'). 시/도 없으면 첫 번째 시/도."""
+        parts = default.split(" ", 1)
+        sido = parts[0] if parts[0] in _SIDO_LIST else _SIDO_LIST[0]
+        gu = parts[1] if len(parts) > 1 else ""
+        return sido, gu
 
     TENANT_OPTS = ["직접거주", "전세", "월세", "공실"]
 
@@ -1664,13 +1660,23 @@ def page_portfolio_strategy():
                     default_buy: int = 50_000, default_est: int = 80_000,
                     default_loan: int = 20_000) -> dict:
         """컴팩트 2~3열 병렬 레이아웃으로 한 물건 입력 폼을 렌더링."""
-        # 행 1: 단지명 + 지역
-        r1a, r1b = st.columns([2, 3])
+        # 행 1: 단지명 + 시/도 + 시군구
+        _def_sido, _def_gu = _parse_region(default_region)
+        r1a, r1b, r1c = st.columns([2, 1.5, 1.5])
         with r1a:
             name = st.text_input("단지명", value="", key=f"{prefix}_name",
                                  placeholder="예: 반포자이")
         with r1b:
-            code = _rsel("지역", f"{prefix}_region", default_region)
+            sel_sido = st.selectbox("시/도", _SIDO_LIST,
+                                    index=_SIDO_LIST.index(_def_sido),
+                                    key=f"{prefix}_region_sido")
+        with r1c:
+            _sub = REGIONS[sel_sido]
+            _gus = list(dict.fromkeys(_sub.values()))
+            _gu_idx = _gus.index(_def_gu) if _def_gu in _gus else 0
+            sel_gu = st.selectbox("시군구", _gus, index=_gu_idx,
+                                   key=f"{prefix}_region_gu")
+        code = {v: k for k, v in _sub.items()}.get(sel_gu, list(_sub.keys())[0])
 
         # 행 2: 매수가 / 현재 시세 / 대출 잔액
         r2a, r2b, r2c = st.columns(3)
@@ -1869,18 +1875,28 @@ def page_portfolio_strategy():
 
     with st.container(border=True):
         st.markdown("#### 🏡 살 집 (목표 부동산)")
-        ca, cb, cc, cd = st.columns(4)
+        _t_def_sido, _t_def_gu = _parse_region("서울 송파구")
+        ca, cb, cc, cd, ce = st.columns(5)
         with ca:
             t_name = st.text_input("단지명/메모", value="", key="t_name",
                                    placeholder="예: 잠실엘스")
         with cb:
-            t_code = _rsel("지역", "t_region", "서울 송파구")
+            t_sel_sido = st.selectbox("시/도", _SIDO_LIST,
+                                      index=_SIDO_LIST.index(_t_def_sido),
+                                      key="t_region_sido")
         with cc:
+            _t_sub = REGIONS[t_sel_sido]
+            _t_gus = list(dict.fromkeys(_t_sub.values()))
+            _t_gu_idx = _t_gus.index(_t_def_gu) if _t_def_gu in _t_gus else 0
+            t_sel_gu = st.selectbox("시군구", _t_gus, index=_t_gu_idx,
+                                     key="t_region_gu")
+            t_code = {v: k for k, v in _t_sub.items()}.get(t_sel_gu, list(_t_sub.keys())[0])
+        with cd:
             t_min = st.number_input("예산 하한 (만원)", 0, value=150_000,
                                     step=1_000, key="t_min")
             t_max = st.number_input("예산 상한 (만원)", 0, value=200_000,
                                     step=1_000, key="t_max")
-        with cd:
+        with ce:
             t_kb = st.number_input(
                 "KB시세 (만원, 선택)", 0, value=0, step=1_000, key="t_kb",
                 help="KB부동산 앱에서 목표 단지 시세 확인 후 입력. 0이면 예산 상한 기준으로 계산. "
