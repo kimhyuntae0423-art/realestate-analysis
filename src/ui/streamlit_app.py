@@ -970,8 +970,8 @@ def page_undervalued():
         with st.form("uv_form", clear_on_submit=False):
             c1, c2, c3 = st.columns(3)
             under_thresh = c1.slider(
-                "저평가 기준 (%)", min_value=-40, max_value=5, value=-5, step=1,
-                help="-5%: 적정가 대비 5% 이상 저렴한 매물. 0%: 적정가 이하 전체.",
+                "적정가 대비 범위 (%)", min_value=-40, max_value=30, value=-5, step=1,
+                help="0% 이하: 저평가(적정가보다 싼 것만) | 0~10%: 적정 구간 포함 | 10%↑: 다소 고평가까지 포함",
             )
             months = c2.slider("분석 기간 (개월)", 3, 36, 12)
             min_deals = c3.slider("최소 거래수", 1, 200, 30, step=10)
@@ -4268,9 +4268,9 @@ def _render_compare_view(
         with st.container(border=True):
             _fr1, _fr2, _fr3 = st.columns(3)
             under_thresh = _fr1.slider(
-                "저평가 기준 (%)", min_value=-40, max_value=0, value=-5, step=1,
+                "적정가 대비 범위 (%)", min_value=-40, max_value=30, value=-5, step=1,
                 key="under_thresh",
-                help="-5%: 적정가 대비 5% 이상 저렴한 매물. 낮출수록 더 엄격한 필터.",
+                help="0% 이하: 저평가(적정가보다 싼 것만) | 0~10%: 적정 구간 포함 | 10%↑: 다소 고평가까지 포함",
             )
             under_sort = _fr2.radio(
                 "정렬", ["저평가도 높은 순", "추천점수 높은 순", "매매가 낮은 순"], horizontal=True,
