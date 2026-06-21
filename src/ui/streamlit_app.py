@@ -3992,6 +3992,27 @@ def _render_compare_view(
         ["🚀 투자수익", "🏠 갭투자", "💰 임대수익", "💎 저평가 매물"]
     )
 
+    # 추천 단지들의 실거래 내역 공통 로더 (3탭 공유)
+    def _render_deal_history(apt_names: list[str], label: str):
+        """추천 단지 실거래 내역 섹션."""
+        st.markdown(f"#### 📋 실거래 내역 — 추천 단지 {len(apt_names)}개")
+        st.caption(f"전략에서 뽑힌 단지들의 최근 {months}개월 실거래 건별 기록. 최신순 정렬.")
+        _raw = _cached_all_trades(months)
+        _deals = _raw[_raw["apt_name"].isin(apt_names)].copy()
+        if _deals.empty:
+            st.info("해당 단지의 실거래 내역이 없습니다.")
+            return
+        _deals["지역"] = _deals["region_code"].map(REGION_MAP).fillna(_deals["region_code"])
+        _deals["거래가(억)"] = (_deals["deal_amount"] / 10000).round(2)
+        _deals["면적(㎡)"] = _deals["area_m2"].round(1)
+        _deals = _deals.sort_values("deal_date", ascending=False).reset_index(drop=True)
+        _dcols = ["deal_date", "지역", "apt_name", "dong", "floor", "면적(㎡)", "거래가(억)"]
+        if "price_per_pyeong" in _deals.columns:
+            _deals["평당가(만)"] = _deals["price_per_pyeong"].round(0)
+            _dcols.append("평당가(만)")
+        render_table(_deals[[c for c in _dcols if c in _deals.columns]], height=500)
+        st.caption(f"총 {len(_deals):,}건 · 단지 {len(apt_names)}개")
+
     with tab_inv:
         if inv.empty:
             st.warning("해당 조건의 투자수익 매물 없음")
@@ -4019,8 +4040,11 @@ def _render_compare_view(
                 "score",
                 "fair_value", "fv_premium_%", "verdict",
             ]
-            render_table(show[[c for c in cols if c in show.columns]], height=550)
+            st.markdown("#### 📊 단지별 전략 분석 요약")
+            render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세) | 💎 적정가: 전세가율 65% 역산")
+            st.markdown("---")
+            _render_deal_history(show["apt_name"].unique().tolist(), "투자수익")
 
     with tab_gap:
         if gap.empty:
@@ -4049,8 +4073,11 @@ def _render_compare_view(
                 "score",
                 "fair_value", "fv_premium_%", "verdict",
             ]
-            render_table(show[[c for c in cols if c in show.columns]], height=550)
+            st.markdown("#### 📊 단지별 전략 분석 요약")
+            render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
+            st.markdown("---")
+            _render_deal_history(show["apt_name"].unique().tolist(), "갭투자")
 
     with tab_yld:
         if yld.empty:
@@ -4070,8 +4097,11 @@ def _render_compare_view(
                 "score",
                 "fair_value", "fv_premium_%", "verdict",
             ]
-            render_table(show[[c for c in cols if c in show.columns]], height=550)
+            st.markdown("#### 📊 단지별 전략 분석 요약")
+            render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption("💎 적정가: 수익률 3.5% 역산 기준")
+            st.markdown("---")
+            _render_deal_history(show["apt_name"].unique().tolist(), "임대수익")
 
     with tab_under:
         st.subheader("💎 저평가 매물 — 매수 가능 범위 내 저평가 단지")
