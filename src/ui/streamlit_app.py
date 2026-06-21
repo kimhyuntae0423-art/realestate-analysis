@@ -36,6 +36,7 @@ from src.analysis.macro import macro_dashboard
 from src.analysis.fair_value import (
     fair_value_by_jeonse, fair_value_by_yield,
     fair_value_ppp_trend, fair_value_apt_vs_ma,
+    enrich_with_fair_value,
 )
 from src.analysis.loan import (
     dsr_loan_capacity_man, max_purchase_man as calc_max_purchase,
@@ -2828,6 +2829,211 @@ def page_region():
             fig.update_xaxes(tickangle=-45)
             st.plotly_chart(fig, width='stretch')
 
+    with tab6:
+        st.subheader("💎 적정가 분석 — 오버슈팅 / 저평가 판정")
+        st.caption(
+            "3가지 방법으로 적정 매매가를 역산해 현재 가격이 얼마나 고평가·저평가됐는지 판정합니다. "
+            "**참고 지표이며 투자 결정의 근거로 단독 사용하지 마세요.**"
+        )
+
+        _verdict_legend = (
+            "🔴 오버슈팅(+20%↑)  🟠 고평가(+10~20%)  🟡 적정(±10%)  🟢 저평가(−10~15%)  🔵 심한저평가(−15%↓)"
+        )
+        st.info(_verdict_legend)
+
+        fv_method1, fv_method2, fv_method3 = st.tabs([
+            "① 전세가율 역산", "② 수익률 역산", "③ 이동평균 비교",
+        ])
+
+        # ── ① 전세가율 역산 ──────────────────────────────────────────────
+        with fv_method1:
+            st.markdown("#### 전세가율 역산법")
+            st.caption(
+                "적정 매매가 = 전세환산 중위가 ÷ 목표 전세가율. "
+                "현재가 > 적정가 → 고평가(오버슈팅), 현재가 < 적정가 → 저평가."
+            )
+            with st.container(border=True):
+                c1, c2 = st.columns(2)
+                fv_jeonse_ratio = c1.slider(
+                    "목표 전세가율 (%)", 50, 80, 65, key="fv_jeonse_ratio",
+                    help="65%: 적정 기준. 낮출수록 적정가 상향 → 오버슈팅 단지가 줄어듦.",
+                ) / 100.0
+                fv_j_months = c2.slider(
+                    "분석 기간 (개월)", 3, 12, 6, key="fv_j_months",
+                )
+
+            fv_j = fair_value_by_jeonse(
+                df_t, df_r,
+                target_jeonse_ratio=fv_jeonse_ratio,
+                months=fv_j_months,
+            )
+
+            if fv_j.empty:
+                st.info("전세 데이터가 부족합니다. 해당 지역 전월세 거래를 먼저 수집하세요.")
+            else:
+                show_cols = [
+                    "apt_name", "area_bucket", "trade_median",
+                    "jeonse_median", "jeonse_ratio_%",
+                    "fair_value", "fv_premium_%", "verdict",
+                ]
+                show_cols = [c for c in show_cols if c in fv_j.columns]
+                render_table(fv_j[show_cols], height=500)
+
+                # 바 차트 (오버슈팅 내림차순)
+                top_fv = fv_j.head(30).copy()
+                color_map = {
+                    "🔴 오버슈팅": "#ef4444",
+                    "🟠 고평가":   "#f97316",
+                    "🟡 적정":     "#eab308",
+                    "🟢 저평가":   "#22c55e",
+                    "🔵 심한저평가": "#3b82f6",
+                }
+                top_fv["color"] = top_fv["verdict"].map(color_map).fillna("#94a3b8")
+                fig_fv = px.bar(
+                    top_fv,
+                    x="apt_name", y="fv_premium_%",
+                    color="verdict",
+                    color_discrete_map=color_map,
+                    labels={"apt_name": "단지명", "fv_premium_%": "현재가-적정가 (%)"},
+                    title=f"전세가율 역산 적정가 대비 고/저평가 (목표 전세가율 {int(fv_jeonse_ratio*100)}%)",
+                )
+                fig_fv.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_fv.update_xaxes(tickangle=-45)
+                st.plotly_chart(fig_fv, width='stretch')
+
+        # ── ② 수익률 역산 ────────────────────────────────────────────────
+        with fv_method2:
+            st.markdown("#### 임대수익률 역산법")
+            st.caption(
+                "적정 매매가 = (월세 × 12) ÷ 목표 수익률. "
+                "월세 거래 데이터가 있는 단지만 표시됩니다. "
+                "수익률이 낮을수록 적정가가 높아짐(저평가로 판정)."
+            )
+            with st.container(border=True):
+                c1, c2 = st.columns(2)
+                fv_yield_pct = c1.slider(
+                    "목표 임대수익률 (%)", 1.0, 8.0, 3.5, step=0.5, key="fv_yield_pct",
+                    help="서울 아파트 평균 3~4%. 높일수록 적정가 하향 → 더 많은 단지가 고평가로 분류.",
+                )
+                fv_y_months = c2.slider(
+                    "분석 기간 (개월)", 6, 24, 12, key="fv_y_months",
+                )
+
+            fv_y = fair_value_by_yield(
+                df_t, df_r,
+                target_yield_pct=fv_yield_pct,
+                months=fv_y_months,
+            )
+
+            if fv_y.empty:
+                st.info("월세 데이터가 부족합니다. 해당 지역 월세 거래를 먼저 수집하세요.")
+            else:
+                show_cols = [
+                    "apt_name", "area_bucket", "trade_median",
+                    "monthly_median", "annual_rent",
+                    "fair_value", "fv_premium_%", "verdict",
+                ]
+                show_cols = [c for c in show_cols if c in fv_y.columns]
+                render_table(fv_y[show_cols], height=500)
+
+                top_fy = fv_y.head(30).copy()
+                color_map2 = {
+                    "🔴 오버슈팅": "#ef4444",
+                    "🟠 고평가":   "#f97316",
+                    "🟡 적정":     "#eab308",
+                    "🟢 저평가":   "#22c55e",
+                    "🔵 심한저평가": "#3b82f6",
+                }
+                fig_fy = px.bar(
+                    top_fy,
+                    x="apt_name", y="fv_premium_%",
+                    color="verdict",
+                    color_discrete_map=color_map2,
+                    labels={"apt_name": "단지명", "fv_premium_%": "현재가-적정가 (%)"},
+                    title=f"수익률 역산 적정가 대비 고/저평가 (목표 수익률 {fv_yield_pct}%)",
+                )
+                fig_fy.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_fy.update_xaxes(tickangle=-45)
+                st.plotly_chart(fig_fy, width='stretch')
+
+        # ── ③ 이동평균 비교 ──────────────────────────────────────────────
+        with fv_method3:
+            st.markdown("#### 평당가 이동평균 비교법")
+            st.caption(
+                "현재 평당가 vs N개월 이동평균. "
+                "이동평균을 '내재 가치'로 보고 얼마나 괴리됐는지 측정."
+            )
+            ma_months = st.slider("이동평균 기간 (개월)", 6, 36, 24, key="fv_ma_months")
+
+            st.markdown("##### 지역 전체 월별 추이")
+            trend = fair_value_ppp_trend(df_t, ma_months=ma_months)
+            if trend.empty:
+                st.info("이동평균 계산에 필요한 데이터가 부족합니다 (최소 6개월 이상).")
+            else:
+                # 라인 차트
+                fig_trend = px.line(
+                    trend,
+                    x="ym", y=["avg_ppp", "ma_ppp"],
+                    labels={"ym": "년월", "value": "평당가 (만원/평)", "variable": "구분"},
+                    title=f"평당가 vs {ma_months}개월 이동평균",
+                    color_discrete_map={"avg_ppp": "#3b82f6", "ma_ppp": "#f97316"},
+                )
+                newnames = {"avg_ppp": "월 평균평당가", "ma_ppp": f"{ma_months}개월 이동평균"}
+                fig_trend.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
+                st.plotly_chart(fig_trend, width='stretch')
+
+                # 오버슈팅 바 차트 (최근 12개월)
+                recent_trend = trend.tail(12).copy()
+                color_vals = recent_trend["overshoot_%"].apply(
+                    lambda v: "#ef4444" if v >= 10 else ("#f97316" if v >= 5 else ("#22c55e" if v <= -5 else "#eab308"))
+                )
+                fig_os = px.bar(
+                    recent_trend,
+                    x="ym", y="overshoot_%",
+                    labels={"ym": "년월", "overshoot_%": "이동평균 대비 (%)"},
+                    title=f"최근 12개월 이동평균 대비 오버슈팅/저평가",
+                )
+                fig_os.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_os.update_traces(marker_color=color_vals.tolist())
+                st.plotly_chart(fig_os, width='stretch')
+
+                show_trend = ["ym", "avg_ppp", "ma_ppp", "overshoot_%", "verdict"]
+                render_table(trend[show_trend], height=400)
+
+            st.markdown("---")
+            st.markdown("##### 단지별 이동평균 대비 오버슈팅")
+            fv_apt = fair_value_apt_vs_ma(df_t, ma_months=ma_months, min_deals=3)
+            if fv_apt.empty:
+                st.info("단지별 분석에 필요한 데이터가 부족합니다.")
+            else:
+                show_apt_cols = ["apt_name", "recent_ppp", "ma_ppp", "overshoot_%", "verdict", "total_deals"]
+                render_table(fv_apt[show_apt_cols], height=500)
+
+                top_apt = fv_apt.head(25).copy()
+                color_map3 = {
+                    "🔴 오버슈팅": "#ef4444",
+                    "🟠 고평가":   "#f97316",
+                    "🟡 적정":     "#eab308",
+                    "🟢 저평가":   "#22c55e",
+                    "🔵 심한저평가": "#3b82f6",
+                }
+                fig_apt = px.bar(
+                    top_apt,
+                    x="apt_name", y="overshoot_%",
+                    color="verdict",
+                    color_discrete_map=color_map3,
+                    labels={"apt_name": "단지명", "overshoot_%": "이동평균 대비 (%)"},
+                    title=f"단지별 이동평균({ma_months}개월) 대비 오버슈팅 TOP25",
+                )
+                fig_apt.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_apt.update_xaxes(tickangle=-45)
+                st.plotly_chart(fig_apt, width='stretch')
+
+        st.markdown("---")
+        st.caption(
+            "> 이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
+            "최종 매수·매도 결정은 공식 실거래 데이터, 현장 확인, 금융·세무 전문가 상담 후 내려야 합니다."
+        )
 
 
 # === 지역 코드 → 시도+이름 매핑 (추천 탭에서 사용) ===
@@ -3627,12 +3833,20 @@ def _render_compare_view(
                 show["연수익금(억)"] = (
                     show["expected_roi_%"] * ann * show["required_equity"] / 100 / 10000
                 ).round(2)
+            # 적정가: gap 데이터의 rent_median 조인 후 전세가율 역산
+            _key = ["apt_name", "region_code", "area_bucket"]
+            if not gap.empty and "rent_median" in gap.columns:
+                _rent = gap[_key + ["rent_median"]].drop_duplicates(_key)
+                show = show.merge(_rent, on=_key, how="left")
+                show = enrich_with_fair_value(show, jeonse_col="rent_median")
             cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             if "tier_label" in show.columns: cols.append("tier_label")
+            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
+                if _fc in show.columns: cols.append(_fc)
             render_table(show[[c for c in cols if c in show.columns]], height=500)
-            st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세)")
+            st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세) | 💎 적정가: 전세가율 65% 역산")
 
     with tab_gap:
         if gap.empty:
@@ -3650,13 +3864,17 @@ def _render_compare_view(
                 gain = show["trade_median"] * show["price_growth_%"] / 100
                 show["연수익금(억)"] = (gain / 10000 * ann).round(2)
                 show["연수익률(%)"] = (gain / show["gap"] * 100 * ann).round(2)
+            # 적정가: rent_median(전세환산 중위가) 기반 전세가율 역산
+            show = enrich_with_fair_value(show, jeonse_col="rent_median")
             cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "gap", "area_bucket", "score"]
             if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
             if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
             cols += ["jeonse_ratio"]
             if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
+            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
+                if _fc in show.columns: cols.append(_fc)
             render_table(show[[c for c in cols if c in show.columns]], height=500)
-            st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본).")
+            st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
 
     with tab_yld:
         if yld.empty:
@@ -3665,9 +3883,14 @@ def _render_compare_view(
             show = yld.copy()
             show["rank"] = range(1, len(show) + 1)
             show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
+            # 적정가: monthly_median 기반 수익률 역산
+            show = enrich_with_fair_value(show, jeonse_col=None, monthly_col="monthly_median")
             cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
             if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
+            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
+                if _fc in show.columns: cols.append(_fc)
             render_table(show[[c for c in cols if c in show.columns]], height=500)
+            st.caption("💎 적정가: 수익률 3.5% 역산 기준")
 
 
 def render_recommend_tab(inputs: dict):

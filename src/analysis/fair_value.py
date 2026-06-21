@@ -188,6 +188,54 @@ def fair_value_ppp_trend(
     return monthly.dropna(subset=["ma_ppp"]).reset_index(drop=True)
 
 
+# ── 4. 추천 DataFrame 보강 ──────────────────────────────────────────────
+
+def enrich_with_fair_value(
+    df: pd.DataFrame,
+    trade_col: str = "trade_median",
+    jeonse_col: str | None = "rent_median",
+    monthly_col: str | None = "monthly_median",
+    target_jeonse_ratio: float = 0.65,
+    target_yield_pct: float = 3.5,
+) -> pd.DataFrame:
+    """추천 결과 DataFrame에 적정가(전세가율 역산 또는 수익률 역산) 컬럼을 붙인다.
+
+    - jeonse_col이 있으면 전세가율 역산 우선 적용
+    - monthly_col만 있으면 수익률 역산 적용
+    - 둘 다 없으면 원본 반환
+    추가 컬럼: fair_value, fv_premium_%, verdict
+    """
+    df = df.copy()
+    done = False
+
+    if jeonse_col and jeonse_col in df.columns:
+        valid = df[jeonse_col] > 0
+        df.loc[valid, "fair_value"] = (
+            df.loc[valid, jeonse_col] / target_jeonse_ratio
+        ).round(0)
+        done = True
+
+    elif monthly_col and monthly_col in df.columns:
+        valid = df[monthly_col] > 0
+        df.loc[valid, "fair_value"] = (
+            df.loc[valid, monthly_col] * 12 / (target_yield_pct / 100)
+        ).round(0)
+        done = True
+
+    if not done or "fair_value" not in df.columns:
+        return df
+
+    fv_mask = df["fair_value"].notna() & (df["fair_value"] > 0)
+    df.loc[fv_mask, "fv_premium_%"] = (
+        (df.loc[fv_mask, trade_col] - df.loc[fv_mask, "fair_value"])
+        / df.loc[fv_mask, "fair_value"] * 100
+    ).round(2)
+    df["verdict"] = df["fv_premium_%"].apply(
+        lambda x: _verdict(x) if pd.notna(x) else "—"
+    )
+    return df
+
+
 # ── 3-B. 이동평균법 — 단지별 ────────────────────────────────────────────
 
 def fair_value_apt_vs_ma(
