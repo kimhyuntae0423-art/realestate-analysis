@@ -133,6 +133,14 @@ def _cached_investment(seed_man: int, months: int, min_deals: int,
 def _cached_region_sentiment() -> pd.DataFrame:
     return region_sentiment_summary()
 
+
+@st.cache_data(ttl=1800, show_spinner="📋 거래 내역 로드 중...")
+def _cached_all_trades(months: int) -> pd.DataFrame:
+    from datetime import date, timedelta
+    cutoff = date.today() - timedelta(days=30 * months)
+    return fetch_trades_df(date_from=cutoff)
+
+
 st.set_page_config(page_title="부동산 분석", layout="wide")
 
 with open(APP_ROOT / "config" / "regions.json", encoding="utf-8") as f:
