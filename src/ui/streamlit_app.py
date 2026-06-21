@@ -4267,6 +4267,14 @@ def _render_compare_view(
             if combined.empty:
                 st.info("전략 추천 단지 중 해당 저평가 기준에 맞는 단지가 없습니다.")
             else:
+                # 지역 필터 적용
+                if under_regions and "지역" in combined.columns:
+                    combined = combined[combined["지역"].isin(under_regions)].copy()
+
+                if combined.empty:
+                    st.info("선택한 지역에 해당하는 저평가 단지가 없습니다.")
+                else:
+
                 # 같은 단지+면적에서 두 방법이 모두 걸리면 더 낮은 fv_premium_% 기준 하나만 남김
                 combined = (
                     combined
