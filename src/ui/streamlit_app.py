@@ -1020,6 +1020,19 @@ def page_undervalued():
         prog.progress(50, text="임대수익 데이터 검색 중…")
         yld_df = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
         prog.progress(100, text="✅ 완료")
+
+    # 전략 상위 단지만 유지 (면적·연도 필터 → top 50)
+        def _prep_strategy(df: pd.DataFrame) -> pd.DataFrame:
+            if df.empty:
+                return df
+            if "area_bucket" in df.columns:
+                df = df[(df["area_bucket"] >= uv_area_range[0]) & (df["area_bucket"] <= uv_area_range[1])]
+            if "build_year" in df.columns:
+                df = df[df["build_year"].isna() | ((df["build_year"] >= uv_year_range[0]) & (df["build_year"] <= uv_year_range[1]))]
+            return df.head(50).reset_index(drop=True)
+
+        gap_df = _prep_strategy(gap_df)
+        yld_df = _prep_strategy(yld_df)
         prog.empty()
     except Exception as e:
         prog.empty()
