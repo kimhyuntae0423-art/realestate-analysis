@@ -4305,6 +4305,9 @@ def _render_compare_view(
             fig_u.update_xaxes(tickangle=-45)
             st.plotly_chart(fig_u, width='stretch')
 
+            st.markdown("---")
+            _render_catch_board(combined, "under")
+
             st.caption(
                 "> 이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
                 "최종 매수·매도 결정은 공식 실거래 데이터, 현장 확인, 금융·세무 전문가 상담 후 내려야 합니다."
