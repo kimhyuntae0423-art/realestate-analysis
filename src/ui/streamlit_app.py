@@ -4216,16 +4216,13 @@ def _render_compare_view(
                 "정렬", ["저평가도 높은 순", "추천점수 높은 순", "매매가 낮은 순"], horizontal=True,
                 key="under_sort",
             )
-            # 매매가 필터 (소형 저가 구축 제거용)
-            _max_trade = max(
-                int(df["trade_median"].max() / 10000)
-                for df in [inv, gap, yld] if not df.empty and "trade_median" in df.columns
-            ) if any(not df.empty for df in [inv, gap, yld]) else 30
-            under_price_range = _fr3.slider(
-                "매매가 범위 (억)", min_value=0, max_value=max(_max_trade, 20),
-                value=(0, max(_max_trade, 20)), step=1,
-                key="under_price_range",
-                help="소형 저가 구축 제외하려면 하한을 올리세요.",
+            # 전용면적 필터 — 투자전략 탭 기본값(80~110㎡)과 동일하게
+            _area_default = area_range if area_range else (80, 110)
+            under_area_range = _fr3.slider(
+                "전용면적 범위 (㎡)", min_value=0, max_value=200,
+                value=_area_default, step=5,
+                key="under_area_range",
+                help="투자전략 탭의 전용면적 기본값(80~110㎡)과 동일. 소형 구축 제외하려면 하한을 올리세요.",
             )
 
             # 지역 필터 — 전략 결과에서 지역 목록 동적 추출
@@ -4282,13 +4279,11 @@ def _render_compare_view(
                 # 지역 필터
                 if under_regions and "지역" in combined.columns:
                     combined = combined[combined["지역"].isin(under_regions)].copy()
-                # 매매가 필터 (억 → 만원 변환)
-                if "trade_median" in combined.columns:
-                    lo_man = under_price_range[0] * 10000
-                    hi_man = under_price_range[1] * 10000
+                # 전용면적 필터
+                if "area_bucket" in combined.columns:
                     combined = combined[
-                        (combined["trade_median"] >= lo_man) &
-                        (combined["trade_median"] <= hi_man)
+                        (combined["area_bucket"] >= under_area_range[0]) &
+                        (combined["area_bucket"] <= under_area_range[1])
                     ].copy()
 
                 if combined.empty:
