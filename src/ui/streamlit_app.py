@@ -3993,49 +3993,118 @@ def _render_compare_view(
     )
 
     # 추천 단지 매물 확인 링크 (3탭 공유)
-    def _render_listing_links(apt_names: list[str], tab_key: str):
-        """추천 단지 매물 확인 — 직방·네이버·호갱노노 딥링크 섹션."""
-        from src.collectors.zigbang_api import fetch_links_for_complexes
+    def _render_catch_board(show_df: pd.DataFrame, tab_key: str):
+        """💎 저평가 캐치 알림판.
 
-        st.markdown(f"#### 🏠 매물 확인 — 추천 단지 {len(apt_names)}개")
+        전략 추천 단지의 최근 거래가 분포 + 적정가를 분석해
+        '이 가격 이하 매물이 나오면 잡아라'는 캐치 기준가를 제시한다.
+        """
+        st.markdown("#### 💎 저평가 캐치 알림판")
         st.caption(
-            "직방 검색 API로 단지 ID를 조회하고, 각 플랫폼 단지 페이지 링크를 생성합니다. "
-            "링크 클릭 시 해당 플랫폼에서 현재 매물(호가)을 바로 확인할 수 있습니다."
+            "추천 단지들의 **최근 실거래 분포**와 **적정가**를 바탕으로 매수 기준가를 계산합니다. "
+            "**캐치기준가 이하 매물이 나오면 저평가 매물**입니다."
         )
 
-        c1, c2 = st.columns([2, 8])
-        top_n_zb = c1.number_input(
-            "단지 수 (상위)", min_value=1, max_value=30, value=min(15, len(apt_names)), step=1,
-            key=f"zb_n_{tab_key}",
+        # ── 최근 거래 통계 계산 ──────────────────────────────────────────
+        _raw = _cached_all_trades(months)
+        _apt_set = set(show_df["apt_name"].unique())
+        _df = _raw[_raw["apt_name"].isin(_apt_set)].copy()
+
+        if _df.empty:
+            st.info("해당 단지의 최근 거래 데이터가 없습니다.")
+            return
+
+        _area_tol = 5.0
+        _df["area_bucket"] = (_df["area_m2"] / _area_tol).round() * _area_tol
+        _df["deal_date"] = pd.to_datetime(_df["deal_date"])
+        _cutoff = _df["deal_date"].max() - pd.DateOffset(months=3)
+        _recent = _df[_df["deal_date"] >= _cutoff]
+
+        if _recent.empty:
+            _recent = _df  # fallback to full period
+
+        _stats = _recent.groupby(["apt_name", "area_bucket"]).agg(
+            최저가=("deal_amount", "min"),
+            하위25=("deal_amount", lambda x: int(x.quantile(0.25))),
+            중위가=("deal_amount", "median"),
+            최고가=("deal_amount", "max"),
+            거래건=("deal_amount", "count"),
+        ).reset_index()
+
+        # ── 전략 결과와 조인 ─────────────────────────────────────────────
+        _key = ["apt_name", "area_bucket"]
+        _base = show_df[[c for c in show_df.columns
+                          if c in (_key + ["rank", "지역", "naver_url",
+                                            "fair_value", "fv_premium_%", "verdict",
+                                            "score", "gap", "jeonse_ratio",
+                                            "annual_yield_%"])]].copy()
+        merged = _base.merge(_stats, on=_key, how="inner")
+        if merged.empty:
+            st.info("면적 매칭 데이터가 없습니다.")
+            return
+
+        # ── 캐치 기준가 계산 ─────────────────────────────────────────────
+        def _catch_price(row) -> float:
+            fv = row.get("fair_value")
+            p25 = row.get("하위25", 0)
+            mid = row.get("중위가", 0)
+            # 적정가가 중위가보다 낮으면 적정가를 기준으로 (더 보수적)
+            if fv and fv > 0 and fv < mid:
+                return round(float(fv))
+            # 하위 25%ile: 실제로 이 가격에 거래된 사람들이 있음
+            if p25 and p25 > 0 and p25 < mid:
+                return int(p25)
+            # 기본: 중위가의 95%
+            return round(mid * 0.95) if mid else 0
+
+        merged["캐치기준가"] = merged.apply(_catch_price, axis=1)
+        merged["시세대비할인(%)"] = (
+            (merged["캐치기준가"] - merged["중위가"]) / merged["중위가"] * 100
+        ).round(1)
+
+        # 저평가 판정 (캐치기준가 ≤ 중위가 * 0.97 이면 의미있는 할인)
+        merged["상태"] = merged["시세대비할인(%)"].apply(
+            lambda x: "🔥 강추 매수가" if x <= -10 else
+                      ("💎 저평가 기준" if x <= -5 else
+                       ("✅ 적정 기준" if x <= -2 else "—"))
         )
-        load_key = f"zb_loaded_{tab_key}"
-        data_key = f"zb_data_{tab_key}"
 
-        if c2.button("🔍 단지 링크 생성", key=f"zb_btn_{tab_key}"):
-            st.session_state[load_key] = True
-            st.session_state.pop(data_key, None)
+        # ── 억 단위 변환 ─────────────────────────────────────────────────
+        for col in ["최저가", "하위25", "중위가", "최고가", "캐치기준가"]:
+            if col in merged.columns:
+                merged[col + "_억"] = (merged[col] / 10000).round(2)
+        if "fair_value" in merged.columns:
+            merged["적정가_억"] = (merged["fair_value"] / 10000).round(2)
 
-        if not st.session_state.get(load_key):
-            st.caption("▲ **단지 링크 생성** 버튼을 누르면 직방·네이버·호갱노노 단지 페이지 링크를 만듭니다.")
-            return
+        # ── 네이버 링크 ──────────────────────────────────────────────────
+        if "naver_url" not in merged.columns:
+            merged["naver_url"] = [
+                naver_land_url(r.get("지역"), r.get("apt_name"))
+                for r in merged.to_dict("records")
+            ]
 
-        if data_key not in st.session_state:
-            query_list = apt_names[:int(top_n_zb)]
-            with st.spinner(f"직방에서 {len(query_list)}개 단지 조회 중… (단지당 ~0.3초)"):
-                df_links = fetch_links_for_complexes(query_list)
-            st.session_state[data_key] = df_links
-        else:
-            df_links = st.session_state[data_key]
+        # ── 표시 ─────────────────────────────────────────────────────────
+        # 정렬: 캐치기준가 할인율 큰 순 (저평가 많은 것 우선)
+        merged = merged.sort_values("시세대비할인(%)", ascending=True).reset_index(drop=True)
 
-        if df_links.empty:
-            st.info("링크 생성에 실패했습니다. 위 전략 분석 표의 🔗 네이버 링크를 이용하세요.")
-            return
+        disp_cols = [
+            "naver_url", "상태", "지역", "apt_name", "area_bucket",
+            "최저가_억", "하위25_억", "중위가_억", "최고가_억",
+            "적정가_억", "캐치기준가_억", "시세대비할인(%)",
+            "거래건",
+        ]
+        if "fv_premium_%" in merged.columns:
+            disp_cols.append("fv_premium_%")
+        if "verdict" in merged.columns:
+            disp_cols.append("verdict")
 
-        dcols = ["apt_name", "주소", "사용승인", "직방매물(추정)", "직방_url", "네이버_url", "호갱노노_url"]
-        render_table(df_links[[c for c in dcols if c in df_links.columns]], height=500)
+        render_table(merged[[c for c in disp_cols if c in merged.columns]], height=540)
         st.caption(
-            "직방매물(추정): 직방 서비스 단지의 등록 매물 수. 0이면 직방 미등록 단지. "
-            "직방_url 클릭 시 단지 매물 목록, 네이버_url 클릭 시 매물 검색 결과."
+            "📌 **캐치기준가**: 적정가(전세가율·수익률 역산)가 시세보다 낮으면 적정가, "
+            "없으면 최근 하위25% 거래가 기준. "
+            "**이 가격 이하 매물이 네이버/직방에 올라오면 저평가 매물입니다.**\n\n"
+            "🔥 강추 매수가: 시세 대비 10%↑ 할인 | 💎 저평가 기준: 5~10% 할인 | "
+            "✅ 적정 기준: 2~5% 할인"
         )
 
     with tab_inv:
@@ -4069,7 +4138,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세) | 💎 적정가: 전세가율 65% 역산")
             st.markdown("---")
-            _render_listing_links(show["apt_name"].unique().tolist(), "inv")
+            _render_catch_board(show, "inv")
 
     with tab_gap:
         if gap.empty:
@@ -4102,7 +4171,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
             st.markdown("---")
-            _render_listing_links(show["apt_name"].unique().tolist(), "gap")
+            _render_catch_board(show, "gap")
 
     with tab_yld:
         if yld.empty:
@@ -4126,7 +4195,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption("💎 적정가: 수익률 3.5% 역산 기준")
             st.markdown("---")
-            _render_listing_links(show["apt_name"].unique().tolist(), "yld")
+            _render_catch_board(show, "yld")
 
     with tab_under:
         st.subheader("💎 저평가 매물 — 매수 가능 범위 내 저평가 단지")
