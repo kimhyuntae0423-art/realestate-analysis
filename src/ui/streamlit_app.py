@@ -3992,26 +3992,69 @@ def _render_compare_view(
         ["🚀 투자수익", "🏠 갭투자", "💰 임대수익", "💎 저평가 매물"]
     )
 
-    # 추천 단지들의 실거래 내역 공통 로더 (3탭 공유)
-    def _render_deal_history(apt_names: list[str], label: str):
-        """추천 단지 실거래 내역 섹션."""
-        st.markdown(f"#### 📋 실거래 내역 — 추천 단지 {len(apt_names)}개")
-        st.caption(f"전략에서 뽑힌 단지들의 최근 {months}개월 실거래 건별 기록. 최신순 정렬.")
-        _raw = _cached_all_trades(months)
-        _deals = _raw[_raw["apt_name"].isin(apt_names)].copy()
-        if _deals.empty:
-            st.info("해당 단지의 실거래 내역이 없습니다.")
+    # 추천 단지 직방 실제 매물 조회 (3탭 공유)
+    def _render_zigbang_listings(apt_names: list[str], tab_key: str):
+        """직방 실시간 매물 섹션."""
+        from src.collectors.zigbang_api import fetch_listings_for_complexes
+
+        st.markdown(f"#### 🏠 현재 매물 — 추천 단지 {len(apt_names)}개 (직방 실시간)")
+
+        c1, c2, c3 = st.columns([2, 2, 6])
+        sales_type = c1.selectbox(
+            "매물 유형", ["매매", "전세", "월세"],
+            key=f"zb_type_{tab_key}",
+        )
+        top_n_zb = c2.number_input(
+            "단지 수 (상위)", min_value=1, max_value=30, value=10, step=1,
+            key=f"zb_n_{tab_key}",
+            help="직방 API 호출 수 = 단지 수. 많을수록 느림.",
+        )
+        load_key = f"zb_loaded_{tab_key}"
+        data_key = f"zb_data_{tab_key}"
+        type_key = f"zb_prev_type_{tab_key}"
+
+        # 유형 변경 시 기존 캐시 무효화
+        if st.session_state.get(type_key) != sales_type:
+            st.session_state.pop(data_key, None)
+            st.session_state[type_key] = sales_type
+
+        if c3.button("📡 매물 불러오기", key=f"zb_btn_{tab_key}"):
+            st.session_state[load_key] = True
+            st.session_state.pop(data_key, None)
+
+        if not st.session_state.get(load_key):
+            st.caption("▲ **매물 불러오기** 버튼을 누르면 직방에서 실시간 매물을 가져옵니다.")
             return
-        _deals["지역"] = _deals["region_code"].map(REGION_MAP).fillna(_deals["region_code"])
-        _deals["거래가(억)"] = (_deals["deal_amount"] / 10000).round(2)
-        _deals["면적(㎡)"] = _deals["area_m2"].round(1)
-        _deals = _deals.sort_values("deal_date", ascending=False).reset_index(drop=True)
-        _dcols = ["deal_date", "지역", "apt_name", "dong", "floor", "면적(㎡)", "거래가(억)"]
-        if "price_per_pyeong" in _deals.columns:
-            _deals["평당가(만)"] = _deals["price_per_pyeong"].round(0)
-            _dcols.append("평당가(만)")
-        render_table(_deals[[c for c in _dcols if c in _deals.columns]], height=500)
-        st.caption(f"총 {len(_deals):,}건 · 단지 {len(apt_names)}개")
+
+        if data_key not in st.session_state:
+            query_list = apt_names[:int(top_n_zb)]
+            with st.spinner(f"직방에서 {len(query_list)}개 단지 조회 중… (단지당 ~0.5초)"):
+                df_zb, failed = fetch_listings_for_complexes(query_list, sales_type)
+            st.session_state[data_key] = (df_zb, failed)
+        else:
+            df_zb, failed = st.session_state[data_key]
+
+        if failed:
+            st.caption(f"⚠️ 직방 매칭 실패 ({len(failed)}개): {', '.join(failed[:5])}")
+
+        if df_zb.empty:
+            st.info(
+                "직방에서 매물을 찾지 못했습니다.\n\n"
+                "- 단지명이 직방 등록명과 다를 수 있습니다.\n"
+                "- 위 전략 분석 표의 🔗 네이버 링크로 직접 확인하세요."
+            )
+            return
+
+        # 정렬: 호가 오름차순
+        if "호가(억)" in df_zb.columns:
+            df_zb = df_zb.sort_values("호가(억)").reset_index(drop=True)
+
+        dcols = ["zigbang_url", "apt_name", "호가(억)", "층", "전용(㎡)", "공급(㎡)", "향", "특이사항", "중개사"]
+        render_table(df_zb[[c for c in dcols if c in df_zb.columns]], height=520)
+        st.caption(
+            f"총 {len(df_zb):,}건 · {df_zb['apt_name'].nunique()}개 단지 · 직방 기준 실시간 | "
+            "호가이며 실거래가와 다를 수 있습니다."
+        )
 
     with tab_inv:
         if inv.empty:
@@ -4044,7 +4087,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세) | 💎 적정가: 전세가율 65% 역산")
             st.markdown("---")
-            _render_deal_history(show["apt_name"].unique().tolist(), "투자수익")
+            _render_zigbang_listings(show["apt_name"].unique().tolist(), "inv")
 
     with tab_gap:
         if gap.empty:
@@ -4077,7 +4120,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
             st.markdown("---")
-            _render_deal_history(show["apt_name"].unique().tolist(), "갭투자")
+            _render_zigbang_listings(show["apt_name"].unique().tolist(), "gap")
 
     with tab_yld:
         if yld.empty:
@@ -4101,7 +4144,7 @@ def _render_compare_view(
             render_table(show[[c for c in cols if c in show.columns]], height=420)
             st.caption("💎 적정가: 수익률 3.5% 역산 기준")
             st.markdown("---")
-            _render_deal_history(show["apt_name"].unique().tolist(), "임대수익")
+            _render_zigbang_listings(show["apt_name"].unique().tolist(), "yld")
 
     with tab_under:
         st.subheader("💎 저평가 매물 — 매수 가능 범위 내 저평가 단지")
