@@ -4213,100 +4213,136 @@ def _render_compare_view(
                 help="-5%: 적정가 대비 5% 이상 저렴한 매물. 낮출수록 더 엄격한 필터.",
             )
             under_sort = c2.radio(
-                "정렬", ["저평가도 높은 순", "추천점수 높은 순"], horizontal=True,
+                "정렬", ["저평가도 높은 순", "추천점수 높은 순", "매매가 낮은 순"], horizontal=True,
                 key="under_sort",
             )
+
+        # ── 전략 추천 단지 목록 (inv/gap/yld 결과에 있는 것만) ──────────────
+        _strategy_apts: set[str] = set()
+        for _sdf in [inv, gap, yld]:
+            if not _sdf.empty and "apt_name" in _sdf.columns:
+                _strategy_apts.update(_sdf["apt_name"].unique())
 
         _key_cols = ["apt_name", "region_code", "area_bucket"]
         rows_under = []
 
-        # 갭투자 기반 (전세가율 역산)
+        # 갭투자 기반 (전세가율 역산) — 전략 추천 단지만
         if not gap.empty and "rent_median" in gap.columns:
             g_fv = enrich_with_fair_value(gap.copy(), jeonse_col="rent_median")
             g_fv["방법"] = "전세가율 역산"
-            g_fv["기준"] = "갭투자"
             mask = g_fv["fv_premium_%"].notna() & (g_fv["fv_premium_%"] <= under_thresh)
             if mask.any():
                 rows_under.append(g_fv[mask])
 
-        # 임대수익 기반 (수익률 역산)
+        # 임대수익 기반 (수익률 역산) — 전략 추천 단지만
         if not yld.empty and "monthly_median" in yld.columns:
             y_fv = enrich_with_fair_value(yld.copy(), jeonse_col=None, monthly_col="monthly_median")
             y_fv["방법"] = "수익률 역산"
-            y_fv["기준"] = "임대수익"
             mask = y_fv["fv_premium_%"].notna() & (y_fv["fv_premium_%"] <= under_thresh)
             if mask.any():
                 rows_under.append(y_fv[mask])
 
         if not rows_under:
             st.info(
-                f"현재 기준({under_thresh}% 이하 저평가)으로 매수 가능한 저평가 매물이 없습니다. "
+                f"전략 추천 단지 중 저평가({under_thresh}% 이하) 단지가 없습니다. "
                 "슬라이더를 올려보세요 (예: 0% → 적정가 이하 전체)."
             )
         else:
             combined = pd.concat(rows_under, ignore_index=True)
-            # 같은 단지+면적에서 두 방법이 모두 걸리면 더 낮은 fv_premium_% 기준 하나만 남김
-            combined = (
-                combined
-                .sort_values("fv_premium_%")
-                .drop_duplicates(_key_cols, keep="first")
-                .reset_index(drop=True)
-            )
+            # 전략 추천 단지만 유지
+            combined = combined[combined["apt_name"].isin(_strategy_apts)].copy()
 
-            if under_sort == "추천점수 높은 순" and "score" in combined.columns:
-                combined = combined.sort_values("score", ascending=False).reset_index(drop=True)
+            if combined.empty:
+                st.info("전략 추천 단지 중 해당 저평가 기준에 맞는 단지가 없습니다.")
+            else:
+                # 같은 단지+면적에서 두 방법이 모두 걸리면 더 낮은 fv_premium_% 기준 하나만 남김
+                combined = (
+                    combined
+                    .sort_values("fv_premium_%")
+                    .drop_duplicates(_key_cols, keep="first")
+                    .reset_index(drop=True)
+                )
 
-            combined["rank"] = range(1, len(combined) + 1)
-            combined["naver_url"] = [
-                naver_land_url(r.get("지역"), r.get("apt_name"))
-                for r in combined.to_dict("records")
-            ]
+                if under_sort == "추천점수 높은 순" and "score" in combined.columns:
+                    combined = combined.sort_values("score", ascending=False).reset_index(drop=True)
+                elif under_sort == "매매가 낮은 순" and "trade_median" in combined.columns:
+                    combined = combined.sort_values("trade_median", ascending=True).reset_index(drop=True)
 
-            # 요약 메트릭
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("저평가 매물 수", f"{len(combined)}개")
-            mc2.metric(
-                "최대 저평가",
-                f"{combined['fv_premium_%'].min():.1f}%",
-                help="가장 많이 저평가된 단지의 값",
-            )
-            mc3.metric(
-                "평균 저평가",
-                f"{combined['fv_premium_%'].mean():.1f}%",
-            )
+                combined["rank"] = range(1, len(combined) + 1)
 
-            # 테이블
-            show_cols = [
-                "naver_url", "rank", "지역", "apt_name", "area_bucket",
-                "trade_median", "fair_value", "fv_premium_%", "verdict", "방법",
-            ]
-            if "gap" in combined.columns:       show_cols.append("gap")
-            if "jeonse_ratio" in combined.columns: show_cols.append("jeonse_ratio")
-            if "annual_yield_%" in combined.columns: show_cols.append("annual_yield_%")
-            if "score" in combined.columns:     show_cols.append("score")
-            render_table(
-                combined[[c for c in show_cols if c in combined.columns]],
-                height=600,
-            )
+                # 네이버 가격 낮은순 매물 링크
+                def _naver_cheap_url(region: str | None, apt_name: str | None) -> str | None:
+                    import urllib.parse as _ul
+                    if not apt_name:
+                        return None
+                    clean = _simplify_apt_name(apt_name)
+                    tokens = []
+                    if region:
+                        toks = str(region).strip().split()
+                        if toks:
+                            last = toks[-1]
+                            if any(last.endswith(s) for s in ("동", "읍", "면", "리", "가")):
+                                if len(toks) >= 2:
+                                    tokens.append(toks[-2])
+                            tokens.append(last)
+                    tokens.append(clean)
+                    tokens.append("매매")
+                    q = " ".join(t for t in tokens if t)
+                    # 네이버 부동산 검색 → 매물 가격순 정렬 파라미터
+                    enc = _ul.quote(q, safe="")
+                    return f"https://m.land.naver.com/search/result/{enc}?rletTypeCd=A01&tradeTypeCd=A1&sortField=prc&sortMethod=asc"
 
-            # 바 차트
-            top_u = combined.head(25).copy()
-            color_map_u = {"전세가율 역산": "#3b82f6", "수익률 역산": "#22c55e"}
-            fig_u = px.bar(
-                top_u, x="apt_name", y="fv_premium_%",
-                color="방법",
-                color_discrete_map=color_map_u,
-                labels={"apt_name": "단지명", "fv_premium_%": "현재가-적정가 (%)"},
-                title=f"저평가 TOP {min(25, len(top_u))} (낮을수록 더 저평가)",
-                text="fv_premium_%",
-            )
-            fig_u.add_hline(y=0, line_dash="dash", line_color="gray")
-            fig_u.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-            fig_u.update_xaxes(tickangle=-45)
-            st.plotly_chart(fig_u, width='stretch')
+                combined["naver_url"] = [
+                    _naver_cheap_url(r.get("지역"), r.get("apt_name"))
+                    for r in combined.to_dict("records")
+                ]
 
-            st.markdown("---")
-            _render_catch_board(combined, "under")
+                # 요약 메트릭
+                mc1, mc2, mc3 = st.columns(3)
+                mc1.metric("전략 추천 저평가 단지", f"{len(combined)}개")
+                mc2.metric(
+                    "최대 저평가",
+                    f"{combined['fv_premium_%'].min():.1f}%",
+                    help="가장 많이 저평가된 단지의 값",
+                )
+                mc3.metric(
+                    "평균 저평가",
+                    f"{combined['fv_premium_%'].mean():.1f}%",
+                )
+
+                # 테이블
+                show_cols = [
+                    "naver_url", "rank", "지역", "apt_name", "area_bucket",
+                    "trade_median", "fair_value", "fv_premium_%", "verdict", "방법",
+                ]
+                if "gap" in combined.columns:          show_cols.append("gap")
+                if "jeonse_ratio" in combined.columns: show_cols.append("jeonse_ratio")
+                if "annual_yield_%" in combined.columns: show_cols.append("annual_yield_%")
+                if "score" in combined.columns:        show_cols.append("score")
+                render_table(
+                    combined[[c for c in show_cols if c in combined.columns]],
+                    height=600,
+                )
+                st.caption("📌 **보기** 링크 → 네이버 부동산 매물 **가격 낮은순** 정렬로 바로 이동")
+
+                # 바 차트
+                top_u = combined.head(25).copy()
+                color_map_u = {"전세가율 역산": "#3b82f6", "수익률 역산": "#22c55e"}
+                fig_u = px.bar(
+                    top_u, x="apt_name", y="fv_premium_%",
+                    color="방법",
+                    color_discrete_map=color_map_u,
+                    labels={"apt_name": "단지명", "fv_premium_%": "현재가-적정가 (%)"},
+                    title=f"전략 추천 저평가 TOP {min(25, len(top_u))} (낮을수록 더 저평가)",
+                    text="fv_premium_%",
+                )
+                fig_u.add_hline(y=0, line_dash="dash", line_color="gray")
+                fig_u.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+                fig_u.update_xaxes(tickangle=-45)
+                st.plotly_chart(fig_u, width='stretch')
+
+                st.markdown("---")
+                _render_catch_board(combined, "under")
 
             st.caption(
                 "> 이 분석은 투자 판단을 돕기 위한 의사결정 보조 자료이며, "
