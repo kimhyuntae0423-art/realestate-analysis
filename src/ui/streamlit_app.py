@@ -33,6 +33,10 @@ from src.analysis.location import is_kakao_ready, enrich_with_location
 from src.analysis.costs import total_acquisition_cost_man, best_policy_loan
 from src.analysis.scenario import project_5y_scenarios, stress_test
 from src.analysis.macro import macro_dashboard
+from src.analysis.fair_value import (
+    fair_value_by_jeonse, fair_value_by_yield,
+    fair_value_ppp_trend, fair_value_apt_vs_ma,
+)
 from src.analysis.loan import (
     dsr_loan_capacity_man, max_purchase_man as calc_max_purchase,
     loan_capacity_man, get_ltv_pct, get_zone,
@@ -242,6 +246,18 @@ COL_SPEC = {
     "supply_units_12mo":   ("12개월입주물량(호)", "raw_int"),
     "population_score":    ("인구순유입점수", "pct"),
     "net_inflow_12mo":     ("12개월순유입(명)", "raw_int"),
+    # 적정가 분석
+    "jeonse_median":    ("전세환산중위가", "ueok"),
+    "fair_value":       ("적정가(역산)", "ueok"),
+    "fv_premium_%":     ("현재가-적정가(%)", "pct"),
+    "verdict":          ("판정", "txt"),
+    "annual_rent":      ("연간임대수입", "man"),
+    "monthly_median":   ("월세중위", "man"),
+    "avg_ppp":          ("평균평당가", "ppyeong"),
+    "ma_ppp":           ("이동평균평당가", "ppyeong"),
+    "overshoot_%":      ("이동평균대비(%)", "pct"),
+    "recent_ppp":       ("최근평당가(단지)", "ppyeong"),
+    "total_deals":      ("총거래수", "cnt"),
     # raw trade columns (단지 검색 시)
     "region_code":      ("지역코드", "txt"),
     "deal_date":        ("거래일", "txt"),
@@ -2715,8 +2731,8 @@ def page_region():
     with st.expander("🔬 지역 상세 진단 (매수심리·호재·공급)", expanded=True):
         _render_region_detail(code)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["📈 추이", "🏢 단지", "↔ 갭분석", "💰 수익률", "🔥 상승률"]
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📈 추이", "🏢 단지", "↔ 갭분석", "💰 수익률", "🔥 상승률", "💎 적정가"]
     )
 
     with tab1:
