@@ -986,6 +986,18 @@ def page_undervalued():
                 help="임대수익 적정가 산식: 적정가 = (월세 × 12) ÷ 이 수익률",
             )
 
+            c6, c7 = st.columns(2)
+            uv_area_range = c6.slider(
+                "전용면적 범위 (㎡)", min_value=0, max_value=200,
+                value=(80, 110), step=5,
+                help="기본 80~110㎡ (24~33평). 소형 구축 제외 목적.",
+            )
+            uv_year_range = c7.slider(
+                "준공연도 범위", min_value=1970, max_value=date.today().year + 5,
+                value=(date.today().year - 15, date.today().year + 5), step=1,
+                help="오래된 구축 제외하려면 하한을 올리세요.",
+            )
+
             submitted = st.form_submit_button(
                 "🔍 저평가 매물 찾기", use_container_width=True, type="primary",
             )
@@ -1051,6 +1063,39 @@ def page_undervalued():
         .drop_duplicates(_key_cols, keep="first")
         .reset_index(drop=True)
     )
+
+    # ── 면적·연도 필터 적용 ─────────────────────────────────────────────
+    if "area_bucket" in combined.columns:
+        combined = combined[
+            (combined["area_bucket"] >= uv_area_range[0]) &
+            (combined["area_bucket"] <= uv_area_range[1])
+        ].copy()
+    if "build_year" in combined.columns:
+        combined = combined[
+            combined["build_year"].isna() |
+            ((combined["build_year"] >= uv_year_range[0]) &
+             (combined["build_year"] <= uv_year_range[1]))
+        ].copy()
+
+    if combined.empty:
+        st.warning("필터 조건에 맞는 저평가 매물이 없습니다. 면적·연도 범위를 조정해보세요.")
+        return
+
+    # ── 지역 필터 (폼 밖 — 즉시 반응) ─────────────────────────────────
+    _all_regions_uv = sorted(combined["지역"].dropna().unique()) if "지역" in combined.columns else []
+    if _all_regions_uv:
+        uv_regions = st.multiselect(
+            "지역 필터 (비워두면 전체)",
+            options=_all_regions_uv,
+            default=[],
+            key="uv_regions",
+            placeholder="지역을 선택하세요…",
+        )
+        if uv_regions:
+            combined = combined[combined["지역"].isin(uv_regions)].copy()
+        if combined.empty:
+            st.info("선택한 지역에 해당하는 저평가 매물이 없습니다.")
+            return
 
     # 요약 메트릭
     mc1, mc2, mc3, mc4 = st.columns(4)
