@@ -4216,6 +4216,18 @@ def _render_compare_view(
                 "정렬", ["저평가도 높은 순", "추천점수 높은 순", "매매가 낮은 순"], horizontal=True,
                 key="under_sort",
             )
+            # 지역 필터 — 전략 결과에서 지역 목록 동적 추출
+            _all_regions_under: list[str] = sorted({
+                r for df in [inv, gap, yld] if not df.empty and "지역" in df.columns
+                for r in df["지역"].dropna().unique()
+            })
+            under_regions = st.multiselect(
+                "지역 필터 (비워두면 전체)",
+                options=_all_regions_under,
+                default=[],
+                key="under_regions",
+                placeholder="지역을 선택하세요…",
+            )
 
         # ── 전략 추천 단지 목록 (inv/gap/yld 결과에 있는 것만) ──────────────
         _strategy_apts: set[str] = set()
