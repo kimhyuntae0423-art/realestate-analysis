@@ -219,6 +219,43 @@ def _bucketize(df: pd.DataFrame, tol: float) -> pd.DataFrame:
     return df
 
 
+def _trade_agg(
+    df_t: pd.DataFrame,
+    keys: list[str],
+    trade_months: int | None = None,
+) -> pd.DataFrame:
+    """trade_count는 전체 기간, trade_median은 최근 trade_months 기간으로 분리 집계.
+
+    trade_months=None 이면 전체 기간 그대로 사용.
+    최근 기간에 거래 없으면 전체 기간 median으로 fallback.
+    """
+    full_agg = df_t.groupby(keys).agg(
+        trade_median_full=("deal_amount", "median"),
+        trade_count=("deal_amount", "count"),
+        build_year=("build_year", "max"),
+    )
+
+    if trade_months is None:
+        full_agg["trade_median"] = full_agg["trade_median_full"]
+        return full_agg.drop(columns=["trade_median_full"])
+
+    df_dt = df_t.copy()
+    df_dt["deal_date"] = pd.to_datetime(df_dt["deal_date"])
+    recent_cutoff = df_dt["deal_date"].max() - pd.DateOffset(months=trade_months)
+    df_recent = df_dt[df_dt["deal_date"] >= recent_cutoff]
+
+    if df_recent.empty:
+        full_agg["trade_median"] = full_agg["trade_median_full"]
+        return full_agg.drop(columns=["trade_median_full"])
+
+    price_agg = df_recent.groupby(keys).agg(
+        trade_median=("deal_amount", "median"),
+    )
+    result = full_agg.join(price_agg, how="left")
+    result["trade_median"] = result["trade_median"].fillna(result["trade_median_full"])
+    return result.drop(columns=["trade_median_full"])
+
+
 def _compute_growth_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame:
     """(region, apt, area_bucket) 별 평당가 상승률 신호.
 
@@ -364,7 +401,8 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
                               max_jeonse_ratio: float = 1.0,
                               ownership: str = "무주택",
                               first_time_buyer: bool = False,
-                              dsr_cap_man: float | None = None) -> pd.DataFrame:
+                              dsr_cap_man: float | None = None,
+                              trade_months: int = 3) -> pd.DataFrame:
     """갭투자용. 시드(만원)로 살 수 있는 (지역+단지+평형) 추천.
 
     갭투자는 일반적으로 전세 보증금이 임차인 부담분이므로 LTV 대출은 받지 않음.
@@ -383,12 +421,9 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
     df_t = _bucketize(df_t, area_tol)
     df_r = to_jeonse_equiv(_bucketize(df_r, area_tol))
 
-    t_agg = df_t.groupby(["region_code", "apt_name", "area_bucket"]).agg(
-        trade_median=("deal_amount", "median"),
-        trade_count=("deal_amount", "count"),
-        build_year=("build_year", "max"),
-    )
-    r_agg = df_r.groupby(["region_code", "apt_name", "area_bucket"]).agg(
+    _keys = ["region_code", "apt_name", "area_bucket"]
+    t_agg = _trade_agg(df_t, _keys, trade_months=trade_months if trade_months < months else None)
+    r_agg = df_r.groupby(_keys).agg(
         rent_median=("jeonse_equiv", "median"),
         rent_count=("jeonse_equiv", "count"),
     )
@@ -442,7 +477,8 @@ def recommend_rental_yield(seed_man: int, months: int = 12, area_tol: float = 5.
                             ownership: str = "무주택",
                             first_time_buyer: bool = False,
                             use_loan: bool = True,
-                            dsr_cap_man: float | None = None) -> pd.DataFrame:
+                            dsr_cap_man: float | None = None,
+                            trade_months: int = 3) -> pd.DataFrame:
     """임대수익형. 시드로 가능한 (매매가-보증금) 매물 중 연수익률 높은 순."""
     df_t, df_r = _load_recent(months)
     if df_t.empty or df_r.empty:
@@ -452,12 +488,9 @@ def recommend_rental_yield(seed_man: int, months: int = 12, area_tol: float = 5.
     if df_r.empty:
         return pd.DataFrame()
 
-    t_agg = df_t.groupby(["region_code", "apt_name", "area_bucket"]).agg(
-        trade_median=("deal_amount", "median"),
-        trade_count=("deal_amount", "count"),
-        build_year=("build_year", "max"),
-    )
-    r_agg = df_r.groupby(["region_code", "apt_name", "area_bucket"]).agg(
+    _keys = ["region_code", "apt_name", "area_bucket"]
+    t_agg = _trade_agg(df_t, _keys, trade_months=trade_months if trade_months < months else None)
+    r_agg = df_r.groupby(_keys).agg(
         deposit_median=("deposit", "median"),
         monthly_median=("monthly_rent", "median"),
         rent_count=("monthly_rent", "count"),

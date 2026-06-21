@@ -81,24 +81,28 @@ def _cached_forecast(region_code: str, months_data: int, periods: int) -> pd.Dat
 @st.cache_data(ttl=600, show_spinner="🔍 추천 계산 중...")
 def _cached_gap(seed_man: int, months: int, min_deals: int,
                 ownership: str, first_time: bool,
-                dsr_cap_man: float | None = None) -> pd.DataFrame:
+                dsr_cap_man: float | None = None,
+                trade_months: int = 3) -> pd.DataFrame:
     return recommend_gap_investment(
         seed_man, months=months,
         min_trade_deals=min_deals, min_rent_deals=min_deals,
         ownership=ownership, first_time_buyer=first_time,
         dsr_cap_man=dsr_cap_man,
+        trade_months=trade_months,
     )
 
 
 @st.cache_data(ttl=600, show_spinner="🔍 추천 계산 중...")
 def _cached_yield(seed_man: int, months: int, min_deals: int,
                   ownership: str, first_time: bool, use_loan: bool,
-                  dsr_cap_man: float | None = None) -> pd.DataFrame:
+                  dsr_cap_man: float | None = None,
+                  trade_months: int = 3) -> pd.DataFrame:
     return recommend_rental_yield(
         seed_man, months=months,
         min_trade_deals=min_deals, min_rent_deals=min_deals,
         ownership=ownership, first_time_buyer=first_time, use_loan=use_loan,
         dsr_cap_man=dsr_cap_man,
+        trade_months=trade_months,
     )
 
 
@@ -2963,7 +2967,12 @@ def page_region():
     with tab3:
         st.subheader("매매-전세 갭")
         st.caption("같은 단지·면적의 최근 매매 중위가 − 전세환산 중위가 (월세는 ×100 환산). 금액: 억원.")
-        gap = gap_table(df_t, df_r, area_tol=5.0, months=min(months, 6))
+        _trade_mo = st.slider(
+            "현재 매매가 기준 기간 (개월)", 1, min(months, 6), min(3, months),
+            key="gap_trade_months",
+            help="짧을수록 최근 실거래가 반영. 거래건수 필터는 전체 분석 기간 기준 유지.",
+        )
+        gap = gap_table(df_t, df_r, area_tol=5.0, months=min(months, 6), trade_months=_trade_mo)
         render_table(gap, height=600)
 
     with tab4:

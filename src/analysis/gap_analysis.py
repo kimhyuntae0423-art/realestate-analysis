@@ -15,11 +15,15 @@ def to_jeonse_equiv(df_rent: pd.DataFrame, monthly_to_deposit: int = 100) -> pd.
 
 
 def gap_table(df_trade: pd.DataFrame, df_rent: pd.DataFrame,
-              area_tol: float = 5.0, months: int = 6) -> pd.DataFrame:
+              area_tol: float = 5.0, months: int = 6,
+              trade_months: int | None = None) -> pd.DataFrame:
     """단지+면적 단위로 매매-전세 갭 산출.
 
-    area_tol: 면적 묶음 허용 오차 (m²). 5m² 이내는 같은 평형으로 간주.
-    months: 분석 기간 (최근 N개월)
+    area_tol:     면적 묶음 허용 오차 (m²). 5m² 이내는 같은 평형으로 간주.
+    months:       전세 기간 (최근 N개월). 거래건수 필터도 이 기간 기준.
+    trade_months: 매매가 계산 기간. None이면 months와 동일.
+                  최근 실거래 기반 현재가를 원하면 3 이하로 설정.
+                  최근 기간에 거래 없으면 전체 기간 median으로 fallback.
     """
     if df_trade.empty or df_rent.empty:
         return pd.DataFrame()
@@ -29,17 +33,40 @@ def gap_table(df_trade: pd.DataFrame, df_rent: pd.DataFrame,
     df_trade["deal_date"] = pd.to_datetime(df_trade["deal_date"])
     df_rent["deal_date"] = pd.to_datetime(df_rent["deal_date"])
 
-    cutoff = max(df_trade["deal_date"].max(), df_rent["deal_date"].max()) - pd.DateOffset(months=months)
-    t = df_trade[df_trade["deal_date"] >= cutoff].copy()
-    r = df_rent[df_rent["deal_date"] >= cutoff].copy()
+    max_date = max(df_trade["deal_date"].max(), df_rent["deal_date"].max())
+    rent_cutoff = max_date - pd.DateOffset(months=months)
+    trade_cutoff_full = max_date - pd.DateOffset(months=months)
+    r = df_rent[df_rent["deal_date"] >= rent_cutoff].copy()
+    t_full = df_trade[df_trade["deal_date"] >= trade_cutoff_full].copy()
 
-    t["area_bucket"] = (t["area_m2"] / area_tol).round() * area_tol
+    t_full["area_bucket"] = (t_full["area_m2"] / area_tol).round() * area_tol
     r["area_bucket"] = (r["area_m2"] / area_tol).round() * area_tol
 
-    t_agg = t.groupby(["apt_name", "area_bucket"]).agg(
-        trade_median=("deal_amount", "median"),
+    # trade_count: 전체 기간 (유동성 필터용)
+    count_agg = t_full.groupby(["apt_name", "area_bucket"]).agg(
         trade_count=("deal_amount", "count"),
     )
+    # trade_median: 최근 trade_months 기간 (현재가)
+    _tm = trade_months if (trade_months is not None and trade_months < months) else None
+    if _tm:
+        trade_cutoff_recent = max_date - pd.DateOffset(months=_tm)
+        t_recent = df_trade[df_trade["deal_date"] >= trade_cutoff_recent].copy()
+        t_recent["area_bucket"] = (t_recent["area_m2"] / area_tol).round() * area_tol
+        price_agg = t_recent.groupby(["apt_name", "area_bucket"]).agg(
+            trade_median=("deal_amount", "median"),
+        )
+        full_price_agg = t_full.groupby(["apt_name", "area_bucket"]).agg(
+            trade_median_full=("deal_amount", "median"),
+        )
+        t_agg = count_agg.join(price_agg, how="left").join(full_price_agg, how="left")
+        t_agg["trade_median"] = t_agg["trade_median"].fillna(t_agg["trade_median_full"])
+        t_agg = t_agg.drop(columns=["trade_median_full"])
+    else:
+        price_agg = t_full.groupby(["apt_name", "area_bucket"]).agg(
+            trade_median=("deal_amount", "median"),
+        )
+        t_agg = count_agg.join(price_agg, how="left")
+
     r_agg = r.groupby(["apt_name", "area_bucket"]).agg(
         rent_median=("jeonse_equiv", "median"),
         rent_count=("jeonse_equiv", "count"),
