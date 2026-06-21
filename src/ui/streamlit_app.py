@@ -1025,8 +1025,8 @@ def page_undervalued():
         def _prep_strategy(df: pd.DataFrame) -> pd.DataFrame:
             if df.empty:
                 return df
-            # 전략 상위 50개 먼저 자르고, 그 안에서 면적·연도 필터
-            df = df.head(50).copy()
+            # 전략 상위 100개 먼저 자르고, 그 안에서 면적·연도 필터
+            df = df.head(100).copy()
             if "area_bucket" in df.columns:
                 df = df[(df["area_bucket"] >= uv_area_range[0]) & (df["area_bucket"] <= uv_area_range[1])]
             if "build_year" in df.columns:
