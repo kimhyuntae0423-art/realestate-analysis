@@ -3996,19 +3996,22 @@ def _render_compare_view(
                 show["연수익금(억)"] = (
                     show["expected_roi_%"] * ann * show["required_equity"] / 100 / 10000
                 ).round(2)
-            # 적정가: gap 데이터의 rent_median 조인 후 전세가율 역산
             _key = ["apt_name", "region_code", "area_bucket"]
             if not gap.empty and "rent_median" in gap.columns:
                 _rent = gap[_key + ["rent_median"]].drop_duplicates(_key)
                 show = show.merge(_rent, on=_key, how="left")
                 show = enrich_with_fair_value(show, jeonse_col="rent_median")
-            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
-            if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
-            if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
-            if "tier_label" in show.columns: cols.append("tier_label")
-            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
-                if _fc in show.columns: cols.append(_fc)
-            render_table(show[[c for c in cols if c in show.columns]], height=500)
+            cols = [
+                "naver_url", "rank", "지역", "apt_name",
+                "trade_median", "required_equity",
+                "tier_label", "area_bucket", "build_year",
+                "catalyst_score", "sentiment_score",
+                "price_growth_%", "expected_roi_%",
+                "연수익률(%)", "연수익금(억)",
+                "score",
+                "fair_value", "fv_premium_%", "verdict",
+            ]
+            render_table(show[[c for c in cols if c in show.columns]], height=550)
             st.caption(f"📅 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세) | 💎 적정가: 전세가율 65% 역산")
 
     with tab_gap:
@@ -4018,7 +4021,6 @@ def _render_compare_view(
             show = gap.copy()
             show["rank"] = range(1, len(show) + 1)
             show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
-            # price_growth_%는 inv에서 조인 (갭투자 결과엔 없음)
             _key = ["apt_name", "region_code", "area_bucket"]
             if not inv.empty and "price_growth_%" in inv.columns:
                 _pg = inv[_key + ["price_growth_%"]].drop_duplicates(_key)
@@ -4027,17 +4029,20 @@ def _render_compare_view(
                 gain = show["trade_median"] * show["price_growth_%"] / 100
                 show["연수익금(억)"] = (gain / 10000 * ann).round(2)
                 show["연수익률(%)"] = (gain / show["gap"] * 100 * ann).round(2)
-            # 적정가: rent_median(전세환산 중위가) 기반 전세가율 역산
             show = enrich_with_fair_value(show, jeonse_col="rent_median")
-            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "gap", "area_bucket", "score"]
-            if "연수익률(%)" in show.columns: cols.append("연수익률(%)")
-            if "연수익금(억)" in show.columns: cols.append("연수익금(억)")
-            cols += ["jeonse_ratio"]
-            if "jeonse_risk" in show.columns: cols.append("jeonse_risk")
-            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
-                if _fc in show.columns: cols.append(_fc)
-            render_table(show[[c for c in cols if c in show.columns]], height=500)
-            st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월 실거래 추세). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
+            cols = [
+                "naver_url", "rank", "지역", "apt_name",
+                "trade_median", "rent_median", "gap",
+                "jeonse_risk", "jeonse_ratio", "jeonse_accel_%p",
+                "leverage_mult",
+                "tier_label", "area_bucket", "build_year",
+                "trade_count", "rent_count",
+                "연수익률(%)", "연수익금(억)",
+                "score",
+                "fair_value", "fv_premium_%", "verdict",
+            ]
+            render_table(show[[c for c in cols if c in show.columns]], height=550)
+            st.caption(f"📅 연수익률·연수익금: 연환산 기준 (× 12 ÷ {half_months}개월). 갭투자 수익률 = 시세차익 ÷ 갭(자기자본). | 💎 적정가: 전세가율 65% 역산")
 
     with tab_yld:
         if yld.empty:
@@ -4046,13 +4051,18 @@ def _render_compare_view(
             show = yld.copy()
             show["rank"] = range(1, len(show) + 1)
             show["naver_url"] = [naver_land_url(r.get("지역"), r.get("apt_name")) for r in show.to_dict("records")]
-            # 적정가: monthly_median 기반 수익률 역산
             show = enrich_with_fair_value(show, jeonse_col=None, monthly_col="monthly_median")
-            cols = ["naver_url", "rank", "지역", "apt_name", "trade_median", "required_equity", "area_bucket", "score"]
-            if "annual_yield_%" in show.columns: cols.append("annual_yield_%")
-            for _fc in ["fair_value", "fv_premium_%", "verdict"]:
-                if _fc in show.columns: cols.append(_fc)
-            render_table(show[[c for c in cols if c in show.columns]], height=500)
+            cols = [
+                "naver_url", "rank", "지역", "apt_name",
+                "trade_median", "required_equity",
+                "area_bucket", "build_year",
+                "deposit_median", "monthly_median",
+                "annual_yield_%",
+                "trade_count", "rent_count",
+                "score",
+                "fair_value", "fv_premium_%", "verdict",
+            ]
+            render_table(show[[c for c in cols if c in show.columns]], height=550)
             st.caption("💎 적정가: 수익률 3.5% 역산 기준")
 
     with tab_under:
