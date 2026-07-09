@@ -22,8 +22,9 @@ def acquisition_tax_man(price_man: float, ownership: str = "무주택",
 
     if ownership == "다주택":
         rate = 0.08  # 단순화: 다주택 일괄 8%
-    elif ownership == "1주택":
-        # 1주택자 추가매수는 조정대상지역 여부에 따라 다르지만 단순화
+    elif ownership.startswith("1주택"):
+        # "1주택"/"1주택(처분조건부)"/"1주택(미처분)" 공통 — 추가매수는
+        # 조정대상지역 여부에 따라 다르지만 단순화
         rate = 0.08
     else:  # 무주택 → 1주택
         if price_man <= 60000:
@@ -123,13 +124,13 @@ def check_didimdol(annual_income_man: float, price_man: float,
         max_loan = 40000
 
     eligible = (
-        ownership == "무주택"
+        ownership in ("무주택", "서민실수요자")
         and annual_income_man <= income_limit
         and price_man <= price_limit
     )
 
     reasons = []
-    if ownership != "무주택":
+    if ownership not in ("무주택", "서민실수요자"):
         reasons.append("무주택 아님")
     if annual_income_man > income_limit:
         reasons.append(f"연소득 {income_limit}만 초과")
@@ -173,8 +174,10 @@ def check_bogeumjari(annual_income_man: float, price_man: float,
     if is_newlywed or children >= 1:
         max_loan = 40000
 
+    # 무주택/서민실수요자/처분조건부 1주택(레거시 "1주택" 별칭 포함)만 적격.
+    # 미처분 1주택은 처분조건을 충족하지 못하므로 제외.
     eligible = (
-        ownership in ("무주택", "1주택")
+        ownership not in ("다주택", "1주택(미처분)")
         and annual_income_man <= income_limit
         and price_man <= price_limit
     )
@@ -182,6 +185,8 @@ def check_bogeumjari(annual_income_man: float, price_man: float,
     reasons = []
     if ownership == "다주택":
         reasons.append("다주택")
+    elif ownership == "1주택(미처분)":
+        reasons.append("처분조건 미충족(미처분 1주택)")
     if annual_income_man > income_limit:
         reasons.append(f"연소득 {income_limit}만 초과")
     if price_man > price_limit:

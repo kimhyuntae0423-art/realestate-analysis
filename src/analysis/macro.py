@@ -91,12 +91,12 @@ def signal_price_momentum() -> dict:
 
 
 def signal_regulation() -> dict:
-    """대출 규제 강도 — 현재 10.15 대책 적용 중 = 강(적)"""
+    """대출 규제 강도 — 현재 10.15 대책 + 2026-07 대책 적용 중 = 강(적)"""
     return {
         "name": "대출 규제",
         "level": "red",
         "value": "강화",
-        "detail": "10.15 대책: 서울+경기12 규제, 한도 6억 cap, 스트레스 DSR 3%",
+        "detail": "10.15+2026-07 대책: 서울+경기15 규제, 무주택 LTV 40%, 한도 flat 6억, 스트레스 DSR 3%",
     }
 
 

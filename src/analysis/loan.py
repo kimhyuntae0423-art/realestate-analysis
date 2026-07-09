@@ -7,6 +7,15 @@
 - 주담대 한도 cap: 15억 이하 6억 / 15~25억 4억 / 25억 초과 2억
 - DSR 40% (1금융), 스트레스 +3%
 - max_purchase_man: kb_ratio 파라미터 지원 (v2, 2026-06-11)
+
+2026-07 대책 반영(신규 규제지역 3곳 + LTV 강화, 확정판):
+- 규제지역 확대: 화성 동탄구·용인 기흥구·구리시 추가 (기존 서울25+경기12 → 서울25+경기15)
+- 규제지역 LTV: 무주택 40% / 서민실수요자 60% / 처분조건부 1주택 40%(무주택과 동일) /
+  미처분 1주택 0%(신규 주담대 불가) / 다주택 0% / 생애최초 70%(독립 고정값, 가산 아님)
+- 주담대 한도 cap: 규제지역 전체 가격 무관 flat 6억 (기존 15억/25억 구간 폐지)
+- 신규 3곳은 토지거래허가구역 동시 지정 (land_permit_zones, LTV 계산과 무관한 별도 플래그)
+- 실거주의무·다주택 만기연장 제한은 숫자 계산이 아닌 경고 플래그로만 반영 (loan_breakdown_man)
+- 비규제지역 다주택 LTV 0%(신규 주담대 불가)가 최신 정책 기준으로 확정 (기존 config값 유지, UI 텍스트만 정정)
 """
 from __future__ import annotations
 import json
@@ -30,11 +39,25 @@ def get_zone(region_code: str) -> str:
     return reg["zone_by_region"].get(region_code, reg["default_zone"])
 
 
+def is_land_permit_zone(region_code: str) -> bool:
+    """토지거래허가구역 여부 (LTV 계산과 무관, 경고 표시용)."""
+    reg = load_regulations()
+    return region_code in reg.get("land_permit_zones", [])
+
+
 def get_ltv_pct(region_code: str, ownership: str = "무주택",
                  first_time_buyer: bool = False) -> float:
+    """지역·보유주택수·생애최초 여부에 따른 LTV(%).
+
+    생애최초는 존(zone)마다 처리 방식이 다름:
+    - 규제지역: 독립 고정값(_생애최초_fixed, 70%) — ownership과 무관하게 적용.
+    - 비규제지역: 기존 방식대로 base + _생애최초_bonus (80% cap).
+    """
     reg = load_regulations()
     zone = get_zone(region_code)
     table = reg["ltv_table"].get(zone, {})
+    if first_time_buyer and "_생애최초_fixed" in table:
+        return float(table["_생애최초_fixed"])
     base = float(table.get(ownership, 0))
     if first_time_buyer and base > 0:
         bonus = float(table.get("_생애최초_bonus", 0))
@@ -161,7 +184,10 @@ def loan_breakdown_man(price_man: float, region_code: str,
         price_man, kb_price_man (담보가), ltv_pct, zone,
         ltv_limit_man, cap_limit_man, dsr_limit_man (None=미적용),
         final_loan_man, binding ("LTV"|"한도캡"|"DSR"),
-        required_equity_man, monthly_payment_man, annual_interest_man
+        required_equity_man, monthly_payment_man, annual_interest_man,
+        occupancy_required (실거주의무, 규제지역 대출 시 True),
+        land_permit_required (토지거래허가구역 여부),
+        refinance_restricted (다주택+규제지역 시 만기연장 제한 경고)
     """
     if price_man <= 0:
         return {}
@@ -211,6 +237,9 @@ def loan_breakdown_man(price_man: float, region_code: str,
         "annual_interest_man": annual_interest,
         "interest_rate_pct": interest_rate_pct,
         "loan_years": loan_years,
+        "occupancy_required": zone == "규제" and final_loan > 0,
+        "land_permit_required": is_land_permit_zone(region_code),
+        "refinance_restricted": zone == "규제" and ownership == "다주택",
     }
 
 

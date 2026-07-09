@@ -842,7 +842,14 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     st.markdown("**👨‍👩‍👧 가구 정보**")
     c1, c2, c3 = st.columns(3)
     ownership = c1.selectbox(
-        "보유 주택 수", ["무주택", "1주택", "다주택"], key=f"{key_prefix}_own",
+        "보유 주택 수",
+        ["무주택", "서민실수요자", "1주택(처분조건부)", "1주택(미처분)", "다주택"],
+        key=f"{key_prefix}_own",
+        help=(
+            "서민실수요자: 무주택 + 소득·주택가 요건 충족자 (규제지역 LTV 60%)\n"
+            "1주택(처분조건부): 기존 주택 처분 조건으로 규제지역 LTV 40% (무주택과 동일)\n"
+            "1주택(미처분): 처분 조건 미충족 — 규제지역 신규 주담대 불가(LTV 0%)"
+        ),
     )
     children = c2.number_input(
         "자녀 수", min_value=0, max_value=10, value=0, key=f"{key_prefix}_kids",
@@ -851,7 +858,7 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     with c3:
         first_time = st.checkbox(
             "생애최초 구매", key=f"{key_prefix}_ft",
-            help="LTV +20%p 우대",
+            help="LTV 우대 (규제지역 고정 70%, 보유주택수와 무관 / 비규제 +10%p 가산)",
         )
         is_newlywed = st.checkbox(
             "🎀 신혼부부 (혼인 7년 이내)", key=f"{key_prefix}_new",
@@ -1256,7 +1263,10 @@ def _invest_sidebar_inputs_UNUSED() -> dict:
                 "자기자본 시드 (억원)", min_value=0.1, max_value=200.0,
                 value=5.0, step=0.5, format="%.1f",
             )
-            ownership = st.selectbox("보유 주택 수", ["무주택", "1주택", "다주택"])
+            ownership = st.selectbox(
+                "보유 주택 수",
+                ["무주택", "서민실수요자", "1주택(처분조건부)", "1주택(미처분)", "다주택"],
+            )
             cc1, cc2 = st.columns(2)
             first_time = cc1.checkbox("생애최초", help="LTV 보너스")
             use_loan = cc2.checkbox(
@@ -2373,7 +2383,7 @@ def page_portfolio_strategy():
                         st.metric(
                             "② 정책 상한", f"{bd['cap_limit_man']/10000:.0f}억",
                             delta=_limit_label("한도캡"), delta_color=_limit_color("한도캡"),
-                            help="규제지역 한도: 15억 이하→6억 / 15~25억→4억 / 25억 초과→2억.",
+                            help="규제지역 한도: 매매가 무관 flat 6억 (2026-07 대책).",
                         )
                 with _c3:
                     if bd["dsr_limit_man"]:
@@ -2445,8 +2455,17 @@ def page_portfolio_strategy():
                 f"**🔵 LTV가 병목 — 자기자본을 늘릴수록 매수 가능 가격이 올라갑니다.**  \n"
                 f"KB시세의 {bd['ltv_pct']:.0f}%만 대출 가능 → 나머지 {100 - bd['ltv_pct']:.0f}%는 자기자본으로 충당.  \n"
                 f"→ **해결 방법**: ① 보유 부동산 매도로 현금 확보, "
-                f"② 생애최초 요건 충족 시 LTV +20%p 가산 확인"
+                f"② 생애최초 요건 충족 시 규제지역 LTV 고정 70% 적용 확인"
             )
+
+        # ── 규제지역 부가 경고 (2026-07 대책) ────────────────
+        if bd:
+            if bd.get("land_permit_required"):
+                st.warning("🚧 목표 지역은 **토지거래허가구역**입니다. 일정 규모 이상 거래 시 허가가 필요하고, 갭투자(전세 승계)는 사실상 어렵습니다.")
+            if bd.get("occupancy_required"):
+                st.info("🏠 목표 지역은 **실거주 의무** 대상입니다. 주담대 실행 후 일정 기간 내 실입주해야 합니다.")
+            if bd.get("refinance_restricted"):
+                st.warning("🔒 다주택 상태로 매수 시 규제지역 신규 대출·만기 연장이 원칙적으로 제한됩니다.")
 
         # 자금 부족 여부 및 구체적 행동 지침
         if shortage_max > 0:
@@ -3307,7 +3326,8 @@ def _render_loan_simulator(p: dict):
 
         REGION_OPTIONS = {
             "서울 전체 (규제)": "11680",
-            "경기 규제 12곳": "41135",
+            "경기 기존규제 12곳": "41135",
+            "경기 신규규제 3곳 (화성동탄·용인기흥·구리, 2026-07)": "41597",
             "비규제 (수도권 외·지방)": "99999",
         }
         region_label = c3.selectbox("지역 구분", list(REGION_OPTIONS.keys()), key="sim_region")
@@ -3368,7 +3388,7 @@ def _render_loan_simulator(p: dict):
             cap_str,
             delta=_badge("한도캡") if not bd["cap_is_inf"] else "✅ 해당없음",
             delta_color="off",
-            help="규제지역: 15억이하→6억 / 15~25억→4억 / 25억초과→2억",
+            help="규제지역: 매매가 무관 flat 6억 (2026-07 대책)",
         )
     with col3:
         if bd["dsr_limit_man"] is not None:
@@ -3417,6 +3437,17 @@ def _render_loan_simulator(p: dict):
             f"**LTV가 한계입니다{note}.** 담보가 기준 {bd['ltv_pct']:.0f}% 한도입니다.  \n"
             "→ KB시세를 높이는 것은 불가. 생애최초 여부나 보유주택 수를 재확인하세요."
         )
+
+    # ── 규제지역 부가 경고 (2026-07 대책) ────────────────────
+    if bd.get("land_permit_required"):
+        st.warning(
+            "🚧 **토지거래허가구역** — 일정 규모 이상 거래 시 시·군·구청 허가가 필요합니다. "
+            "전세를 끼고 매수하는 갭투자는 사실상 어렵습니다."
+        )
+    if bd.get("occupancy_required"):
+        st.info("🏠 **실거주 의무** — 주담대 실행 후 일정 기간 내 실입주해야 합니다. 갭투자 목적 매수는 제한됩니다.")
+    if bd.get("refinance_restricted"):
+        st.warning("🔒 **다주택자 대출 제한** — 규제지역 다주택자는 신규 주담대뿐 아니라 만기 연장도 원칙적으로 제한됩니다.")
 
     st.caption(
         "이 분석은 의사결정 보조 자료입니다. "
@@ -3482,13 +3513,16 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
 
     cc1, cc2 = st.columns([1, 1])
     with cc1:
-        st.markdown("##### 🏙️ 규제지역 (서울25 + 경기12)",
+        st.markdown("##### 🏙️ 규제지역 (서울25 + 경기15)",
                     help=(
                         "**서울** — 25개구 전체\n\n"
-                        "**경기** — 12곳\n"
+                        "**경기(기존 12곳)** — "
                         "수원시(장안·팔달·영통) · 성남시(수정·중원·분당) · "
                         "안양시(동안) · 광명시 · 과천시 · 하남시 · 용인시(처인·수지)\n\n"
-                        "※ 2025-10-15 부동산 대책 기준, 2026-12-31까지 한시 적용"
+                        "**경기(신규 3곳, 2026-07)** — "
+                        "화성시 동탄구 · 용인시 기흥구 · 구리시 "
+                        "(토지거래허가구역 동시 지정)\n\n"
+                        "※ 2025-10-15 대책 + 2026-07 대책 기준, 2026-12-31까지 한시 적용"
                     ))
         st.metric("최대 매수가", f"{actual_p_reg/10000:.2f} 억",
                   help=f"부대비용 {costs['total']/10000:.2f}억 차감 후 실매수가")
@@ -4715,7 +4749,7 @@ def render_recommend_tab(inputs: dict):
                   f"② 한도 cap: {_cap_reg//10000}억 (매매가 {max_buy_reg_net/10000:.1f}억 기준)\n"
                   f"③ DSR: {_dsr_str}\n\n"
                   f"※ 부대비용 전 이론 한도 {max_buy_reg/10000:.2f}억 → 포함 시 {max_buy_reg_net/10000:.2f}억\n"
-                  "※ LTV: 강남3구·용산 40% / 기타 규제 50% / 생애최초 +10%p"
+                  "※ LTV: 규제지역 무주택 40% / 서민실수요자 60% / 생애최초 70%, 한도 flat 6억 (2026-07 대책)"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg_net/10000:.2f} 억",
               help=(
@@ -4727,7 +4761,7 @@ def render_recommend_tab(inputs: dict):
                   f"① LTV {ltv_비규제:.0f}%: 허용 대출 {_ltv_loan_nonreg/10000:.2f}억\n"
                   f"② DSR: {_dsr_str}\n\n"
                   f"※ 부대비용 전 이론 한도 {max_buy_nonreg/10000:.2f}억 → 포함 시 {max_buy_nonreg_net/10000:.2f}억\n"
-                  "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 50%, 한도 cap 없음"
+                  "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 0%(신규 주담대 불가), 한도 cap 없음"
               ))
     if strategy == "🚀 투자수익":
         c6.metric("최고 예상수익률(자기자본)", f"{rec['expected_roi_%'].max():.2f} %")
