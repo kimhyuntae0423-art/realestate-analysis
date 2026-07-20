@@ -203,7 +203,7 @@ def gap_score_backtest(
     area_tol: float = 5.0,
     min_deals: int = 3,
 ) -> GapScoreResult:
-    """갭투자 5요소 점수 vs 실제 매매가 상승률 Spearman ρ.
+    """갭투자 점수(tier_score 80% + activity 20%, recommend.py::_apply_gap_scores) vs 실제 매매가 상승률 Spearman ρ.
 
     점수 산정: as_of 이전 train_months 데이터
     정답지: as_of ~ as_of+test_months 평당가 상승률

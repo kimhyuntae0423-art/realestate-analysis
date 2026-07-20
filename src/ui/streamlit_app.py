@@ -4531,9 +4531,11 @@ def render_recommend_tab(inputs: dict):
     costs_nonreg = _tacm(max_buy_nonreg_net, ownership, first_time)
 
 
-    if use_dsr and dsr_cap_man is not None and dsr_cap_man < 60000:
+    from src.analysis.loan import load_regulations as _load_regs
+    _reg_cap_man = _load_regs().get("loan_cap_man", {}).get("규제", {}).get("tier1_cap_man")
+    if use_dsr and dsr_cap_man is not None and _reg_cap_man is not None and dsr_cap_man < _reg_cap_man:
         st.warning(
-            f"⚠️ DSR 한도({dsr_cap_man/10000:.2f}억)가 LTV 한도(6억)보다 작습니다. "
+            f"⚠️ DSR 한도({dsr_cap_man/10000:.2f}억)가 LTV 한도({_reg_cap_man/10000:.2f}억)보다 작습니다. "
             "실제 대출은 DSR 쪽이 binding 됩니다."
         )
 
@@ -4566,7 +4568,8 @@ def render_recommend_tab(inputs: dict):
             f"- 매수 후 매도까지 보유 (실거주 또는 단순 보유)\n"
             f"- 매월 이자 부담 있음 (≈ 대출액 × 4~5% / 12)\n"
             f"- 종합점수 = **호재({int(catalyst_weight*100)}%)** + **상급지등급({int(tier_weight*100)}%)** + **대장단지({int(prestige_weight*100)}%)** + 과거상승 + 레버리지수익률 + 시드활용\n"
-            f"- 상급지등급: 2022~23 규제지역 해제 순서 기반 (강남3구·용산=100, 서울 비강남=80, 인천/경기=60, 지방=40)\n"
+            f"- 상급지등급: 2022~23 규제지역 해제 순서 기반 5단계 "
+            f"(강남3구·용산=100, 서울 비강남=80, 인천/경기=60, 지방 광역시·경기외곽=40, 대구/대전/창원 등 최초 해제지역=20)\n"
             f"- 대장단지: 시군구 내 평당가 백분위(60%) + 동(dong) 평당가 백분위(40%). 그 지역의 1군 단지에 가산점.\n\n"
             f"📅 **수익률 기간 기준**: 분석기간 {months}개월 → 최근 **{half_mo}개월** vs 이전 **{half_mo}개월** 실거래 평당가 비교\n"
             f"- **예상평가차익·예상자기자본수익률은 연환산이 아닌 {half_mo}개월치 가격 변화율 × 레버리지**\n"
@@ -4604,11 +4607,10 @@ def render_recommend_tab(inputs: dict):
             f"- 자금구조: 자기자본 {seed_eok}억 = **매매가 − 전세보증금(갭)**\n"
             f"- 대출 X (전세보증금이 임차인 부담분) · 매월 이자 부담 없음\n\n"
             f"**종합점수 구성**\n"
-            f"- 전세가율 적정구간 25% — 65~78%가 최적(역U자형). 너무 높으면 역전세 위험\n"
-            f"- 전세가율 상승 추세 20% — 갭이 줄어드는 방향 = 매매전환 신호\n"
-            f"- 상급지 등급 20% — 나중에 팔기 쉬운 지역\n"
-            f"- 갭 레버리지 배수 20% — 매매가÷갭 (적은 돈으로 큰 자산)\n"
-            f"- 거래 활성도 15% — 유동성\n\n"
+            f"- 상급지 등급 80% — 단독 상관관계(ρ=+0.443)가 가장 높아 점수의 대부분을 차지\n"
+            f"- 거래 활성도 20% — 유동성\n"
+            f"- 전세가율·전세가율 상승추세·갭 레버리지 배수는 표시만 되고 점수에는 포함되지 않음 "
+            f"(백테스트에서 역상관 ρ≈-0.33 확인되어 제외)\n\n"
             f"⚠️ **역전세 리스크**: 전세가율 90%↑ 위험 · 83%↑ 또는 전세가 하락 추세 주의"
         )
         rec = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
