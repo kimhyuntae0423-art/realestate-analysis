@@ -265,9 +265,11 @@ def apt_backtest(
         g = g.merge(mkt_df[["region_code", "market_score"]], on="region_code", how="left")
     g["market_score"] = g.get("market_score", pd.Series(50.0, index=g.index)).fillna(50.0)
     # 호재 가산 (catalyst_weight 슬라이더 강도로 region_score에 가산)
+    # recommend.py::recommend_investment_focus()의 실제(2026-05 단순화) 공식과 동일하게 맞춤 —
+    # region_score는 market_score 단독 + 호재 가산 (tier는 섞지 않음, 표시/진단용으로만 별도 유지)
     cw_amp = max(0.0, min(1.0, catalyst_weight))
     g["region_score"] = (
-        g[["tier", "market_score"]].max(axis=1) + g["catalyst"] * cw_amp
+        g["market_score"] + g["catalyst"] * cw_amp
     ).clip(upper=100)
 
     # ── 선행 시그널 (학습 시점 기준) ──
@@ -303,19 +305,18 @@ def apt_backtest(
     g["prestige_score"] = g.get("prestige_score",
         pd.Series(50.0, index=g.index)).fillna(50.0)
 
-    # 호재는 region_score에 이미 가산됨. score formula에서 별도 catalyst rank 항 제거.
-    tw = tier_weight
-    pw = prestige_weight
-    rest = max(0.0, 1.0 - tw - pw)
+    # recommend.py::recommend_investment_focus()의 실제 운영 공식과 동일하게 맞춤 (2026-05 단순화 반영).
+    # rs_score·jeonse_accel·supply_pressure·population·train_growth·recent_deals는 점수 산식에서
+    # 제외됨(ρ 약하거나 역상관) — 위에서 계속 merge해서 component_corr 진단용으로만 남긴다.
+    # 호재는 region_score에 이미 가산됨. score formula에서 별도 catalyst rank 항 없음.
+    tw = max(0.0, min(1.0, tier_weight))       # region_score 비중 (production default 0.7)
+    pw = max(0.0, min(1.0, prestige_weight))   # prestige_score 비중 (production default 0.3)
+    if tw + pw <= 0:
+        tw, pw = 0.7, 0.3
+    total = tw + pw
     g["score"] = (
-        g["region_score"].rank(pct=True) * tw
-        + g["prestige_score"].rank(pct=True) * pw
-        + g["rs_score"].rank(pct=True) * (rest * 0.30)
-        + g["jeonse_accel_score"].rank(pct=True) * (rest * 0.25)
-        + g["supply_pressure_score"].rank(pct=True) * (rest * 0.10)
-        + g["population_score"].rank(pct=True) * (rest * 0.10)
-        + g["train_growth"].rank(pct=True) * (rest * 0.15)
-        + g["recent_deals"].rank(pct=True) * (rest * 0.10)
+        g["region_score"].rank(pct=True) * (tw / total)
+        + g["prestige_score"].rank(pct=True) * (pw / total)
     ) * 100
 
     test_mid = as_of + timedelta(days=30 * (test_months // 2))
@@ -345,7 +346,8 @@ def apt_backtest(
         top10_hit=_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)),
         top20_hit=_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)),
         component_corr=component_corr,
-        weights={"catalyst_boost": catalyst_weight, "tier": tw, "prestige": pw, "rest": rest},
+        weights={"catalyst_boost": catalyst_weight,
+                 "region_score": round(tw / total, 3), "prestige": round(pw / total, 3)},
     )
 
 
