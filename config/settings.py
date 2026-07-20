@@ -42,3 +42,12 @@ MOLIT_ENDPOINTS = {
 REQUEST_TIMEOUT = 20
 REQUEST_RETRY = 3
 REQUEST_SLEEP = 0.3
+
+# ── 투자수익 전략 가중치 기본값 (recommend.py::recommend_investment_focus) ──
+# 2026-07-20 grid_search_apt(n=6251) 검증: catalyst=0.0이 근소 우위(spearman 0.581 vs
+# 0.573)이나 오차범위 수준이고 호재 수동발굴 용도가 있어 0.10 유지. region_score:prestige는
+# 0.70:0.30 근방(0.71~0.86 구간)이 최적 — 지금 기본값이 이미 그 안에 있어 그대로 채택.
+# streamlit_app.py 슬라이더·backtest.py 기본값·recommend.py 기본값이 전부 이 상수를 쓴다.
+DEFAULT_CATALYST_WEIGHT = 0.10
+DEFAULT_TIER_WEIGHT = 0.70      # 파라미터명은 tier_weight이지만 실제로는 region_score(시세+호재) 비중
+DEFAULT_PRESTIGE_WEIGHT = 0.30

@@ -15,7 +15,9 @@ from functools import lru_cache
 from pathlib import Path
 import pandas as pd
 
-from config.settings import ROOT
+from config.settings import (
+    ROOT, DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+)
 from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.loan import get_ltv_pct, get_zone, vectorized_loan_equity
@@ -597,9 +599,9 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
                                  ownership: str = "무주택",
                                  first_time_buyer: bool = False,
                                  use_loan: bool = True,
-                                 catalyst_weight: float = 0.10,
-                                 tier_weight: float = 0.70,
-                                 prestige_weight: float = 0.30,
+                                 catalyst_weight: float = DEFAULT_CATALYST_WEIGHT,
+                                 tier_weight: float = DEFAULT_TIER_WEIGHT,
+                                 prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                                  dsr_cap_man: float | None = None) -> pd.DataFrame:
     """🚀 투자수익 추구. 호재 + 선행지표 + 레버리지 + 상급지 등급으로 추천.
 

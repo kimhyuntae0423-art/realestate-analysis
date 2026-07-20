@@ -16,7 +16,10 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-from config.settings import ROOT as APP_ROOT, DATABASE_URL
+from config.settings import (
+    ROOT as APP_ROOT, DATABASE_URL,
+    DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+)
 ROOT = APP_ROOT
 from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.price_trend import monthly_summary, apt_summary, yoy_change
@@ -117,8 +120,8 @@ def _cached_outright(seed_man: int, months: int, min_deals: int,
 def _cached_investment(seed_man: int, months: int, min_deals: int,
                         ownership: str, first_time: bool, use_loan: bool,
                         catalyst_weight: float,
-                        tier_weight: float = 0.6,
-                        prestige_weight: float = 0.10,
+                        tier_weight: float = DEFAULT_TIER_WEIGHT,
+                        prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                         dsr_cap_man: float | None = None) -> pd.DataFrame:
     return recommend_investment_focus(
         seed_man, months=months, min_trade_deals=min_deals,
@@ -1196,19 +1199,19 @@ def page_invest():
             months = c2.slider("분석 기간 (개월)", 3, 36, 24,
                                  help="과거 N개월 데이터 사용")
             catalyst_weight = c3.slider(
-                "호재 가중치", 0.0, 0.5, 0.10, 0.05,
+                "호재 가중치", 0.0, 0.5, DEFAULT_CATALYST_WEIGHT, 0.05,
                 help="호재 점수를 등급에 가산하는 강도. 0=호재 무시, 0.3=호재 100점 지역이 tier +30점 효과. "
-                     "백테스트: 0.10이 균형, 0.30이면 Top10 적중률↑ 대신 전체 순위 ρ↓.",
+                     "grid_search_apt(n=6251) 검증: 0.10이 균형, 0.0이 근소 우위(오차범위 수준).",
             )
 
             c4, c5, c6 = st.columns(3)
             min_deals = c4.slider("최소 매매 거래수", 1, 500, 50, step=10)
             top_n = c5.slider("추천 단지 개수", 10, 200, 50)
             tier_weight = c6.slider(
-                "지역(평당가) 가중치", 0.0, 1.0, 0.7, 0.05,
+                "지역(평당가) 가중치", 0.0, 1.0, DEFAULT_TIER_WEIGHT, 0.05,
                 help="시군구 중위 평당가 백분위가 점수에 차지하는 비중 (나머지는 대장단지 가중치). "
                      "예: 0.7이면 '동네가 좋은지' 70%, '동네 내 대장 단지인지' 30%. "
-                     "백테스트 권장: 0.7.",
+                     "grid_search_apt(n=6251) 검증 최적 구간: 0.7 근방.",
             )
 
             c7, c8, c9 = st.columns(3)
@@ -1229,9 +1232,9 @@ def page_invest():
                 )
             with c9:
                 prestige_weight = st.slider(
-                    "대장단지 가중치", 0.0, 1.0, 0.30, 0.05,
+                    "대장단지 가중치", 0.0, 1.0, DEFAULT_PRESTIGE_WEIGHT, 0.05,
                     help="시군구 내 단지 평당가 백분위가 점수에 차지하는 비중. "
-                         "지역 가중치와 합해 100% 정규화. 백테스트 권장: 0.30.",
+                         "지역 가중치와 합해 100% 정규화. grid_search_apt(n=6251) 검증 최적 구간: 0.3 근방.",
                 )
 
             submitted = st.form_submit_button(
@@ -1577,10 +1580,12 @@ def page_strategy_backtest():
             )
 
         c1_inv, c2_inv = st.columns(2)
-        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, 0.1, 0.05, key="bt_inv_cw",
+        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, DEFAULT_CATALYST_WEIGHT, 0.05, key="bt_inv_cw",
                                help="개발·교통 호재의 점수 반영 강도. 높일수록 호재 지역이 상위권 차지")
-        tw_inv = c2_inv.slider("상급지 가중치", 0.0, 1.0, 0.3, 0.05, key="bt_inv_tw",
-                               help="강남·마포 등 상급지 보너스 강도. 현재 최적값은 0.3~0.6")
+        # apt_backtest에서는 이 값이 tier가 아니라 region_score(시세+호재) 가중치로 쓰임 — 의미가 region_backtest와 다름
+        tw_inv = c2_inv.slider("지역/상급지 가중치", 0.0, 1.0, DEFAULT_TIER_WEIGHT, 0.05, key="bt_inv_tw",
+                               help="단지 백테스트=region_score(시세) 가중치, 시군구 백테스트=상급지등급 가중치. "
+                                    "grid_search_apt(n=6251) 검증 최적 구간: 0.7 근방(0.71~0.86).")
 
         if st.button("▶ 투자수익 재실행", key="run_invest"):
             with st.spinner("계산 중..."):
@@ -2823,8 +2828,8 @@ def page_portfolio_strategy():
                     rec_df = _cached_investment(
                         seed_man_port, rec_months, rec_min_deals,
                         "무주택", False, True,
-                        catalyst_weight=0.10, tier_weight=0.7,
-                        prestige_weight=0.10, dsr_cap_man=dsr_cap_man_port,
+                        catalyst_weight=DEFAULT_CATALYST_WEIGHT, tier_weight=DEFAULT_TIER_WEIGHT,
+                        prestige_weight=DEFAULT_PRESTIGE_WEIGHT, dsr_cap_man=dsr_cap_man_port,
                     )
                 elif rec_strategy == "갭투자":
                     rec_df = _cached_gap(
@@ -4487,8 +4492,8 @@ def render_recommend_tab(inputs: dict):
     min_deals = inputs["min_deals"]
     top_n = inputs["top_n"]
     catalyst_weight = inputs["catalyst_weight"]
-    tier_weight = inputs.get("tier_weight", 0.6)
-    prestige_weight = inputs.get("prestige_weight", 0.10)
+    tier_weight = inputs.get("tier_weight", DEFAULT_TIER_WEIGHT)
+    prestige_weight = inputs.get("prestige_weight", DEFAULT_PRESTIGE_WEIGHT)
     area_range = inputs.get("area_range")
     year_range = inputs.get("year_range")
     submitted = inputs["submitted"]
@@ -4782,9 +4787,11 @@ def render_recommend_tab(inputs: dict):
             f"비규제지역 최대 **{max_buy_nonreg_net/10000:.2f}억** 이내 매물이 "
             "1건 이상 있는 지역만 표시."
         )
+        _tw_norm = tier_weight / max(tier_weight + prestige_weight, 1e-9)
+        _pw_norm = prestige_weight / max(tier_weight + prestige_weight, 1e-9)
         st.caption(
-            f"종합점수 = 매수심리×{int((1-tier_weight)*60)}% + 상급지등급×{int(tier_weight*100)}% + 호재×{int((1-tier_weight)*40)}%. "
-            "상급지 가중치 슬라이더로 가산점 비중 조절."
+            f"종합점수 = 지역점수(시세+호재)×{int(_tw_norm*100)}% + 대장단지×{int(_pw_norm*100)}%. "
+            "지역/대장단지 가중치 슬라이더로 비중 조절 (recommend.py::recommend_investment_focus 실제 공식)."
         )
 
         sent_df = _cached_region_sentiment()

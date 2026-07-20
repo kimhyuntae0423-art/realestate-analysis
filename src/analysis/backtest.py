@@ -22,7 +22,9 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from config.settings import ROOT
+from config.settings import (
+    ROOT, DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+)
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import (
     manual_catalyst_score, region_tier_score, _bucketize,
@@ -234,16 +236,20 @@ def region_backtest(
 
 # ── 단지 백테스트 ─────────────────────────────────────────────────
 
-def apt_backtest(
+def _apt_backtest_base(
     as_of: date | None = None,
     train_months: int = 12,
     test_months: int = 12,
     min_deals: int = 3,
-    catalyst_weight: float = 0.10,
-    tier_weight: float = 0.60,
-    prestige_weight: float = 0.10,
     area_tol: float = 5.0,
-) -> BacktestResult:
+) -> pd.DataFrame:
+    """apt_backtest의 가중치-무관 부분(신호 계산 + 정답지 merge)만 한 번 계산.
+
+    grid_search_apt가 가중치 조합마다 이 무거운 계산을 반복하지 않도록 분리했다
+    (2026-07-20). catalyst/tier/market/rs/jeonse_accel/supply_pressure/population/
+    prestige/train_growth/actual_growth를 전부 포함한 df를 반환하며, region_score와
+    score는 가중치에 따라 달라지므로 여기서 계산하지 않는다.
+    """
     today = date.today()
     if as_of is None:
         as_of = _months_ago(today, test_months)
@@ -264,13 +270,6 @@ def apt_backtest(
     if not mkt_df.empty:
         g = g.merge(mkt_df[["region_code", "market_score"]], on="region_code", how="left")
     g["market_score"] = g.get("market_score", pd.Series(50.0, index=g.index)).fillna(50.0)
-    # 호재 가산 (catalyst_weight 슬라이더 강도로 region_score에 가산)
-    # recommend.py::recommend_investment_focus()의 실제(2026-05 단순화) 공식과 동일하게 맞춤 —
-    # region_score는 market_score 단독 + 호재 가산 (tier는 섞지 않음, 표시/진단용으로만 별도 유지)
-    cw_amp = max(0.0, min(1.0, catalyst_weight))
-    g["region_score"] = (
-        g["market_score"] + g["catalyst"] * cw_amp
-    ).clip(upper=100)
 
     # ── 선행 시그널 (학습 시점 기준) ──
     keys = ["region_code", "apt_name", "area_bucket"]
@@ -305,20 +304,6 @@ def apt_backtest(
     g["prestige_score"] = g.get("prestige_score",
         pd.Series(50.0, index=g.index)).fillna(50.0)
 
-    # recommend.py::recommend_investment_focus()의 실제 운영 공식과 동일하게 맞춤 (2026-05 단순화 반영).
-    # rs_score·jeonse_accel·supply_pressure·population·train_growth·recent_deals는 점수 산식에서
-    # 제외됨(ρ 약하거나 역상관) — 위에서 계속 merge해서 component_corr 진단용으로만 남긴다.
-    # 호재는 region_score에 이미 가산됨. score formula에서 별도 catalyst rank 항 없음.
-    tw = max(0.0, min(1.0, tier_weight))       # region_score 비중 (production default 0.7)
-    pw = max(0.0, min(1.0, prestige_weight))   # prestige_score 비중 (production default 0.3)
-    if tw + pw <= 0:
-        tw, pw = 0.7, 0.3
-    total = tw + pw
-    g["score"] = (
-        g["region_score"].rank(pct=True) * (tw / total)
-        + g["prestige_score"].rank(pct=True) * (pw / total)
-    ) * 100
-
     test_mid = as_of + timedelta(days=30 * (test_months // 2))
     test_growth = _apt_price_growth(as_of, test_mid, test_end,
                                      area_tol=area_tol, min_deals=min_deals)
@@ -326,14 +311,43 @@ def apt_backtest(
         raise ValueError("검증 윈도우 데이터 부족")
     test_growth = test_growth.rename(columns={"growth_%": "actual_growth"})
     g = g.merge(test_growth[keys + ["actual_growth"]], on=keys, how="inner")
+    return g
+
+
+def _apt_backtest_score(
+    g: pd.DataFrame,
+    catalyst_weight: float = DEFAULT_CATALYST_WEIGHT,
+    tier_weight: float = DEFAULT_TIER_WEIGHT,
+    prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
+) -> BacktestResult:
+    """_apt_backtest_base() 결과에 가중치를 적용해 점수·지표만 (재)계산 — 값싼 연산.
+
+    recommend.py::recommend_investment_focus()의 실제(2026-05 단순화) 공식과 동일:
+    region_score(=market_score 단독 + 호재 가산, tier는 안 섞음) × tw
+    + prestige_score × pw, tw/pw는 합이 1이 되게 정규화.
+    rs_score·jeonse_accel·supply_pressure·population·train_growth는 점수 산식에서
+    제외됨(ρ 약하거나 역상관) — component_corr 진단용으로만 유지.
+    """
+    cw_amp = max(0.0, min(1.0, catalyst_weight))
+    region_score = (g["market_score"] + g["catalyst"] * cw_amp).clip(upper=100)
+
+    tw = max(0.0, min(1.0, tier_weight))
+    pw = max(0.0, min(1.0, prestige_weight))
+    if tw + pw <= 0:
+        tw, pw = 0.7, 0.3
+    total = tw + pw
+    score = (
+        region_score.rank(pct=True) * (tw / total)
+        + g["prestige_score"].rank(pct=True) * (pw / total)
+    ) * 100
 
     n = len(g)
-    rho = _spearman(g["score"], g["actual_growth"])
+    rho = _spearman(score, g["actual_growth"])
     component_corr = {
         "catalyst": _spearman(g["catalyst"], g["actual_growth"]),
         "tier": _spearman(g["tier"], g["actual_growth"]),
         "market": _spearman(g["market_score"], g["actual_growth"]),
-        "region_score": _spearman(g["region_score"], g["actual_growth"]),
+        "region_score": _spearman(region_score, g["actual_growth"]),
         "prestige": _spearman(g["prestige_score"], g["actual_growth"]),
         "train_growth": _spearman(g["train_growth"], g["actual_growth"]),
         "rs_score": _spearman(g["rs_score"], g["actual_growth"]),
@@ -343,12 +357,26 @@ def apt_backtest(
     }
     return BacktestResult(
         scope="apt", n=n, spearman=rho,
-        top10_hit=_topn_hit(g["score"], g["actual_growth"], max(10, n // 10)),
-        top20_hit=_topn_hit(g["score"], g["actual_growth"], max(20, n // 5)),
+        top10_hit=_topn_hit(score, g["actual_growth"], max(10, n // 10)),
+        top20_hit=_topn_hit(score, g["actual_growth"], max(20, n // 5)),
         component_corr=component_corr,
         weights={"catalyst_boost": catalyst_weight,
                  "region_score": round(tw / total, 3), "prestige": round(pw / total, 3)},
     )
+
+
+def apt_backtest(
+    as_of: date | None = None,
+    train_months: int = 12,
+    test_months: int = 12,
+    min_deals: int = 3,
+    catalyst_weight: float = DEFAULT_CATALYST_WEIGHT,
+    tier_weight: float = DEFAULT_TIER_WEIGHT,
+    prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
+    area_tol: float = 5.0,
+) -> BacktestResult:
+    g = _apt_backtest_base(as_of, train_months, test_months, min_deals, area_tol)
+    return _apt_backtest_score(g, catalyst_weight, tier_weight, prestige_weight)
 
 
 # ── 가중치 그리드 서치 ─────────────────────────────────────────────
@@ -379,21 +407,33 @@ def grid_search_region(
 def grid_search_apt(
     cw_grid: Iterable[float] = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6),
     tw_grid: Iterable[float] = (0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6),
+    pw_grid: Iterable[float] = (0.1, 0.2, 0.3, 0.4, 0.5),
     **kwargs,
 ) -> pd.DataFrame:
+    """apt_backtest 가중치 그리드 서치.
+
+    apt_backtest의 실제 점수식은 region_score×(tw/(tw+pw)) + prestige_score×(pw/(tw+pw))
+    로 정규화되므로 (region_backtest와 달리) cw+tw+pw가 1을 넘어도 무방하다 — "rest"
+    개념 자체가 없다(2026-07-20 apt_backtest 죽은 공식 제거 때 같이 정리).
+
+    가중치와 무관한 무거운 신호 계산(_apt_backtest_base)은 그리드 전체에서 딱 한 번만
+    돌리고, 조합마다는 값싼 재가중치(_apt_backtest_score)만 반복한다 — 245개 조합을
+    245번 처음부터 계산하면 수 시간 걸리던 것을 몇 분으로 단축(2026-07-20).
+    """
+    base = _apt_backtest_base(**kwargs)
     rows = []
     for cw in cw_grid:
         for tw in tw_grid:
-            if cw + tw > 1.0:
-                continue
-            try:
-                r = apt_backtest(catalyst_weight=cw, tier_weight=tw, **kwargs)
-            except ValueError:
-                continue
-            rows.append({
-                "catalyst_w": cw, "tier_w": tw, "rest_w": round(1 - cw - tw, 2),
-                "n": r.n, "spearman": round(r.spearman, 3),
-                "top10_hit": round(r.top10_hit, 3),
-                "top20_hit": round(r.top20_hit, 3),
-            })
+            for pw in pw_grid:
+                if tw + pw <= 0:
+                    continue
+                r = _apt_backtest_score(base, catalyst_weight=cw,
+                                         tier_weight=tw, prestige_weight=pw)
+                rows.append({
+                    "catalyst_w": cw, "region_score_w_norm": round(tw / (tw + pw), 2),
+                    "prestige_w_norm": round(pw / (tw + pw), 2),
+                    "n": r.n, "spearman": round(r.spearman, 3),
+                    "top10_hit": round(r.top10_hit, 3),
+                    "top20_hit": round(r.top20_hit, 3),
+                })
     return pd.DataFrame(rows).sort_values("spearman", ascending=False).reset_index(drop=True)
