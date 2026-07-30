@@ -35,9 +35,9 @@ def export_monthly_summary():
             continue
         df["ym"] = pd.to_datetime(df["deal_date"]).dt.to_period("M").astype(str)
         monthly = df.groupby("ym").agg(
-            avg_price=("price_man", "mean"),
-            median_price=("price_man", "median"),
-            count=("price_man", "count"),
+            avg_price=("deal_amount", "mean"),
+            median_price=("deal_amount", "median"),
+            count=("deal_amount", "count"),
         ).reset_index()
         monthly["region_code"] = code
         monthly["region_name"] = name
@@ -59,9 +59,9 @@ def export_apt_summary():
         if df.empty:
             continue
         agg = df.groupby("apt_name").agg(
-            avg_price=("price_man", "mean"),
-            count=("price_man", "count"),
-            avg_area=("exclusive_area", "mean"),
+            avg_price=("deal_amount", "mean"),
+            count=("deal_amount", "count"),
+            avg_area=("area_m2", "mean"),
         ).reset_index()
         agg["region_code"] = code
         agg["region_name"] = name
@@ -83,8 +83,8 @@ def export_gap_summary():
         rent = fetch_rents_df(region_code=code, date_from=date_from, jeonse_only=True)
         if trade.empty or rent.empty:
             continue
-        t = trade.groupby("apt_name")["price_man"].mean().rename("trade_price")
-        r = rent.groupby("apt_name")["deposit_man"].mean().rename("jeonse_price")
+        t = trade.groupby("apt_name")["deal_amount"].mean().rename("trade_price")
+        r = rent.groupby("apt_name")["deposit"].mean().rename("jeonse_price")
         merged = pd.concat([t, r], axis=1).dropna()
         if merged.empty:
             continue
