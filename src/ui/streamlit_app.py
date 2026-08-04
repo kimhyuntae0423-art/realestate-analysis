@@ -33,7 +33,6 @@ from src.analysis.recommend import (
 from src.analysis.forecast import forecast_monthly_price
 from src.analysis.supply import supply_for_region, supply_pressure_score, supply_table
 from src.analysis.location import is_kakao_ready, enrich_with_location
-from src.analysis.costs import total_acquisition_cost_man, best_policy_loan
 from src.analysis.scenario import project_5y_scenarios, stress_test
 from src.analysis.macro import macro_dashboard
 from src.analysis.fair_value import (
@@ -42,8 +41,7 @@ from src.analysis.fair_value import (
     enrich_with_fair_value,
 )
 from src.analysis.loan import (
-    dsr_loan_capacity_man, max_purchase_man as calc_max_purchase,
-    loan_capacity_man, get_ltv_pct, get_zone,
+    dsr_loan_capacity_man, get_ltv_pct, get_zone,
 )
 try:
     from src.analysis.portfolio_strategy import (
@@ -900,7 +898,9 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     kb_ratio_pct = kbc2.slider(
         "KB시세/실거래가 (%)", min_value=75, max_value=100, value=90, step=1,
         key=f"{key_prefix}_kb",
-        help="직접 입력이 없을 때 일괄 보정값. 통상 90~97%.",
+        help="직접 입력이 없을 때 일괄 보정값. 기본 90%는 실제 범위(통상 90~97%)의 "
+             "보수적인 하한값 — 매물 미정 상태에서 대출한도를 낙관적으로 부풀리지 않기 위함. "
+             "특정 매물의 실제 KB시세를 알면 왼쪽에 직접 입력하세요.",
     )
     kb_ratio = kb_ratio_pct / 100
     kb_direct_man = int(kb_direct_eok * 10000) if kb_direct_eok > 0 else 0
@@ -933,9 +933,9 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
 
 
 def page_my_capacity():
-    """💰 나의 한도 — 시드+대출+정책대출+부대비용 시뮬."""
+    """💰 나의 한도 — 시드+대출+정책대출+부대비용 시뮬. 특정 매물 입력 전엔 계산하지 않음."""
     st.title("💰 나의 매수 한도")
-    st.caption("자기자본·소득·LTV·DSR·정책대출·부대비용을 모두 반영한 최대 매수가")
+    st.caption("관심 매물의 매매가·KB시세·지역을 입력하면 LTV·한도캡·DSR을 반영한 실제 대출 한도를 계산합니다")
 
     with st.container(border=True):
         st.markdown("##### 입력")
@@ -945,18 +945,15 @@ def page_my_capacity():
         st.info(f"💳 DSR 대출 한도 산정: **{p['dsr_cap_man']/10000:.2f} 억** "
                 f"(연소득 {p['annual_income']:,}만 / 금리 {p['interest_rate']}% / 스트레스+3%)")
 
-    # 헤드라인 카드
-    _render_headline_card(p, p["seed_man"], p["dsr_cap_man"])
-
-    # 특정 매물 대출 계산기
+    # 특정 매물 대출 계산기 (매매가 미입력 시 계산 안 함)
     _render_loan_simulator(p)
 
     # 추가 안내
     st.markdown("---")
     st.markdown("### ℹ️ 어떻게 활용하나요?")
     st.markdown(
-        "- **💰 나의 한도** 페이지: 본인 자금으로 어디까지 살 수 있는지 한눈에 파악\n"
-        "- **🚀 투자 추천** 페이지: 위 한도 내 실제 매물 후보 검색\n"
+        "- **💰 나의 한도** 페이지: 관심 매물 하나를 정해 실제 대출 한도를 정밀 계산\n"
+        "- **🚀 투자 추천** 페이지: 예산 내 실제 매물 후보 검색 (매물 미정 상태에서도 탐색 가능)\n"
         "- **📊 지역 분석** 페이지: 관심 지역 시세 추이·갭·수익률 등 깊이 분석\n"
         "- **🗺️ 지도**: 전국 평당가·거래량 시각적 비교\n"
         "- **🚦 시장 진단**: 매크로 환경 · 지역별 매수심리"
@@ -1250,119 +1247,6 @@ def page_invest():
         submitted=submitted,
     )
     render_recommend_tab(inputs)
-
-
-def _invest_sidebar_inputs_UNUSED() -> dict:
-    """미사용. _personal_inputs_block으로 대체됨."""
-    with st.sidebar:
-        st.markdown("### 💎 투자 조건")
-        months = st.slider(
-            "분석 기간 (개월)", 3, 36, 24, key="i_months",
-            help="과거 N개월 데이터를 분석에 사용",
-        )
-
-        with st.form("rec_form", clear_on_submit=False):
-            seed_eok = st.number_input(
-                "자기자본 시드 (억원)", min_value=0.1, max_value=200.0,
-                value=5.0, step=0.5, format="%.1f",
-            )
-            ownership = st.selectbox(
-                "보유 주택 수",
-                ["무주택", "서민실수요자", "1주택(처분조건부)", "1주택(미처분)", "다주택"],
-            )
-            cc1, cc2 = st.columns(2)
-            first_time = cc1.checkbox("생애최초", help="LTV 보너스")
-            use_loan = cc2.checkbox(
-                "대출 사용", value=True,
-                help="갭투자는 무관 (전세=임차인 부담)",
-            )
-            strategy = st.selectbox(
-                "투자 전략",
-                ["🔀 전략 비교", "🚀 투자수익", "갭투자", "임대수익", "자가매입"],
-                index=0,
-                help="🔀 전략 비교 = 3전략 동시 실행 후 교집합 하이라이트",
-            )
-            with st.expander("💳 DSR + KB시세 — 정확한 대출 한도"):
-                use_dsr = st.checkbox(
-                    "DSR 적용", value=False,
-                    help="체크 시 LTV·한도cap·DSR 모두 적용. 미체크 시 LTV·한도cap만"
-                )
-                annual_income = st.number_input(
-                    "연 소득 (만원)", min_value=0, max_value=100000,
-                    value=6000, step=500,
-                    help="세전 연소득"
-                )
-                existing_debt_monthly = st.number_input(
-                    "기존 부채 월 원리금 (만원)", min_value=0, max_value=2000,
-                    value=0, step=10,
-                    help="신용대출/자동차/카드 등 기존 월 원리금 합"
-                )
-                interest_rate = st.slider(
-                    "대출 금리 (%)", 2.0, 8.0, 4.5, 0.1,
-                    help="신청 시점 명목 금리"
-                )
-                dsr_limit = st.slider("DSR 한도 (%)", 30, 50, 40,
-                                        help="1금융 40, 2금융 50")
-                kb_ratio_pct = st.slider(
-                    "KB시세 / 실거래가 (%)", 75, 100, 95, step=1,
-                    help="은행은 KB시세 기준으로 LTV 계산. KB부동산 앱에서 단지별 확인 가능. 통상 90~97%.",
-                )
-
-            with st.expander("👤 인적 사항 (선택)"):
-                age = st.number_input("나이", min_value=20, max_value=80, value=35)
-                family_size = st.number_input("부양가족 수", min_value=0, max_value=10, value=0)
-                residence_type = st.selectbox(
-                    "거주방식", ["실거주", "전세임대"],
-                    help="전세임대는 다주택 보유시 양도세에 영향"
-                )
-                risk_profile = st.selectbox(
-                    "투자 성향", ["중립", "공격적", "보수적"],
-                    help="추천 점수에 ±15% 가중치 보정 (현재는 표시만)"
-                )
-                commute_hubs = st.multiselect(
-                    "출퇴근 거점 (선택)",
-                    ["강남", "판교", "광화문", "여의도", "송도", "수원", "화성", "평택", "천안"],
-                    help="추후 거점 거리 필터링용"
-                )
-
-            with st.expander("⚙️ 고급 필터"):
-                min_deals = st.slider("최소 매매 거래수", 1, 500, 50, step=10)
-                top_n = st.slider("추천 단지 개수", 10, 200, 50)
-                catalyst_weight = st.slider(
-                    "호재 가중치", 0.0, 1.0, 0.0, 0.05,
-                    help="0=과거 모멘텀만 / 1=호재만 (백테스트 권장: 0)",
-                )
-                tier_weight = st.slider(
-                    "상급지 가중치", 0.0, 1.0, 0.6, 0.05,
-                    help="규제지역 해제 순서 기반 등급 가산점. "
-                         "강남3구·용산=100점, 서울 비강남=80, 인천/경기=60, 지방 광역시=40. "
-                         "슬라이더 하나로 전 지역 가중치 동시 조절.",
-                )
-            submitted = st.form_submit_button(
-                "🔍 검색", type="primary", width='stretch',
-            )
-
-        st.divider()
-        if st.button("🔄 캐시 비우기", width='stretch', key="i_clear",
-                     help="새 데이터 수집 후 또는 강제 재계산 시"):
-            st.cache_data.clear()
-            st.success("캐시 비움. 다음 검색은 재실행됩니다.")
-
-    return dict(
-        months=months,
-        seed_eok=seed_eok, ownership=ownership, first_time=first_time,
-        use_loan=use_loan, strategy=strategy,
-        min_deals=min_deals, top_n=top_n, catalyst_weight=catalyst_weight,
-        tier_weight=tier_weight,
-        submitted=submitted,
-        use_dsr=use_dsr, annual_income=annual_income,
-        existing_debt_monthly=existing_debt_monthly,
-        interest_rate=interest_rate, dsr_limit=dsr_limit,
-        age=age, family_size=family_size,
-        residence_type=residence_type, risk_profile=risk_profile,
-        commute_hubs=commute_hubs,
-        kb_ratio=kb_ratio_pct / 100, kb_ratio_pct=kb_ratio_pct,
-    )
 
 
 def chart_monthly_price(monthly: pd.DataFrame, label: str):
@@ -3321,7 +3205,7 @@ def _render_loan_simulator(p: dict):
         c1, c2, c3 = st.columns(3)
         price_eok = c1.number_input(
             "매매가 (억원)", min_value=0.0, max_value=300.0,
-            value=10.0, step=0.5, format="%.1f", key="sim_price",
+            value=0.0, step=0.5, format="%.1f", key="sim_price",
         )
         kb_eok = c2.number_input(
             "KB시세 (억원)", min_value=0.0, max_value=300.0,
@@ -3458,115 +3342,6 @@ def _render_loan_simulator(p: dict):
         "이 분석은 의사결정 보조 자료입니다. "
         "실제 대출은 은행별 내부 심사 기준·감정가 차이에 따라 달라질 수 있습니다."
     )
-
-
-def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None):
-    """최대 매수가 헤드라인 카드. 강남구 기준 예시 + 일반 비규제 기준 비교."""
-    ownership = inputs["ownership"]
-    first_time = inputs["first_time"]
-    kb_ratio = inputs.get("kb_ratio", 1.0)
-    # 정책대출은 부부합산 소득 기준
-    household_income = inputs.get("household_income", inputs.get("annual_income", 0))
-    is_couple = inputs.get("is_couple", False)
-    is_newlywed = inputs.get("is_newlywed", False)
-    children = inputs.get("children", 0)
-
-    # 규제/비규제 양쪽 매수가능 최고가 (KB시세 비율 반영)
-    try:
-        p_reg = calc_max_purchase(
-            float(seed_man), "11680", str(ownership), bool(first_time),
-            float(dsr_cap_man) if dsr_cap_man is not None else None,
-            float(kb_ratio),
-        )
-        p_nonreg = calc_max_purchase(
-            float(seed_man), "99999", str(ownership), bool(first_time),
-            float(dsr_cap_man) if dsr_cap_man is not None else None,
-            float(kb_ratio),
-        )
-    except Exception as _e:
-        st.error(
-            f"**대출 계산 오류** — {type(_e).__name__}: {_e}\n\n"
-            f"seed={seed_man!r} ({type(seed_man).__name__}), "
-            f"ownership={ownership!r}, first_time={first_time!r}, "
-            f"dsr_cap={dsr_cap_man!r} ({type(dsr_cap_man).__name__}), "
-            f"kb_ratio={kb_ratio!r} ({type(kb_ratio).__name__})"
-        )
-        return
-
-    # 부대비용 (규제지역 기준)
-    costs = total_acquisition_cost_man(p_reg, ownership, first_time)
-    actual_p_reg = p_reg - costs["total"]
-    actual_p_nonreg_costs = total_acquisition_cost_man(p_nonreg, ownership, first_time)
-    actual_p_nonreg = p_nonreg - actual_p_nonreg_costs["total"]
-
-    # 정책대출 적격 (부부합산·신혼·자녀 반영)
-    policy = best_policy_loan(
-        household_income, p_reg, ownership,
-        is_couple=is_couple, is_newlywed=is_newlywed,
-        children=children, first_time_buyer=first_time,
-    )
-
-    st.markdown("## 💰 최대 매수 가능 시뮬레이션")
-
-    # kb_direct_man 입력 시 아래 계산기와 연동 안내
-    kb_direct_man = inputs.get("kb_direct_man", 0)
-    if kb_direct_man > 0:
-        st.info(
-            f"💡 KB시세 **{kb_direct_man/10000:.1f}억** 입력 반영 → "
-            "아래 '특정 매물 대출 계산기'에 자동 적용됩니다."
-        )
-
-    cc1, cc2 = st.columns([1, 1])
-    with cc1:
-        st.markdown("##### 🏙️ 규제지역 (서울25 + 경기15)",
-                    help=(
-                        "**서울** — 25개구 전체\n\n"
-                        "**경기(기존 12곳)** — "
-                        "수원시(장안·팔달·영통) · 성남시(수정·중원·분당) · "
-                        "안양시(동안) · 광명시 · 과천시 · 하남시 · 용인시(처인·수지)\n\n"
-                        "**경기(신규 3곳, 2026-07)** — "
-                        "화성시 동탄구 · 용인시 기흥구 · 구리시 "
-                        "(토지거래허가구역 동시 지정)\n\n"
-                        "※ 2025-10-15 대책 + 2026-07 대책 기준, 2026-12-31까지 한시 적용"
-                    ))
-        st.metric("최대 매수가", f"{actual_p_reg/10000:.2f} 억",
-                  help=f"부대비용 {costs['total']/10000:.2f}억 차감 후 실매수가")
-        loan_reg = loan_capacity_man(p_reg, "11680", ownership, first_time, dsr_cap_man,
-                                      kb_price_man=p_reg * kb_ratio)
-        st.caption(
-            f"매매가 {p_reg/10000:.2f}억 = 시드 {seed_man/10000:.1f}억 + 대출 {loan_reg/10000:.2f}억 - 부대비 {costs['total']/10000:.2f}억"
-        )
-        st.caption(
-            f"취득세 {costs['acquisition_tax']/10000:.2f}억 · "
-            f"중개 {costs['broker_fee']/10000:.2f}억 · "
-            f"등기·이사 {costs['registration_etc']/10000:.2f}억"
-        )
-
-    with cc2:
-        st.markdown("##### 🏞️ 비규제지역 (수도권 외곽 등)")
-        st.metric("최대 매수가", f"{actual_p_nonreg/10000:.2f} 억",
-                  help="LTV 70%로 더 큰 레버리지 가능")
-        loan_nonreg = loan_capacity_man(p_nonreg, "99999", ownership, first_time, dsr_cap_man,
-                                         kb_price_man=p_nonreg * kb_ratio)
-        st.caption(
-            f"매매가 {p_nonreg/10000:.2f}억 = 시드 {seed_man/10000:.1f}억 + 대출 {loan_nonreg/10000:.2f}억 - 부대비 {actual_p_nonreg_costs['total']/10000:.2f}억"
-        )
-        st.caption(
-            f"취득세 {actual_p_nonreg_costs['acquisition_tax']/10000:.2f}억 · "
-            f"중개 {actual_p_nonreg_costs['broker_fee']/10000:.2f}억 · "
-            f"등기·이사 {actual_p_nonreg_costs['registration_etc']/10000:.2f}억"
-        )
-
-    # 정책대출 적격성 표시
-    if policy["eligible"]:
-        st.success(
-            f"✅ **{policy['name']} 정책대출 적격** — 최대 {policy['max_loan_man']/10000:.1f}억 "
-            f"@ 약 {policy['rate_pct']:.1f}% (일반 주담대보다 유리)"
-        )
-    else:
-        with st.expander("ℹ️ 정책대출 적격성 (디딤돌/보금자리) — 불가 사유"):
-            for name, r in policy["all_results"].items():
-                st.markdown(f"- **{name}**: {'✅' if r['eligible'] else '❌'} {r['reason']}")
 
 
 def _render_macro_signals():
