@@ -28,7 +28,7 @@ from config.settings import (
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import (
     manual_catalyst_score, region_tier_score, _bucketize,
-    _apply_gap_scores, _apply_rental_scores,
+    _apply_gap_scores, _apply_rental_scores, _buyer_sentiment_signals,
 )
 from src.analysis.forward_signals import (
     apt_relative_strength, jeonse_ratio_acceleration,
@@ -247,7 +247,7 @@ def _apt_backtest_base(
 
     grid_search_apt가 가중치 조합마다 이 무거운 계산을 반복하지 않도록 분리했다
     (2026-07-20). catalyst/tier/market/rs/jeonse_accel/supply_pressure/population/
-    prestige/train_growth/actual_growth를 전부 포함한 df를 반환하며, region_score와
+    prestige/sentiment/train_growth/actual_growth를 전부 포함한 df를 반환하며, region_score와
     score는 가중치에 따라 달라지므로 여기서 계산하지 않는다.
     """
     today = date.today()
@@ -304,6 +304,12 @@ def _apt_backtest_base(
     g["prestige_score"] = g.get("prestige_score",
         pd.Series(50.0, index=g.index)).fillna(50.0)
 
+    sent = _buyer_sentiment_signals(as_of=as_of, area_tol=area_tol)
+    if not sent.empty:
+        g = g.merge(sent[keys + ["sentiment_score"]], on=keys, how="left")
+    g["sentiment_score"] = g.get("sentiment_score",
+        pd.Series(50.0, index=g.index)).fillna(50.0)
+
     test_mid = as_of + timedelta(days=30 * (test_months // 2))
     test_growth = _apt_price_growth(as_of, test_mid, test_end,
                                      area_tol=area_tol, min_deals=min_deals)
@@ -354,6 +360,7 @@ def _apt_backtest_score(
         "jeonse_accel": _spearman(g["jeonse_accel_score"], g["actual_growth"]),
         "supply_pressure": _spearman(g["supply_pressure_score"], g["actual_growth"]),
         "population": _spearman(g["population_score"], g["actual_growth"]),
+        "sentiment": _spearman(g["sentiment_score"], g["actual_growth"]),
     }
     return BacktestResult(
         scope="apt", n=n, spearman=rho,
