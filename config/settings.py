@@ -51,3 +51,12 @@ REQUEST_SLEEP = 0.3
 DEFAULT_CATALYST_WEIGHT = 0.10
 DEFAULT_TIER_WEIGHT = 0.70      # 파라미터명은 tier_weight이지만 실제로는 region_score(시세+호재) 비중
 DEFAULT_PRESTIGE_WEIGHT = 0.30
+
+# ── 매수심리(sentiment) 지표 기본값 (recommend.py::_buyer_sentiment_signals) ──
+# 2026-08 매직넘버 정리: 클립 범위·가중치를 하드코딩에서 이전. 값 자체는 불변.
+SENTIMENT_VOL_CLIP = (0.0, 3.0)
+SENTIMENT_ACCEL_CLIP = (-30.0, 30.0)
+SENTIMENT_SKEW_CLIP = (-15.0, 15.0)
+SENTIMENT_VOL_WEIGHT = 0.5
+SENTIMENT_ACCEL_WEIGHT = 0.3
+SENTIMENT_SKEW_WEIGHT = 0.2
