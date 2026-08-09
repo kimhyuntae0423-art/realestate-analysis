@@ -19,38 +19,9 @@ from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.backtest import (
     _bucketize, _spearman, _topn_hit, _apt_price_growth, _months_ago,
     region_tier_score, _apply_gap_scores, _apply_rental_scores,
+    _jeonse_quality_score, _jeonse_risk_label,
 )
 from src.analysis.forward_signals import jeonse_ratio_acceleration, region_market_score
-
-
-# ── 갭투자 스코어링 헬퍼 (recommend.py 의존 제거) ─────────────────────
-
-def _jeonse_quality_score(ratio: float) -> float:
-    """전세가율(%) → 갭투자 적정구간 점수 (0~100, 역U자형). 65~78%가 최적."""
-    if ratio < 50:
-        return ratio
-    elif ratio <= 65:
-        return 50.0 + (ratio - 50) * (50.0 / 15)
-    elif ratio <= 78:
-        return 100.0
-    elif ratio <= 87:
-        return 100.0 - (ratio - 78) * (50.0 / 9)
-    elif ratio <= 93:
-        return 50.0 - (ratio - 87) * (40.0 / 6)
-    else:
-        return max(0.0, 10.0 - (ratio - 93) * 2)
-
-
-def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
-    """전세가율 + 추세로 역전세 리스크 레벨 산출."""
-    if ratio >= 90:
-        return "⚠️ 역전세위험"
-    elif ratio >= 83 or (ratio >= 78 and accel < -2):
-        return "🔶 주의"
-    elif ratio >= 65:
-        return "✅ 적정"
-    else:
-        return "🟢 갭여유"
 
 
 # ── 결과 데이터클래스 ──────────────────────────────────────────────
