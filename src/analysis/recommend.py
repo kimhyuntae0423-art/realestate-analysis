@@ -17,6 +17,8 @@ import pandas as pd
 
 from config.settings import (
     ROOT, DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+    SENTIMENT_VOL_CLIP, SENTIMENT_ACCEL_CLIP, SENTIMENT_SKEW_CLIP,
+    SENTIMENT_VOL_WEIGHT, SENTIMENT_ACCEL_WEIGHT, SENTIMENT_SKEW_WEIGHT,
 )
 from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
@@ -174,15 +176,18 @@ def _buyer_sentiment_signals(as_of: date | None = None, area_tol: float = 5.0) -
     j["mean_median_skew_%"] = ((j["mean_recent"] - j["median_recent"]) / j["median_recent"] * 100).round(2)
 
     # 점수화 (각 0~100)
-    j["vol_score"] = (j["volume_momentum"].clip(0, 3) / 3 * 100).round(1)
-    j["accel_score"] = (((j["price_acceleration_%"].fillna(0).clip(-30, 30) + 30) / 60) * 100).round(1)
-    j["skew_score"] = (((j["mean_median_skew_%"].fillna(0).clip(-15, 15) + 15) / 30) * 100).round(1)
+    j["vol_score"] = ((j["volume_momentum"].clip(*SENTIMENT_VOL_CLIP) - SENTIMENT_VOL_CLIP[0])
+                       / (SENTIMENT_VOL_CLIP[1] - SENTIMENT_VOL_CLIP[0]) * 100).round(1)
+    j["accel_score"] = ((j["price_acceleration_%"].fillna(0).clip(*SENTIMENT_ACCEL_CLIP) - SENTIMENT_ACCEL_CLIP[0])
+                         / (SENTIMENT_ACCEL_CLIP[1] - SENTIMENT_ACCEL_CLIP[0]) * 100).round(1)
+    j["skew_score"] = ((j["mean_median_skew_%"].fillna(0).clip(*SENTIMENT_SKEW_CLIP) - SENTIMENT_SKEW_CLIP[0])
+                        / (SENTIMENT_SKEW_CLIP[1] - SENTIMENT_SKEW_CLIP[0]) * 100).round(1)
 
-    # 매수심리 종합 = 거래량(50%) + 가격가속(30%) + 평균중위격차(20%)
+    # 매수심리 종합 = 거래량(SENTIMENT_VOL_WEIGHT) + 가격가속(SENTIMENT_ACCEL_WEIGHT) + 평균중위격차(SENTIMENT_SKEW_WEIGHT)
     j["sentiment_score"] = (
-        j["vol_score"] * 0.5
-        + j["accel_score"] * 0.3
-        + j["skew_score"] * 0.2
+        j["vol_score"] * SENTIMENT_VOL_WEIGHT
+        + j["accel_score"] * SENTIMENT_ACCEL_WEIGHT
+        + j["skew_score"] * SENTIMENT_SKEW_WEIGHT
     ).round(1)
 
     return j[[
@@ -292,32 +297,41 @@ def _compute_growth_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame:
     return g.reset_index()
 
 
+@lru_cache(maxsize=1)
+def _load_jeonse_bands() -> dict:
+    """전세가율 밴드(적정구간 점수·역전세 리스크 기준) 설정 로드."""
+    p = ROOT / "config" / "jeonse_bands.json"
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _jeonse_quality_score(ratio: float) -> float:
     """전세가율(%) → 갭투자 적정구간 점수 (0~100, 역U자형).
 
+    config/jeonse_bands.json::quality_breakpoints 구간별 선형보간.
     65~78%: 최적(100점). 너무 낮으면 갭 커서 시드 부담, 너무 높으면 역전세 위험.
     """
-    if ratio < 50:
-        return ratio
-    elif ratio <= 65:
-        return 50.0 + (ratio - 50) * (50.0 / 15)
-    elif ratio <= 78:
-        return 100.0
-    elif ratio <= 87:
-        return 100.0 - (ratio - 78) * (50.0 / 9)
-    elif ratio <= 93:
-        return 50.0 - (ratio - 87) * (40.0 / 6)
-    else:
-        return max(0.0, 10.0 - (ratio - 93) * 2)
+    breakpoints = _load_jeonse_bands()["quality_breakpoints"]
+    if ratio <= breakpoints[0][0]:
+        return float(breakpoints[0][1])
+    if ratio >= breakpoints[-1][0]:
+        return float(breakpoints[-1][1])
+    for (x0, y0), (x1, y1) in zip(breakpoints, breakpoints[1:]):
+        if x0 <= ratio <= x1:
+            return y0 + (ratio - x0) / (x1 - x0) * (y1 - y0)
+    return float(breakpoints[-1][1])
 
 
 def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
     """전세가율 수준 + 추세로 역전세 리스크 레벨 산출."""
-    if ratio >= 90:
+    th = _load_jeonse_bands()["risk_thresholds"]
+    if ratio >= th["danger_ratio"]:
         return "⚠️ 역전세위험"
-    elif ratio >= 83 or (ratio >= 78 and accel < -2):
+    elif ratio >= th["caution_ratio"] or (
+        ratio >= th["caution_accel_ratio"] and accel < th["caution_accel_%p"]
+    ):
         return "🔶 주의"
-    elif ratio >= 65:
+    elif ratio >= th["safe_ratio"]:
         return "✅ 적정"
     else:
         return "🟢 갭여유"
