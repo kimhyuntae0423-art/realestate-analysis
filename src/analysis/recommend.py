@@ -113,7 +113,7 @@ def _volume_momentum_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame
 
 
 # ─── 매수심리 지표 (KB 매수우위지수 proxy) ────────────────────────────
-def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
+def _buyer_sentiment_signals(as_of: date | None = None, area_tol: float = 5.0) -> pd.DataFrame:
     """단지·평형별 매수심리 지표.
 
     구성요소:
@@ -122,13 +122,14 @@ def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
     - mean_median_skew: 평균-중위 격차 (고가 매수 비중 신호, %)
 
     100점 만점 종합 sentiment_score 산출.
-    """
-    now = date.today()
+        as_of: 기준일(기본값은 오늘). backtest.py에서 point-in-time 계산에 사용.
+"""
+    now = as_of or date.today()
     cut_t1 = now - timedelta(days=90)   # 최근 3mo 시작
     cut_t2 = now - timedelta(days=180)  # 이전 3mo 시작
     cut_t3 = now - timedelta(days=270)  # 그 이전 3mo 시작
 
-    df = fetch_trades_df(date_from=cut_t3)
+    df = fetch_trades_df(date_from=cut_t3, date_to=now)
     if df.empty:
         return pd.DataFrame()
     df = _bucketize(df, area_tol)
@@ -193,7 +194,7 @@ def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
 
 def region_sentiment_summary(area_tol: float = 5.0) -> pd.DataFrame:
     """지역(시군구) 단위 매수심리 평균."""
-    sig = _buyer_sentiment_signals(area_tol)
+    sig = _buyer_sentiment_signals(area_tol=area_tol)
     if sig.empty:
         return sig
     g = sig.groupby("region_code").agg(
@@ -639,7 +640,7 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
         g["prior_deals"] = 0
 
     # 매수심리 시그널 (KB 매수우위지수 proxy)
-    sentiment = _buyer_sentiment_signals(area_tol)
+    sentiment = _buyer_sentiment_signals(area_tol=area_tol)
     if not sentiment.empty:
         g = g.merge(sentiment, on=["region_code", "apt_name", "area_bucket"], how="left")
     # 매수심리 미산출 단지는 중립 50점
