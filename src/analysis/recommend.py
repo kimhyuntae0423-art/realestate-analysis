@@ -122,8 +122,8 @@ def _buyer_sentiment_signals(as_of: date | None = None, area_tol: float = 5.0) -
     - mean_median_skew: 평균-중위 격차 (고가 매수 비중 신호, %)
 
     100점 만점 종합 sentiment_score 산출.
-        as_of: 기준일(기본값은 오늘). backtest.py에서 point-in-time 계산에 사용.
-"""
+    as_of: 기준일(기본값은 오늘). backtest.py에서 point-in-time 계산에 사용.
+    """
     now = as_of or date.today()
     cut_t1 = now - timedelta(days=90)   # 최근 3mo 시작
     cut_t2 = now - timedelta(days=180)  # 이전 3mo 시작
