@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "note": "전세가율(%) 기반 갭투자 적정구간 점수·역전세 리스크 판정 기준값. recommend.py::_jeonse_quality_score, _jeonse_risk_label에서 사용 (gap_backtest.py는 backtest.py 경유로 동일 함수 재사용).",
+    "source": "65~78%가 갭투자 최적구간이라는 경험칙. quality_breakpoints는 (전세가율, 점수) 좌표를 구간별 선형보간."
+  },
+  "quality_breakpoints": [
+    [0, 0],
+    [50, 50],
+    [65, 100],
+    [78, 100],
+    [87, 50],
+    [93, 10],
+    [98, 0]
+  ],
+  "risk_thresholds": {
+    "danger_ratio": 90,
+    "caution_ratio": 83,
+    "caution_accel_ratio": 78,
+    "caution_accel_%p": -2,
+    "safe_ratio": 65
+  }
+}
