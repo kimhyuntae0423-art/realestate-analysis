@@ -1541,7 +1541,7 @@ def page_strategy_backtest():
         st.markdown("#### 🚀 투자수익 전략 검증")
         st.markdown(
             "**이 전략의 핵심 질문:** 시장 강도(매수 심리)와 단지 명성(prestige)이 높은 곳이 실제로 더 오르는가?  \n"
-            "점수 = `region_score(시장강도+상급지) × 0.6 + prestige × 0.1 + 모멘텀 시그널 × 0.3`  \n"
+            "점수 = `region_score(시장강도+호재) × 0.7 + prestige × 0.3` (아래 표의 채택 모델 기준)  \n"
             "ρ > 0.3 이면 이 점수가 미래 상승을 예측한다는 것이 통계적으로 입증됩니다."
         )
 
@@ -3457,10 +3457,10 @@ def _render_headline_card(inputs: dict, seed_man: int, dsr_cap_man: float | None
         )
         return
 
-    # 부대비용 (규제지역 기준)
-    costs = total_acquisition_cost_man(p_reg, ownership, first_time)
+    # 부대비용 (규제/비규제 지역 각각 반영)
+    costs = total_acquisition_cost_man(p_reg, ownership, first_time, is_adjusted_area=True)
     actual_p_reg = p_reg - costs["total"]
-    actual_p_nonreg_costs = total_acquisition_cost_man(p_nonreg, ownership, first_time)
+    actual_p_nonreg_costs = total_acquisition_cost_man(p_nonreg, ownership, first_time, is_adjusted_area=False)
     actual_p_nonreg = p_nonreg - actual_p_nonreg_costs["total"]
 
     # 정책대출 적격 (부부합산·신혼·자녀 반영)
@@ -4531,8 +4531,10 @@ def render_recommend_tab(inputs: dict):
             f"- 자금구조: 자기자본 {seed_eok}억 + **LTV 대출** = 매매가\n"
             f"- 매수 후 매도까지 보유 (실거주 또는 단순 보유)\n"
             f"- 매월 이자 부담 있음 (≈ 대출액 × 4~5% / 12)\n"
-            f"- 종합점수 = **호재({int(catalyst_weight*100)}%)** + **상급지등급({int(tier_weight*100)}%)** + **대장단지({int(prestige_weight*100)}%)** + 과거상승 + 레버리지수익률 + 시드활용\n"
-            f"- 상급지등급: 2022~23 규제지역 해제 순서 기반 (강남3구·용산=100, 서울 비강남=80, 인천/경기=60, 지방=40)\n"
+            f"- 종합점수 = **지역시장강도+호재(region_score)** × **{int(tier_weight*100)}%** + **대장단지(prestige_score)** × **{int(prestige_weight*100)}%**\n"
+            f"- region_score = 시군구 평당가 시장강도 + 호재점수 × 호재가중치({int(catalyst_weight*100)}%) (100점 상한)\n"
+            f"- 상급지등급(tier_score)은 참고 표시용이며 다중 시점 백테스트 결과에 따라 점수 산식에는 포함되지 않음\n"
+            f"- 과거상승률·레버리지수익률·시드활용률도 점수에 포함되지 않고 별도 참고 지표로 표시\n"
             f"- 대장단지: 시군구 내 평당가 백분위(60%) + 동(dong) 평당가 백분위(40%). 그 지역의 1군 단지에 가산점.\n\n"
             f"📅 **수익률 기간 기준**: 분석기간 {months}개월 → 최근 **{half_mo}개월** vs 이전 **{half_mo}개월** 실거래 평당가 비교\n"
             f"- **예상평가차익·예상자기자본수익률은 연환산이 아닌 {half_mo}개월치 가격 변화율 × 레버리지**\n"
@@ -4570,11 +4572,10 @@ def render_recommend_tab(inputs: dict):
             f"- 자금구조: 자기자본 {seed_eok}억 = **매매가 − 전세보증금(갭)**\n"
             f"- 대출 X (전세보증금이 임차인 부담분) · 매월 이자 부담 없음\n\n"
             f"**종합점수 구성**\n"
-            f"- 전세가율 적정구간 25% — 65~78%가 최적(역U자형). 너무 높으면 역전세 위험\n"
-            f"- 전세가율 상승 추세 20% — 갭이 줄어드는 방향 = 매매전환 신호\n"
-            f"- 상급지 등급 20% — 나중에 팔기 쉬운 지역\n"
-            f"- 갭 레버리지 배수 20% — 매매가÷갭 (적은 돈으로 큰 자산)\n"
-            f"- 거래 활성도 15% — 유동성\n\n"
+            f"- 상급지 등급 80% — 백테스트 결과 단독 상관계수가 가장 높아 시세차익 예측의 핵심 지표\n"
+            f"- 거래 활성도 20% — 유동성\n\n"
+            f"- 전세가율·전세가율 추세·갭 레버리지 배수는 화면에 표시되지만 종합점수에는 포함되지 않음 "
+            f"(백테스트에서 역상관 확인되어 제외, 역전세 위험 판정용으로만 사용)\n\n"
             f"⚠️ **역전세 리스크**: 전세가율 90%↑ 위험 · 83%↑ 또는 전세가 하락 추세 주의"
         )
         rec = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
@@ -4747,8 +4748,7 @@ def render_recommend_tab(inputs: dict):
             "1건 이상 있는 지역만 표시."
         )
         st.caption(
-            f"종합점수 = 매수심리×{int((1-tier_weight)*60)}% + 상급지등급×{int(tier_weight*100)}% + 호재×{int((1-tier_weight)*40)}%. "
-            "상급지 가중치 슬라이더로 가산점 비중 조절."
+            "avg_score = 위 매물별 종합점수(지역시장강도+호재 × 상급지가중치 + 대장단지 × 대장단지가중치)의 지역 평균."
         )
 
         sent_df = _cached_region_sentiment()

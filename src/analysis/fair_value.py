@@ -40,8 +40,7 @@ def _split_trade_agg(
     max_date,
 ) -> pd.DataFrame:
     """trade_count(전체기간) + trade_median(최근기간, fallback=전체) 분리 집계."""
-    trade_cutoff_full = max_date - pd.DateOffset(months=months)
-    t_full = df_trade[df_trade["deal_date"] >= trade_cutoff_full].copy()
+    t_full = df_trade.copy()
     t_full["area_bucket"] = (t_full["area_m2"] / area_tol).round() * area_tol
 
     count_agg = t_full.groupby(keys).agg(trade_count=("deal_amount", "count"))

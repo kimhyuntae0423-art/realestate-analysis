@@ -41,13 +41,17 @@ def supply_for_region(region_code: str, lookahead_months: int = 12) -> int:
 
 
 def supply_pressure_score(region_code: str, lookahead_months: int = 12) -> float:
-    """입주 압박 점수 (0~100).
+    """입주 압박 점수 (0~100), config/supply.json 수동 등록 데이터 기반.
 
     물량이 많을수록 향후 가격 압박 (점수 ↑ = 공급 부담 ↑ = 가격 상승에 불리)
     이 함수는 '공급 부담 지수'이므로 가격 상승 점수에 반대로 작용.
+    선형 스케일: n/50, 5000호 이상은 100점 상한 (예: 1000호=20점, 3000호=60점).
+
+    주의: src.analysis.forward_signals.supply_pressure() 는 이름이 비슷하지만
+    극성이 반대(점수 ↑ = 압박 ↓)이고 DB(SupplySchedule) 기반의 별도 함수다.
+    서로 다른 파이프라인이므로 혼용하지 말 것.
     """
     n = supply_for_region(region_code, lookahead_months)
-    # 1000호 = 약 30점, 3000호 = 80점, 5000호+ = 100점
     if n <= 0:
         return 0.0
     return min(100.0, (n / 50))

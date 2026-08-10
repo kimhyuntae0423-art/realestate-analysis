@@ -156,6 +156,10 @@ def supply_pressure(as_of: date | None = None, lookahead_months: int = 12) -> pd
 
     KOSIS는 시군구 입주물량을 제공하지 않아 시도 단위로 받아 분배함.
     사용검사실적은 향후 예정이 아닌 '직전 12개월' 실적이므로 lookback으로 동작.
+
+    주의: src.analysis.supply.supply_pressure_score() 는 이름이 비슷하지만
+    극성이 반대(점수 ↑ = 압박 ↑)이고 config/supply.json 수동 등록 기반의 별도 함수다.
+    서로 다른 파이프라인이므로 혼용하지 말 것.
     """
     try:
         from src.database.models import SupplySchedule, PopulationFlow, SessionLocal

@@ -100,18 +100,26 @@ def capital_gains_tax_man(
     # 양도소득 기본공제 250만원
     after_basic = max(0.0, after_deduction - 250)
 
-    # 기본세율
-    base_tax = _progressive_tax(after_basic)
+    # 단기보유 중과세율 (2년 미만 보유 시 기본세율 대신 적용)
+    if hold_years < 1:
+        base_tax = after_basic * 0.70
+    elif hold_years < 2:
+        base_tax = after_basic * 0.60
+    else:
+        base_tax = _progressive_tax(after_basic)
 
-    # 다주택 중과 (+20%, 조정지역 2주택)
-    surcharge = after_basic * 0.20 if (multihome_surcharge and not is_sole_home) else 0.0
+    # 다주택 중과 (+20%, 조정지역 2주택) — 단기보유 세율과 중복 적용 안 함
+    surcharge = after_basic * 0.20 if (multihome_surcharge and not is_sole_home and hold_years >= 2) else 0.0
 
     # 지방소득세 10%
     total_tax = (base_tax + surcharge) * 1.10
 
-    note = "1세대1주택 (12억 초과분 과세)" if is_sole_home else "다주택"
-    if multihome_surcharge and not is_sole_home:
-        note += " + 중과(+20%)"
+    if hold_years < 2:
+        note = f"단기보유 중과세율 적용 (보유 {hold_years:.1f}년)"
+    else:
+        note = "1세대1주택 (12억 초과분 과세)" if is_sole_home else "다주택"
+        if multihome_surcharge and not is_sole_home:
+            note += " + 중과(+20%)"
 
     return {
         "tax_man": round(total_tax),

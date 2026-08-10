@@ -57,6 +57,19 @@ class MolitCollector:
             raise RuntimeError(f"API 오류: {header}")
         return body
 
+    def _fetch_all_items(self, endpoint: str, lawd_cd: str, ymd: str, rows: int = 1000) -> list:
+        page_no = 1
+        all_items: list = []
+        while True:
+            body = self._fetch_page(endpoint, lawd_cd, ymd, page_no=page_no, rows=rows)
+            items = self._iter_items(body)
+            all_items.extend(items)
+            total_count = int(body.get("totalCount") or len(all_items))
+            if not items or len(all_items) >= total_count:
+                break
+            page_no += 1
+        return all_items
+
     def _iter_items(self, body: dict):
         items = body.get("items")
         if not items:
@@ -73,8 +86,7 @@ class MolitCollector:
         p.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
 
     def fetch_trades(self, lawd_cd: str, ymd: str) -> list[dict]:
-        body = self._fetch_page(MOLIT_ENDPOINTS["apt_trade"], lawd_cd, ymd)
-        items = self._iter_items(body)
+        items = self._fetch_all_items(MOLIT_ENDPOINTS["apt_trade"], lawd_cd, ymd)
         self._cache_raw("trade", lawd_cd, ymd, {"items": items})
         rows = []
         for it in items:
@@ -86,8 +98,7 @@ class MolitCollector:
         return rows
 
     def fetch_rents(self, lawd_cd: str, ymd: str) -> list[dict]:
-        body = self._fetch_page(MOLIT_ENDPOINTS["apt_rent"], lawd_cd, ymd)
-        items = self._iter_items(body)
+        items = self._fetch_all_items(MOLIT_ENDPOINTS["apt_rent"], lawd_cd, ymd)
         self._cache_raw("rent", lawd_cd, ymd, {"items": items})
         rows = []
         for it in items:

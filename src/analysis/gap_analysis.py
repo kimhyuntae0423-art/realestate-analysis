@@ -42,7 +42,7 @@ def gap_table(df_trade: pd.DataFrame, df_rent: pd.DataFrame,
     t_full["area_bucket"] = (t_full["area_m2"] / area_tol).round() * area_tol
     r["area_bucket"] = (r["area_m2"] / area_tol).round() * area_tol
 
-    # trade_count: 전체 기간 (유동성 필터용)
+    # trade_count: rent와 동일한 최근 months 기간 기준 (유동성 필터용, docstring 참고)
     count_agg = t_full.groupby(["apt_name", "area_bucket"]).agg(
         trade_count=("deal_amount", "count"),
     )
