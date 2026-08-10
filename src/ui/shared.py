@@ -113,6 +113,17 @@ with open(APP_ROOT / "config" / "regions.json", encoding="utf-8") as f:
     REGIONS = json.load(f)
 
 
+def _build_region_map() -> dict[str, str]:
+    out: dict[str, str] = {}
+    for sido, gus in REGIONS.items():
+        for code, name in gus.items():
+            out[code] = f"{sido} {name}"
+    return out
+
+
+REGION_MAP = _build_region_map()
+
+
 # 컬럼 영문명 → (한국어명, 단위유형)
 # 단위유형:
 #   "ueok"    : 만원 -> 억원 변환, 소수점 2자리
