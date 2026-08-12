@@ -50,10 +50,22 @@ def _sidebar_nav() -> str:
             st.session_state["_nav_section"] = "portfolio"
             st.rerun()
 
+        if st.button(
+            "🧪 실험실",
+            use_container_width=True,
+            key="nav_lab",
+            type="primary" if _sec == "lab" else "secondary",
+            help="전세가율·인구이동 같은 부동산 통념을 실거래가로 통계 검증",
+        ):
+            st.session_state["_nav_section"] = "lab"
+            st.rerun()
+
         if st.session_state["_nav_section"] == "backtest":
             page = "🔬 전략 백테스트"
         elif st.session_state["_nav_section"] == "portfolio":
             page = "🏘️ 처분·매수 전략"
+        elif st.session_state["_nav_section"] == "lab":
+            page = "🧪 실험실"
         else:
             page = page_radio
 

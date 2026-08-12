@@ -21,6 +21,7 @@ from src.ui.pages.region import page_region
 from src.ui.pages.backtest import page_strategy_backtest
 from src.ui.pages.portfolio import page_portfolio_strategy
 from src.ui.pages.invest import page_invest
+from src.ui.pages.lab import page_lab
 
 
 def main():
@@ -42,6 +43,8 @@ def main():
         page_strategy_backtest()
     elif page.startswith("🏘️"):
         page_portfolio_strategy()
+    elif page.startswith("🧪"):
+        page_lab()
     else:
         page_my_capacity()
 
