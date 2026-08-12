@@ -58,6 +58,17 @@ def page_lab():
             stat = r["statistic"]
             stat_str = "N/A (데이터 부족)" if stat != stat else f"{stat:.4f}"
             st.caption(f"통계치(Spearman ρ) = {stat_str} · 표본수 n = {r['n']:,} · 검증일 {r['computed_at']}")
+
+            breakdown = r.get("breakdown")
+            if breakdown:
+                st.markdown("**하위그룹 분석**")
+                bd_cols = st.columns(len(breakdown))
+                for col, (label, d) in zip(bd_cols, breakdown.items()):
+                    bd_stat = d["statistic"]
+                    bd_stat_str = "N/A" if bd_stat != bd_stat else f"{bd_stat:.4f}"
+                    col.metric(label, bd_stat_str, help=f"n={d['n']:,} · {d['verdict']}")
+                    col.caption(d["verdict"])
+
             with st.expander("방법론 · 반박 여지"):
                 st.markdown(f"**계산 방법**: {r['method']}")
                 st.markdown(f"**한계 / 반박 여지**: {r['caveats']}")

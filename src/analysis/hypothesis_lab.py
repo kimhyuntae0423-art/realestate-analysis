@@ -32,6 +32,15 @@ RHO_THRESHOLD = 0.15
 LOG_PATH = ROOT / "data" / "experiments" / "hypothesis_log.json"
 
 
+def _verdict_for(statistic: float, n: int, expected_sign: int) -> str:
+    if n < MIN_N or statistic != statistic:  # NaN check
+        return "🟡 불확실 (표본부족)"
+    if abs(statistic) < RHO_THRESHOLD:
+        return "🟡 불확실 (상관 약함)"
+    same_sign = (statistic > 0) == (expected_sign > 0)
+    return "✅ 지지" if same_sign else "❌ 기각(반대방향)"
+
+
 @dataclass
 class HypothesisResult:
     id: str
@@ -43,15 +52,12 @@ class HypothesisResult:
     expected_sign: int          # +1 = 양의 상관 기대, -1 = 음의 상관 기대
     caveats: str                # 반박 여지 / 한계
     computed_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
+    # 하위그룹 분석 (선택): {그룹명: {"statistic":, "n":, "verdict":}}
+    breakdown: dict | None = None
 
     @property
     def verdict(self) -> str:
-        if self.n < MIN_N or self.statistic != self.statistic:  # NaN check
-            return "🟡 불확실 (표본부족)"
-        if abs(self.statistic) < RHO_THRESHOLD:
-            return "🟡 불확실 (상관 약함)"
-        same_sign = (self.statistic > 0) == (self.expected_sign > 0)
-        return "✅ 지지" if same_sign else "❌ 기각(반대방향)"
+        return _verdict_for(self.statistic, self.n, self.expected_sign)
 
     def to_dict(self) -> dict:
         d = {**self.__dict__, "verdict": self.verdict}
@@ -66,14 +72,18 @@ def _empty_result(id: str, title: str, claim: str, method: str,
 
 
 # ─── 1. 재건축 연한 효과 ────────────────────────────────────────────
-def test_redevelopment_age_effect(months: int = 24, area_tol: float = 5.0,
+SEOUL_GYEONGGI_PREFIXES = ("11", "41")  # 법정동코드 앞 2자리: 11=서울, 41=경기
+
+
+def test_redevelopment_age_effect(months: int = 36, area_tol: float = 5.0,
                                    min_deals: int = 3) -> HypothesisResult:
     meta = dict(
         id="redevelopment_age",
         title="재건축 연한 효과",
         claim="오래된(재건축 기대감 있는) 단지일수록 최근 상승률이 더 높다",
-        method=f"단지+평형 단위, 최근 {months}개월을 반으로 나눠 전반기→후반기 평당가 "
-               f"상승률과 연식(2026-현재 - 준공연도)의 Spearman 상관",
+        method=f"단지+평형 단위, 최근 {months}개월(=DB 보유 최대 범위)을 반으로 나눠 "
+               f"전반기→후반기 평당가 상승률과 연식(올해-준공연도)의 Spearman 상관. "
+               "서울/경기(법정동코드 11/41) vs 그 외 지역으로 나눈 하위그룹도 함께 계산.",
         expected_sign=1,
         caveats="재건축은 '연한'만이 아니라 안전진단·조합설립 진행도가 더 중요할 수 있음. "
                 "너무 오래된 단지는 오히려 슬럼화로 하락할 수도 있어 비선형(U자형) 관계일 가능성 있음.",
@@ -103,7 +113,21 @@ def test_redevelopment_age_effect(months: int = 24, area_tol: float = 5.0,
     g["growth_%"] = (g["recent_ppp"] - g["prior_ppp"]) / g["prior_ppp"] * 100
     g["age"] = date.today().year - g["build_year"]
     rho, _ = spearmanr(g["age"], g["growth_%"])
-    return HypothesisResult(statistic=float(rho), n=len(g), **meta)
+
+    is_sg = g["region_code"].str.startswith(SEOUL_GYEONGGI_PREFIXES)
+    breakdown = {}
+    for label, mask in [("서울/경기", is_sg), ("그 외 지역", ~is_sg)]:
+        sub = g[mask]
+        if len(sub) >= 2:
+            sub_rho, _ = spearmanr(sub["age"], sub["growth_%"])
+        else:
+            sub_rho = float("nan")
+        breakdown[label] = {
+            "statistic": float(sub_rho), "n": len(sub),
+            "verdict": _verdict_for(float(sub_rho), len(sub), meta["expected_sign"]),
+        }
+
+    return HypothesisResult(statistic=float(rho), n=len(g), breakdown=breakdown, **meta)
 
 
 # ─── 2. 거래량 선행지표 ─────────────────────────────────────────────

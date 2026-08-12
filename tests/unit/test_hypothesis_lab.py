@@ -69,6 +69,26 @@ def test_redevelopment_age_effect_detects_positive_signal():
 def test_redevelopment_age_effect_empty_when_no_data():
     r = lab.test_redevelopment_age_effect()
     assert r.n == 0
+    assert r.breakdown is None
+
+
+def test_redevelopment_age_effect_breakdown_splits_by_region():
+    # 서울(11xxx)은 나이-상승률 양의 상관, 부산(26xxx)은 데이터를 아예 안 넣어서
+    # "그 외 지역"이 표본부족으로 판정되는지 확인
+    rows = []
+    for i in range(5):
+        rows.append(_trade(400 + i, region="11680", apt="OLD", ppp=6000, build_year=1990))
+        rows.append(_trade(10 + i, region="11680", apt="OLD", ppp=9000, build_year=1990))
+        rows.append(_trade(400 + i, region="11680", apt="NEW", ppp=6000, build_year=2020))
+        rows.append(_trade(10 + i, region="11680", apt="NEW", ppp=6050, build_year=2020))
+    upsert_trades(rows)
+
+    r = lab.test_redevelopment_age_effect(months=24, min_deals=3)
+    assert r.breakdown is not None
+    assert set(r.breakdown.keys()) == {"서울/경기", "그 외 지역"}
+    assert r.breakdown["서울/경기"]["n"] == r.n  # 전부 서울 데이터
+    assert r.breakdown["그 외 지역"]["n"] == 0
+    assert r.breakdown["그 외 지역"]["verdict"] == "🟡 불확실 (표본부족)"
     assert r.verdict == "🟡 불확실 (표본부족)"
 
 
