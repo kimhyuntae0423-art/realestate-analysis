@@ -6,6 +6,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src.analysis import hypothesis_lab as lab
+from src.analysis import hypothesis_tests as ht
 from src.analysis.hypothesis_lab import HypothesisResult
 from src.database.repository import upsert_trades
 
@@ -61,13 +62,13 @@ def test_redevelopment_age_effect_detects_positive_signal():
         rows.append(_trade(10 + i, apt="NEW", ppp=6050, build_year=2020))
     upsert_trades(rows)
 
-    r = lab.test_redevelopment_age_effect(months=24, min_deals=3)
+    r = ht.test_redevelopment_age_effect(months=24, min_deals=3)
     assert r.n >= 2
     assert r.statistic > 0  # 나이 클수록 더 오름 -> 양의 상관
 
 
 def test_redevelopment_age_effect_empty_when_no_data():
-    r = lab.test_redevelopment_age_effect()
+    r = ht.test_redevelopment_age_effect()
     assert r.n == 0
     assert r.breakdown is None
 
@@ -83,7 +84,7 @@ def test_redevelopment_age_effect_breakdown_splits_by_region():
         rows.append(_trade(10 + i, region="11680", apt="NEW", ppp=6050, build_year=2020))
     upsert_trades(rows)
 
-    r = lab.test_redevelopment_age_effect(months=24, min_deals=3)
+    r = ht.test_redevelopment_age_effect(months=24, min_deals=3)
     assert r.breakdown is not None
     assert set(r.breakdown.keys()) == {"서울/경기", "그 외 지역"}
     assert r.breakdown["서울/경기"]["n"] == r.n  # 전부 서울 데이터
@@ -92,9 +93,36 @@ def test_redevelopment_age_effect_breakdown_splits_by_region():
     assert r.verdict == "🟡 불확실 (표본부족)"
 
 
+# ─── 재건축 호재 발표 vs 단순 연한 ───────────────────────────────────
+def test_catalyst_announcement_vs_age_prefers_catalyst_region():
+    # 11680(강남, config/catalysts.json에 재건축 호재 등록됨)의 노후단지 2개는 크게 오르고,
+    # 11350(노원, 호재 미등록)의 노후단지 2개는 거의 안 오르는 합성 데이터
+    # (Mann-Whitney 비교를 위해 그룹당 최소 2개 단지 필요)
+    rows = []
+    for apt in ["CATALYST_A", "CATALYST_B"]:
+        for i in range(5):
+            rows.append(_trade(400 + i, region="11680", apt=apt, ppp=6000, build_year=1995))
+            rows.append(_trade(10 + i, region="11680", apt=apt, ppp=9000, build_year=1995))
+    for apt in ["NOCATALYST_A", "NOCATALYST_B"]:
+        for i in range(5):
+            rows.append(_trade(400 + i, region="11350", apt=apt, ppp=6000, build_year=1995))
+            rows.append(_trade(10 + i, region="11350", apt=apt, ppp=6050, build_year=1995))
+    upsert_trades(rows)
+
+    r = ht.test_catalyst_announcement_vs_age(months=24, min_deals=3, age_threshold=25)
+    assert r.n >= 4
+    assert r.statistic > 0  # 호재등록지역이 더 많이 오름 -> 양의 rank-biserial
+    assert "중위상승률" in r.caveats
+
+
+def test_catalyst_announcement_vs_age_empty_when_no_data():
+    r = ht.test_catalyst_announcement_vs_age()
+    assert r.n == 0
+
+
 # ─── 거래량 선행지표 ────────────────────────────────────────────────
 def test_volume_leads_price_empty_when_no_data():
-    r = lab.test_volume_leads_price()
+    r = ht.test_volume_leads_price()
     assert r.n == 0
 
 
@@ -107,7 +135,7 @@ def test_volume_leads_price_computes_lead_and_contemporaneous():
             rows.append(_trade((date.today() - d).days - i, ppp=6000 + m * 50))
     upsert_trades(rows)
 
-    r = lab.test_volume_leads_price(months=13)
+    r = ht.test_volume_leads_price(months=13)
     assert r.n > 0
     assert "동시성" in r.caveats
 
@@ -125,13 +153,13 @@ def test_momentum_vs_reversion_detects_persistence():
         rows.append(_trade(50 + i, apt="B", ppp=5500))
     upsert_trades(rows)
 
-    r = lab.test_momentum_vs_reversion(months=24, min_deals=3)
+    r = ht.test_momentum_vs_reversion(months=24, min_deals=3)
     assert r.n >= 2
     assert r.statistic > 0  # growth_a, growth_b 둘 다 같은 방향(A:+/+ , B:-/-) -> 양의 상관
 
 
 def test_momentum_vs_reversion_empty_when_no_data():
-    r = lab.test_momentum_vs_reversion()
+    r = ht.test_momentum_vs_reversion()
     assert r.n == 0
 
 
@@ -141,10 +169,10 @@ def test_run_all_and_log_appends_entry(tmp_path, monkeypatch):
     assert lab.load_log() == []
 
     results = lab.run_all_and_log()
-    assert len(results) == 3
+    assert len(results) == 4
     runs = lab.load_log()
     assert len(runs) == 1
-    assert len(runs[0]["results"]) == 3
+    assert len(runs[0]["results"]) == 4
     assert "verdict" in runs[0]["results"][0]
 
     lab.run_all_and_log()
@@ -156,4 +184,4 @@ def test_latest_results_returns_most_recent(tmp_path, monkeypatch):
     assert lab.latest_results() is None
     lab.run_all_and_log()
     assert lab.latest_results() is not None
-    assert len(lab.latest_results()) == 3
+    assert len(lab.latest_results()) == 4
