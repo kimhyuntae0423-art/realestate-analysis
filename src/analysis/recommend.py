@@ -344,7 +344,9 @@ def _apply_gap_scores(
 ) -> pd.DataFrame:
     """갭투자 종합점수 산출 — recommend_gap_investment + _gap_scores_at 공용.
 
-    공식: 상승예상(tier+시장강도) 75% + 거래활성도 25%
+    공식: 상급지 등급(tier_score) 80% + 거래활성도(activity) 20%
+    - appreciation_score(tier 60%+market 40%)는 gap_backtest.py 진단용으로만 계산되고
+      점수 산식에는 미포함 — tier_score 단독 상관(ρ=+0.443)이 더 높아 직접 사용.
     - leverage_mult·jeonse_quality는 역상관(ρ≈-0.33) 확인으로 점수에서 제외,
       갭 크기는 진입 필터(seed 조건)로만 사용
     입력 df 필수 컬럼: trade_median, gap, tier_score, activity
