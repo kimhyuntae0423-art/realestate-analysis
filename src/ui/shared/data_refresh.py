@@ -52,20 +52,18 @@ def _data_freshness() -> dict:
     return out
 
 
-def _refresh_recent_data(months: int = 3, regions: list[str] | None = None,
-                          do_supply: bool = False) -> dict:
+def _refresh_recent_data(months: int = 3, regions: list[str] | None = None) -> dict:
     """원클릭 데이터 갱신.
 
-    1) 국토부 실거래(매매·전월세): 모든 보유 시군구의 최근 N개월 (incremental upsert)
-    2) (옵션) KOSIS 입주물량 — 2026-05 시뮬레이션 후 점수 산식에서 제외됨. default off.
-    인구이동·호재·등급은 수동 (KOSIS CSV / JSON 편집).
+    국토부 실거래(매매·전월세): 모든 보유 시군구의 최근 N개월 (incremental upsert)
+    인구이동·입주물량·호재·등급은 수동 (JSON 편집) — KOSIS 연동은 실제 API 호출 실패
+    (필수 파라미터 누락/통계표 미존재) 확인 후 제거됨.
     """
     import sqlite3
     from datetime import date as _date
     from src.collectors.molit_api import MolitCollector
     from src.database.repository import upsert_trades, upsert_rents
-    from src.collectors.kosis_api import KosisCollector
-    summary = {"trade": 0, "rent": 0, "supply": 0, "errors": []}
+    summary = {"trade": 0, "rent": 0, "errors": []}
 
     # 1) 최근 N개월 ymd 리스트
     today = _date.today()
@@ -110,43 +108,6 @@ def _refresh_recent_data(months: int = 3, regions: list[str] | None = None,
             done += 1
             prog.progress(done / total, text=f"실거래 {region} {ymd} ({done}/{total})")
     prog.empty()
-
-    # 4) KOSIS 입주물량 (시도 17개 × 최근 12개월)
-    if do_supply:
-        try:
-            from src.database.models import SupplySchedule, SessionLocal
-            from src.database.repository import _make_upsert
-            col = KosisCollector()
-            today = _date.today()
-            y, m = today.year, today.month
-            for _ in range(11):
-                m -= 1
-                if m == 0:
-                    m = 12; y -= 1
-            start_ym = f"{y:04d}{m:02d}"
-            end_ym = f"{today.year:04d}{today.month:02d}"
-            rows = col.fetch_supply_schedule(start_ym, end_ym)
-            if rows:
-                payload = []
-                for r in rows:
-                    region = r.get("C1") or ""
-                    ym = r.get("PRD_DE") or ""
-                    units = int(float(r.get("DT") or 0))
-                    if not region or len(region) != 2 or units <= 0:
-                        continue
-                    payload.append({
-                        "region_code": region,
-                        "move_in_date": _date(int(ym[:4]), int(ym[4:6]), 1),
-                        "units": units, "source": "kosis_sido",
-                    })
-                if payload:
-                    with SessionLocal() as s:
-                        stmt = _make_upsert(SupplySchedule, payload)
-                        s.execute(stmt)
-                        s.commit()
-                    summary["supply"] = len(payload)
-        except Exception as e:
-            summary["errors"].append(f"KOSIS 공급: {e}")
 
     return summary
 

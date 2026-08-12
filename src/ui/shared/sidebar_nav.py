@@ -105,8 +105,7 @@ def _sidebar_nav() -> str:
             if st.button("🔄 데이터 수집 (최근 3개월)",
                          width='stretch', type="primary", key="nav_refresh"):
                 with st.spinner("국토부 실거래 수집 중… 5~10분 소요"):
-                    res = _refresh_recent_data(months=3, do_supply=False,
-                                               regions=selected_regions)
+                    res = _refresh_recent_data(months=3, regions=selected_regions)
                 msg = f"✅ 매매 {res['trade']:,}건 / 전월세 {res['rent']:,}건 신규 upsert"
                 st.success(msg)
                 if res["errors"]:
@@ -120,31 +119,10 @@ def _sidebar_nav() -> str:
                 "• 호재(`config/catalysts.json`): GTX·신도시 확정 시 직접 편집\n"
                 "• 등급(`config/region_tiers.json`): 정보 표시용 (점수 산식 X)\n"
                 "• 대출규제(`config/loan_regulations.json`): 변경 감지 시 확인 후 직접 편집\n\n"
-                "**중단된 수집** (점수 산식에서 제외됨)\n"
-                "• KOSIS 입주물량·인구이동 → 백테스트 결과 효과 없음"
+                "**중단된 수집** (실제 API 검증 결과 제거됨)\n"
+                "• KOSIS 입주물량·인구이동 — 필수 파라미터 누락/통계표 미존재로 항상 실패\n"
+                "• 카카오 뉴스검색 기반 규제뉴스 감지 — 카카오가 news 검색 카테고리 자체를 폐지(404)"
             )
-
-            # ── 규제 뉴스 변경 감지 알림 ──
-            try:
-                from src.collectors.regulation_news import load_regulation_news
-                _reg = load_regulation_news()
-            except Exception:
-                _reg = None
-            if _reg and _reg.get("count", 0) > 0:
-                st.markdown("")
-                with st.expander(
-                    f"⚠️ 규제 관련 뉴스 {_reg['count']}건 감지 "
-                    f"(수집일: {_reg.get('collected_at', '')})",
-                    expanded=False,
-                ):
-                    st.caption(
-                        "자동 반영 **아님** — 내용 확인 후 "
-                        "`config/loan_regulations.json` 직접 수정하세요."
-                    )
-                    for _art in _reg["articles"][:10]:
-                        st.markdown(
-                            f"- [{_art['datetime']}] [{_art['title']}]({_art['url']})"
-                        )
 
         with st.expander("📜 개발 히스토리", expanded=False):
             st.markdown(

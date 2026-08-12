@@ -21,7 +21,6 @@ from datetime import date
 from tqdm import tqdm
 
 from src.collectors.molit_api import MolitCollector
-from src.collectors.regulation_news import collect_regulation_news
 from src.database.models import init_db
 from src.database.repository import upsert_trades, upsert_rents, log_collection
 from src.utils.logger import get_logger
@@ -73,8 +72,6 @@ def main():
     ap.add_argument("--months", type=int, default=12)
     ap.add_argument("--no-trade", action="store_true")
     ap.add_argument("--no-rent", action="store_true")
-    ap.add_argument("--skip-reg-news", action="store_true",
-                    help="규제 변경 뉴스 감지 건너뜀")
     args = ap.parse_args()
 
     init_db()
@@ -89,17 +86,6 @@ def main():
         collect_region(mc, region, ymds,
                        do_trade=not args.no_trade,
                        do_rent=not args.no_rent)
-
-    # ── 규제 뉴스 변경 감지 (자동 반영 아님 — 알림 전용) ──
-    if not args.skip_reg_news:
-        print("\n[규제 뉴스 감지 중...]")
-        result = collect_regulation_news(days=30)
-        if result["count"] == 0:
-            print("  최근 30일 규제 관련 뉴스 없음")
-        else:
-            print(f"  ⚠️  규제 관련 뉴스 {result['count']}건 감지 — 앱 사이드바에서 확인하세요")
-            for art in result["articles"][:3]:
-                print(f"    [{art['datetime']}] {art['title'][:60]}")
 
     print("\nOK: 수집 완료")
 
