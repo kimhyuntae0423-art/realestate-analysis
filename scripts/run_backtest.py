@@ -39,8 +39,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-months", type=int, default=12)
     ap.add_argument("--train-months", type=int, default=12)
-    ap.add_argument("--cw", type=float, default=0.30, help="catalyst weight")
-    ap.add_argument("--tw", type=float, default=0.30, help="tier weight")
+    ap.add_argument("--cw", type=float, default=0.10, help="catalyst weight (region_score 내부 호재 가산 강도)")
+    ap.add_argument("--tw", type=float, default=0.70,
+                     help="region_backtest에서는 tier(상급지등급) 가중치, "
+                          "apt_backtest에서는 region_score(시세) 가중치로 의미가 다름 — "
+                          "recommend.py::recommend_investment_focus()와 동일 파라미터명 유지")
     ap.add_argument("--grid", action="store_true", help="가중치 그리드 서치")
     ap.add_argument("--gap", action="store_true", help="갭투자 4종 백테스트 실행")
     ap.add_argument("--walk", action="store_true", help="Walk-forward (--gap과 함께 사용)")

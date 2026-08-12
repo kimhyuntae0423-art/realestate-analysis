@@ -114,9 +114,9 @@ def test_recommend_buy_outright_applies_ltv_loan():
                                       ownership="무주택", use_loan=True)
     assert len(out) == 1
     row = out.iloc[0]
-    # 규제지역(11680) 무주택 LTV 50% → 대출 5억, 필요자기자본 5억
-    assert row["loan_capacity"] == 50000
-    assert row["required_equity"] == 50000
+    # 규제지역(11680) 무주택 LTV 40%(2026-07 대책) → 대출 4억, 필요자기자본 6억
+    assert row["loan_capacity"] == 40000
+    assert row["required_equity"] == 60000
 
 
 def test_recommend_investment_focus_returns_scored_candidates():
@@ -132,8 +132,8 @@ def test_recommend_investment_focus_returns_scored_candidates():
         assert col in out.columns
     # 점수 내림차순 정렬 확인
     assert list(out["score"]) == sorted(out["score"], reverse=True)
-    # 규제지역(11680) 무주택 LTV 50% → 레버리지 2배
-    assert out.iloc[0]["leverage"] == 2.0
+    # 규제지역(11680) 무주택 LTV 40%(2026-07 대책) → 레버리지 1/(1-0.4)=1.67배
+    assert out.iloc[0]["leverage"] == 1.67
 
 
 def test_recommend_investment_focus_empty_when_no_data():

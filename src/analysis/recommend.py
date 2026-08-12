@@ -15,7 +15,11 @@ from functools import lru_cache
 from pathlib import Path
 import pandas as pd
 
-from config.settings import ROOT
+from config.settings import (
+    ROOT, DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+    SENTIMENT_VOL_CLIP, SENTIMENT_ACCEL_CLIP, SENTIMENT_SKEW_CLIP,
+    SENTIMENT_VOL_WEIGHT, SENTIMENT_ACCEL_WEIGHT, SENTIMENT_SKEW_WEIGHT,
+)
 from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.loan import get_ltv_pct, get_zone, vectorized_loan_equity
@@ -111,7 +115,7 @@ def _volume_momentum_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame
 
 
 # ─── 매수심리 지표 (KB 매수우위지수 proxy) ────────────────────────────
-def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
+def _buyer_sentiment_signals(as_of: date | None = None, area_tol: float = 5.0) -> pd.DataFrame:
     """단지·평형별 매수심리 지표.
 
     구성요소:
@@ -120,13 +124,14 @@ def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
     - mean_median_skew: 평균-중위 격차 (고가 매수 비중 신호, %)
 
     100점 만점 종합 sentiment_score 산출.
+    as_of: 기준일(기본값은 오늘). backtest.py에서 point-in-time 계산에 사용.
     """
-    now = date.today()
+    now = as_of or date.today()
     cut_t1 = now - timedelta(days=90)   # 최근 3mo 시작
     cut_t2 = now - timedelta(days=180)  # 이전 3mo 시작
     cut_t3 = now - timedelta(days=270)  # 그 이전 3mo 시작
 
-    df = fetch_trades_df(date_from=cut_t3)
+    df = fetch_trades_df(date_from=cut_t3, date_to=now)
     if df.empty:
         return pd.DataFrame()
     df = _bucketize(df, area_tol)
@@ -171,15 +176,18 @@ def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
     j["mean_median_skew_%"] = ((j["mean_recent"] - j["median_recent"]) / j["median_recent"] * 100).round(2)
 
     # 점수화 (각 0~100)
-    j["vol_score"] = (j["volume_momentum"].clip(0, 3) / 3 * 100).round(1)
-    j["accel_score"] = (((j["price_acceleration_%"].fillna(0).clip(-30, 30) + 30) / 60) * 100).round(1)
-    j["skew_score"] = (((j["mean_median_skew_%"].fillna(0).clip(-15, 15) + 15) / 30) * 100).round(1)
+    j["vol_score"] = ((j["volume_momentum"].clip(*SENTIMENT_VOL_CLIP) - SENTIMENT_VOL_CLIP[0])
+                       / (SENTIMENT_VOL_CLIP[1] - SENTIMENT_VOL_CLIP[0]) * 100).round(1)
+    j["accel_score"] = ((j["price_acceleration_%"].fillna(0).clip(*SENTIMENT_ACCEL_CLIP) - SENTIMENT_ACCEL_CLIP[0])
+                         / (SENTIMENT_ACCEL_CLIP[1] - SENTIMENT_ACCEL_CLIP[0]) * 100).round(1)
+    j["skew_score"] = ((j["mean_median_skew_%"].fillna(0).clip(*SENTIMENT_SKEW_CLIP) - SENTIMENT_SKEW_CLIP[0])
+                        / (SENTIMENT_SKEW_CLIP[1] - SENTIMENT_SKEW_CLIP[0]) * 100).round(1)
 
-    # 매수심리 종합 = 거래량(50%) + 가격가속(30%) + 평균중위격차(20%)
+    # 매수심리 종합 = 거래량(SENTIMENT_VOL_WEIGHT) + 가격가속(SENTIMENT_ACCEL_WEIGHT) + 평균중위격차(SENTIMENT_SKEW_WEIGHT)
     j["sentiment_score"] = (
-        j["vol_score"] * 0.5
-        + j["accel_score"] * 0.3
-        + j["skew_score"] * 0.2
+        j["vol_score"] * SENTIMENT_VOL_WEIGHT
+        + j["accel_score"] * SENTIMENT_ACCEL_WEIGHT
+        + j["skew_score"] * SENTIMENT_SKEW_WEIGHT
     ).round(1)
 
     return j[[
@@ -191,7 +199,7 @@ def _buyer_sentiment_signals(area_tol: float = 5.0) -> pd.DataFrame:
 
 def region_sentiment_summary(area_tol: float = 5.0) -> pd.DataFrame:
     """지역(시군구) 단위 매수심리 평균."""
-    sig = _buyer_sentiment_signals(area_tol)
+    sig = _buyer_sentiment_signals(area_tol=area_tol)
     if sig.empty:
         return sig
     g = sig.groupby("region_code").agg(
@@ -289,32 +297,41 @@ def _compute_growth_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame:
     return g.reset_index()
 
 
+@lru_cache(maxsize=1)
+def _load_jeonse_bands() -> dict:
+    """전세가율 밴드(적정구간 점수·역전세 리스크 기준) 설정 로드."""
+    p = ROOT / "config" / "jeonse_bands.json"
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _jeonse_quality_score(ratio: float) -> float:
     """전세가율(%) → 갭투자 적정구간 점수 (0~100, 역U자형).
 
+    config/jeonse_bands.json::quality_breakpoints 구간별 선형보간.
     65~78%: 최적(100점). 너무 낮으면 갭 커서 시드 부담, 너무 높으면 역전세 위험.
     """
-    if ratio < 50:
-        return ratio
-    elif ratio <= 65:
-        return 50.0 + (ratio - 50) * (50.0 / 15)
-    elif ratio <= 78:
-        return 100.0
-    elif ratio <= 87:
-        return 100.0 - (ratio - 78) * (50.0 / 9)
-    elif ratio <= 93:
-        return 50.0 - (ratio - 87) * (40.0 / 6)
-    else:
-        return max(0.0, 10.0 - (ratio - 93) * 2)
+    breakpoints = _load_jeonse_bands()["quality_breakpoints"]
+    if ratio <= breakpoints[0][0]:
+        return float(breakpoints[0][1])
+    if ratio >= breakpoints[-1][0]:
+        return float(breakpoints[-1][1])
+    for (x0, y0), (x1, y1) in zip(breakpoints, breakpoints[1:]):
+        if x0 <= ratio <= x1:
+            return y0 + (ratio - x0) / (x1 - x0) * (y1 - y0)
+    return float(breakpoints[-1][1])
 
 
 def _jeonse_risk_label(ratio: float, accel: float = 0.0) -> str:
     """전세가율 수준 + 추세로 역전세 리스크 레벨 산출."""
-    if ratio >= 90:
+    th = _load_jeonse_bands()["risk_thresholds"]
+    if ratio >= th["danger_ratio"]:
         return "⚠️ 역전세위험"
-    elif ratio >= 83 or (ratio >= 78 and accel < -2):
+    elif ratio >= th["caution_ratio"] or (
+        ratio >= th["caution_accel_ratio"] and accel < th["caution_accel_%p"]
+    ):
         return "🔶 주의"
-    elif ratio >= 65:
+    elif ratio >= th["safe_ratio"]:
         return "✅ 적정"
     else:
         return "🟢 갭여유"
@@ -408,12 +425,10 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
     갭투자는 일반적으로 전세 보증금이 임차인 부담분이므로 LTV 대출은 받지 않음.
     필요자기자본 = 갭 = trade - rent. → gap ≤ 시드 조건.
 
-    종합점수 (5개 요소):
-      - 전세가율 적정구간 (25%): 65~78% 최적, 역U자형
-      - 전세가율 상승 추세  (20%): 갭이 줄어드는 방향 = 매매전환 신호
-      - 상급지 등급         (20%): 나중에 팔기 쉬운 지역
-      - 갭 레버리지 배수    (20%): 매매가/갭 (적은 돈으로 큰 자산)
-      - 거래 활성도         (15%): 유동성
+    종합점수(_apply_gap_scores 참고, 2개 요소):
+      - 상급지 등급(tier_score) 순위 80% — 단독 ρ=+0.443으로 가장 신뢰도 높음
+      - 거래 활성도(activity) 순위 20% — 유동성
+      전세가율·상승추세·레버리지 배수는 역상관(ρ≈-0.33) 확인 후 점수에서 제외됨(표시용으로만 유지).
     """
     df_t, df_r = _load_recent(months)
     if df_t.empty or df_r.empty:
@@ -599,9 +614,9 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
                                  ownership: str = "무주택",
                                  first_time_buyer: bool = False,
                                  use_loan: bool = True,
-                                 catalyst_weight: float = 0.10,
-                                 tier_weight: float = 0.70,
-                                 prestige_weight: float = 0.30,
+                                 catalyst_weight: float = DEFAULT_CATALYST_WEIGHT,
+                                 tier_weight: float = DEFAULT_TIER_WEIGHT,
+                                 prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                                  dsr_cap_man: float | None = None) -> pd.DataFrame:
     """🚀 투자수익 추구. 호재 + 선행지표 + 레버리지 + 상급지 등급으로 추천.
 
@@ -639,7 +654,7 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
         g["prior_deals"] = 0
 
     # 매수심리 시그널 (KB 매수우위지수 proxy)
-    sentiment = _buyer_sentiment_signals(area_tol)
+    sentiment = _buyer_sentiment_signals(area_tol=area_tol)
     if not sentiment.empty:
         g = g.merge(sentiment, on=["region_code", "apt_name", "area_bucket"], how="left")
     # 매수심리 미산출 단지는 중립 50점

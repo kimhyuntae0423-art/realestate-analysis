@@ -7,6 +7,9 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from config.settings import (
+    DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+)
 from src.ui.shared import (
     REGIONS, REGION_MAP, render_table, naver_land_url,
     _cached_gap, _cached_yield, _cached_outright, _cached_investment,
@@ -536,7 +539,7 @@ def page_portfolio_strategy():
                         st.metric(
                             "② 정책 상한", f"{bd['cap_limit_man']/10000:.0f}억",
                             delta=_limit_label("한도캡"), delta_color=_limit_color("한도캡"),
-                            help="규제지역 한도: 15억 이하→6억 / 15~25억→4억 / 25억 초과→2억.",
+                            help="규제지역 한도: 매매가 무관 flat 6억 (2026-07 대책).",
                         )
                 with _c3:
                     if bd["dsr_limit_man"]:
@@ -599,17 +602,26 @@ def page_portfolio_strategy():
         elif bd and binding == "한도캡" and not _cap_none:
             st.warning(
                 f"**🔴 정책 한도캡이 병목 — 개인 조건으로는 극복 불가합니다.**  \n"
-                f"이 가격대 규제지역 최대 대출: **{_eok(bd['cap_limit_man'])}**  \n"
-                f"→ **해결 방법**: ① 목표 매매가를 낮춰 한도캡이 낮은 구간으로 이동, "
-                f"② 부족분({_eok(shortage_max)})을 자기자본으로 추가 준비"
+                f"규제지역 최대 대출: **{_eok(bd['cap_limit_man'])}** (매매가 무관 flat, 2026-07 대책)  \n"
+                f"→ **해결 방법**: ① 부족분({_eok(shortage_max)})을 자기자본으로 추가 준비, "
+                f"② 비규제지역 검토 (한도캡 없음)"
             )
         elif bd and binding == "LTV":
             st.info(
                 f"**🔵 LTV가 병목 — 자기자본을 늘릴수록 매수 가능 가격이 올라갑니다.**  \n"
                 f"KB시세의 {bd['ltv_pct']:.0f}%만 대출 가능 → 나머지 {100 - bd['ltv_pct']:.0f}%는 자기자본으로 충당.  \n"
                 f"→ **해결 방법**: ① 보유 부동산 매도로 현금 확보, "
-                f"② 생애최초 요건 충족 시 LTV +20%p 가산 확인"
+                f"② 생애최초 요건 충족 시 규제지역 LTV 고정 70% 적용 확인"
             )
+
+        # ── 규제지역 부가 경고 (2026-07 대책) ────────────────
+        if bd:
+            if bd.get("land_permit_required"):
+                st.warning("🚧 목표 지역은 **토지거래허가구역**입니다. 일정 규모 이상 거래 시 허가가 필요하고, 갭투자(전세 승계)는 사실상 어렵습니다.")
+            if bd.get("occupancy_required"):
+                st.info("🏠 목표 지역은 **실거주 의무** 대상입니다. 주담대 실행 후 일정 기간 내 실입주해야 합니다.")
+            if bd.get("refinance_restricted"):
+                st.warning("🔒 다주택 상태로 매수 시 규제지역 신규 대출·만기 연장이 원칙적으로 제한됩니다.")
 
         # 자금 부족 여부 및 구체적 행동 지침
         if shortage_max > 0:
@@ -967,8 +979,8 @@ def page_portfolio_strategy():
                     rec_df = _cached_investment(
                         seed_man_port, rec_months, rec_min_deals,
                         "무주택", False, True,
-                        catalyst_weight=0.10, tier_weight=0.7,
-                        prestige_weight=0.10, dsr_cap_man=dsr_cap_man_port,
+                        catalyst_weight=DEFAULT_CATALYST_WEIGHT, tier_weight=DEFAULT_TIER_WEIGHT,
+                        prestige_weight=DEFAULT_PRESTIGE_WEIGHT, dsr_cap_man=dsr_cap_man_port,
                     )
                 elif rec_strategy == "갭투자":
                     rec_df = _cached_gap(

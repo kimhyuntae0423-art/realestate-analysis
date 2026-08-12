@@ -20,9 +20,12 @@ def test_acquisition_tax_first_time_buyer_deduction():
     assert ftb == max(0, normal - 200)
 
 
-def test_acquisition_tax_multihome_adjusted_area():
-    assert costs.acquisition_tax_man(50000, "다주택", is_adjusted_area=True) == round(50000 * 0.12)
-    assert costs.acquisition_tax_man(50000, "다주택", is_adjusted_area=False) == round(50000 * 0.08)
+def test_acquisition_tax_multihome_and_one_house_variants_flat_rate():
+    # 2026-07 대책: 다주택/1주택(모든 변형)은 조정지역 구분 없이 일괄 8%
+    assert costs.acquisition_tax_man(50000, "다주택") == round(50000 * 0.08)
+    assert costs.acquisition_tax_man(50000, "1주택") == round(50000 * 0.08)
+    assert costs.acquisition_tax_man(50000, "1주택(처분조건부)") == round(50000 * 0.08)
+    assert costs.acquisition_tax_man(50000, "1주택(미처분)") == round(50000 * 0.08)
 
 
 def test_broker_fee_cap_under_5eok():

@@ -1,9 +1,10 @@
 """src/analysis/loan.py — LTV/한도cap/DSR 대출 계산 검증.
 
-config/loan_regulations.json 실제 값 기준 (2025-10-15 대책):
-- 규제지역(11680 강남 등) 무주택 LTV 50%, 생애최초 +20%p, 다주택 0%
-- 한도 cap: 15억↓ 6억 / 15~25억 4억 / 25억↑ 2억 (규제지역만)
-- 비규제지역: LTV 무주택 70%, cap 없음
+config/loan_regulations.json 실제 값 기준 (2026-07 대책, 10.15 대책 위에 갱신):
+- 규제지역(11680 강남 등) 무주택 LTV 40%, 서민실수요자 60%, 다주택 0%
+- 생애최초는 존(zone) 무관 독립 고정값 70% — 규제지역에서는 ownership과 무관하게 적용됨
+- 한도 cap: 규제지역 전체 매매가 무관 flat 6억 (기존 15억/25억 구간 폐지)
+- 비규제지역: LTV 무주택 70% (생애최초 +10%p 가산), 다주택 0%, cap 없음
 """
 from __future__ import annotations
 
@@ -19,23 +20,24 @@ def test_get_zone_known_and_default():
 
 
 def test_get_ltv_pct_regulation_and_bonus():
-    assert loan.get_ltv_pct("11680", "무주택") == 50
-    assert loan.get_ltv_pct("11680", "무주택", first_time_buyer=True) == 70  # 50+20
+    assert loan.get_ltv_pct("11680", "무주택") == 40
+    assert loan.get_ltv_pct("11680", "서민실수요자") == 60
     assert loan.get_ltv_pct("11680", "다주택") == 0
-    # 다주택은 base=0이라 생애최초 보너스도 적용 안 됨
-    assert loan.get_ltv_pct("11680", "다주택", first_time_buyer=True) == 0
+    # 생애최초는 규제지역에서 독립 고정값(70%) — ownership과 무관하게 적용됨
+    assert loan.get_ltv_pct("11680", "무주택", first_time_buyer=True) == 70
+    assert loan.get_ltv_pct("11680", "다주택", first_time_buyer=True) == 70
 
 
-def test_loan_capacity_tier1_cap_binds():
-    # 10억 매물, 규제지역, 무주택: LTV 50% = 5억 < tier1 cap 6억 → LTV가 binding
+def test_loan_capacity_ltv_binds_at_low_price():
+    # 10억 매물, 규제지역, 무주택: LTV 40% = 4억 < flat cap 6억 → LTV가 binding
     cap = loan.loan_capacity_man(100000, "11680", "무주택")
-    assert cap == 50000
-
-
-def test_loan_capacity_tier2_cap_binds():
-    # 20억 매물: LTV 50% = 10억 > tier2 cap(15~25억 구간) 4억 → cap이 binding
-    cap = loan.loan_capacity_man(200000, "11680", "무주택")
     assert cap == 40000
+
+
+def test_loan_capacity_flat_cap_binds_at_high_price():
+    # 20억 매물: LTV 40% = 8억 > flat cap 6억(2026-07, 매매가 무관) → cap이 binding
+    cap = loan.loan_capacity_man(200000, "11680", "무주택")
+    assert cap == 60000
 
 
 def test_required_equity_is_price_minus_loan():

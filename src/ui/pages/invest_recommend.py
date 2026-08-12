@@ -7,6 +7,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from config.settings import DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT
 from src.analysis.location import is_kakao_ready, enrich_with_location
 from src.ui.shared import (
     REGION_MAP, render_table, render_df, naver_land_url,
@@ -27,8 +28,8 @@ def render_recommend_tab(inputs: dict):
     min_deals = inputs["min_deals"]
     top_n = inputs["top_n"]
     catalyst_weight = inputs["catalyst_weight"]
-    tier_weight = inputs.get("tier_weight", 0.6)
-    prestige_weight = inputs.get("prestige_weight", 0.10)
+    tier_weight = inputs.get("tier_weight", DEFAULT_TIER_WEIGHT)
+    prestige_weight = inputs.get("prestige_weight", DEFAULT_PRESTIGE_WEIGHT)
     area_range = inputs.get("area_range")
     year_range = inputs.get("year_range")
     submitted = inputs["submitted"]
@@ -71,9 +72,11 @@ def render_recommend_tab(inputs: dict):
     costs_nonreg = _tacm(max_buy_nonreg_net, ownership, first_time)
 
 
-    if use_dsr and dsr_cap_man is not None and dsr_cap_man < 60000:
+    from src.analysis.loan import load_regulations as _load_regs
+    _reg_cap_man = _load_regs().get("loan_cap_man", {}).get("규제", {}).get("tier1_cap_man")
+    if use_dsr and dsr_cap_man is not None and _reg_cap_man is not None and dsr_cap_man < _reg_cap_man:
         st.warning(
-            f"⚠️ DSR 한도({dsr_cap_man/10000:.2f}억)가 LTV 한도(6억)보다 작습니다. "
+            f"⚠️ DSR 한도({dsr_cap_man/10000:.2f}억)가 LTV 한도({_reg_cap_man/10000:.2f}억)보다 작습니다. "
             "실제 대출은 DSR 쪽이 binding 됩니다."
         )
 
@@ -250,10 +253,8 @@ def render_recommend_tab(inputs: dict):
     # LTV가 허용하는 대출 (시드 / (1 - LTV%) × LTV%)
     _ltv_loan_reg = seed_man * ltv_규제 / (100 - ltv_규제)
     _ltv_loan_nonreg = seed_man * ltv_비규제 / (100 - ltv_비규제)
-    # 한도 cap: 매매가에 따라 다름 (규제지역만 적용)
-    _cap_reg = (60000 if max_buy_reg <= 150000
-                else 40000 if max_buy_reg <= 250000
-                else 20000)
+    # 한도 cap: 규제지역은 매매가 무관 flat (2026-07 대책)
+    _cap_reg = _reg_cap_man
     # 바인딩 요인 판별 — 세 한도 중 가장 작은 값이 실제 대출을 결정
     _limits_reg = [(_ltv_loan_reg, f"LTV {ltv_규제:.0f}%"),
                    (_cap_reg,       f"한도 cap {_cap_reg//10000}억")]
@@ -287,10 +288,10 @@ def render_recommend_tab(inputs: dict):
                   f"  · 취득세 {costs_reg['acquisition_tax']:,}만 / 중개 {costs_reg['broker_fee']:,}만 / 등기 {costs_reg['registration_etc']:,}만\n\n"
                   f"【대출 결정 요인: {_bind_reg}】\n"
                   f"① LTV {ltv_규제:.0f}%: 허용 대출 {_ltv_loan_reg/10000:.2f}억\n"
-                  f"② 한도 cap: {_cap_reg//10000}억 (매매가 {max_buy_reg_net/10000:.1f}억 기준)\n"
+                  f"② 한도 cap: {_cap_reg//10000}억 (규제지역 매매가 무관 flat, 2026-07 대책)\n"
                   f"③ DSR: {_dsr_str}\n\n"
                   f"※ 부대비용 전 이론 한도 {max_buy_reg/10000:.2f}억 → 포함 시 {max_buy_reg_net/10000:.2f}억\n"
-                  "※ LTV: 강남3구·용산 40% / 기타 규제 50% / 생애최초 +10%p"
+                  "※ LTV: 규제지역 무주택 40% / 서민실수요자 60% / 생애최초 고정 70%"
               ))
     c5.metric("🏞️ 비규제지역 최대 매수가", f"{max_buy_nonreg_net/10000:.2f} 억",
               help=(
@@ -302,7 +303,7 @@ def render_recommend_tab(inputs: dict):
                   f"① LTV {ltv_비규제:.0f}%: 허용 대출 {_ltv_loan_nonreg/10000:.2f}억\n"
                   f"② DSR: {_dsr_str}\n\n"
                   f"※ 부대비용 전 이론 한도 {max_buy_nonreg/10000:.2f}억 → 포함 시 {max_buy_nonreg_net/10000:.2f}억\n"
-                  "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 50%, 한도 cap 없음"
+                  "※ LTV: 무주택 70% (생애최초 80%) / 1주택 60% / 다주택 0%(신규 주담대 불가), 한도 cap 없음"
               ))
     if strategy == "🚀 투자수익":
         c6.metric("최고 예상수익률(자기자본)", f"{rec['expected_roi_%'].max():.2f} %")

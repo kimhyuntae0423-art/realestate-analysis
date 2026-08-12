@@ -42,7 +42,14 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     st.markdown("**👨‍👩‍👧 가구 정보**")
     c1, c2, c3 = st.columns(3)
     ownership = c1.selectbox(
-        "보유 주택 수", ["무주택", "1주택", "다주택"], key=f"{key_prefix}_own",
+        "보유 주택 수",
+        ["무주택", "서민실수요자", "1주택(처분조건부)", "1주택(미처분)", "다주택"],
+        key=f"{key_prefix}_own",
+        help=(
+            "서민실수요자: 무주택 + 소득·주택가 요건 충족자 (규제지역 LTV 60%)\n"
+            "1주택(처분조건부): 기존 주택 처분 조건으로 규제지역 LTV 40% (무주택과 동일)\n"
+            "1주택(미처분): 처분 조건 미충족 — 규제지역 신규 주담대 불가(LTV 0%)"
+        ),
     )
     children = c2.number_input(
         "자녀 수", min_value=0, max_value=10, value=0, key=f"{key_prefix}_kids",
@@ -51,7 +58,7 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     with c3:
         first_time = st.checkbox(
             "생애최초 구매", key=f"{key_prefix}_ft",
-            help="LTV +20%p 우대",
+            help="LTV 우대 (규제지역 고정 70%, 보유주택수와 무관 / 비규제 +10%p 가산)",
         )
         is_newlywed = st.checkbox(
             "🎀 신혼부부 (혼인 7년 이내)", key=f"{key_prefix}_new",
@@ -90,7 +97,9 @@ def _personal_inputs_block(key_prefix: str = "p") -> dict:
     kb_ratio_pct = kbc2.slider(
         "KB시세/실거래가 (%)", min_value=75, max_value=100, value=90, step=1,
         key=f"{key_prefix}_kb",
-        help="직접 입력이 없을 때 일괄 보정값. 통상 90~97%.",
+        help="직접 입력이 없을 때 일괄 보정값. 기본 90%는 실제 범위(통상 90~97%)의 "
+             "보수적인 하한값 — 매물 미정 상태에서 대출한도를 낙관적으로 부풀리지 않기 위함. "
+             "특정 매물의 실제 KB시세를 알면 왼쪽에 직접 입력하세요.",
     )
     kb_ratio = kb_ratio_pct / 100
     kb_direct_man = int(kb_direct_eok * 10000) if kb_direct_eok > 0 else 0

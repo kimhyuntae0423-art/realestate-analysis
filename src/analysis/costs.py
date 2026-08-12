@@ -8,36 +8,35 @@ from __future__ import annotations
 
 
 # ─── 취득세 (2026 기준 일반 매수) ─────────────────────────
-def _general_progressive_tax(price_man: float) -> float:
-    """무주택자 취득세 (조정/비조정 공통 일반세율): 6억 이하 1.1% / 6~9억 누진 / 9억 초과 3.5%."""
-    if price_man <= 60000:
-        return price_man * 0.011
-    elif price_man <= 90000:
-        return 60000 * 0.011 + (price_man - 60000) * 0.015
-    else:
-        return price_man * 0.035
-
-
 def acquisition_tax_man(price_man: float, ownership: str = "무주택",
-                          first_time_buyer: bool = False,
-                          is_adjusted_area: bool = True) -> float:
+                          first_time_buyer: bool = False) -> float:
     """매매 취득세 (만원).
 
     무주택 1주택: 6억 이하 1.1% / 6~9억 1.5%(누진) / 9억 초과 3.5%
-    1주택 → 2주택: 조정대상 8% / 비조정 일반세율
-    2주택 → 다주택 추가취득: 조정대상 12% / 비조정 8%
+    1주택 → 2주택(조정대상): 8% / 비조정 1.1%
+    2주택 → 다주택 추가취득: 조정 12% / 비조정 8%
     생애최초: 200만원 한도 감면 (단순화)
     """
     if price_man <= 0:
         return 0.0
 
     if ownership == "다주택":
-        tax = price_man * (0.12 if is_adjusted_area else 0.08)
-    elif ownership == "1주택":
-        tax = price_man * 0.08 if is_adjusted_area else _general_progressive_tax(price_man)
+        rate = 0.08  # 단순화: 다주택 일괄 8%
+    elif ownership.startswith("1주택"):
+        # "1주택"/"1주택(처분조건부)"/"1주택(미처분)" 공통 — 추가매수는
+        # 조정대상지역 여부에 따라 다르지만 단순화
+        rate = 0.08
     else:  # 무주택 → 1주택
-        tax = _general_progressive_tax(price_man)
-
+        if price_man <= 60000:
+            rate = 0.011
+        elif price_man <= 90000:
+            # 누진: 6억 1.1% + 초과분 1.5% 가중평균 근사
+            # 6억 1.1% + (P-6억)에 1.5%
+            tax = 60000 * 0.011 + (price_man - 60000) * 0.015
+            return round(max(0, tax - (200 if first_time_buyer else 0)))
+        else:
+            rate = 0.035
+    tax = price_man * rate
     if first_time_buyer:
         tax = max(0, tax - 200)  # 생애최초 200만원 감면
     return round(tax)
@@ -72,10 +71,9 @@ def registration_etc_man(price_man: float) -> float:
 
 
 def total_acquisition_cost_man(price_man: float, ownership: str = "무주택",
-                                 first_time_buyer: bool = False,
-                                 is_adjusted_area: bool = True) -> dict:
+                                 first_time_buyer: bool = False) -> dict:
     """매수가 P에 대해 부대비용 총합과 항목별 내역."""
-    tax = acquisition_tax_man(price_man, ownership, first_time_buyer, is_adjusted_area)
+    tax = acquisition_tax_man(price_man, ownership, first_time_buyer)
     broker = broker_fee_man(price_man)
     reg = registration_etc_man(price_man)
     return {
@@ -126,13 +124,13 @@ def check_didimdol(annual_income_man: float, price_man: float,
         max_loan = 40000
 
     eligible = (
-        ownership == "무주택"
+        ownership in ("무주택", "서민실수요자")
         and annual_income_man <= income_limit
         and price_man <= price_limit
     )
 
     reasons = []
-    if ownership != "무주택":
+    if ownership not in ("무주택", "서민실수요자"):
         reasons.append("무주택 아님")
     if annual_income_man > income_limit:
         reasons.append(f"연소득 {income_limit}만 초과")
@@ -176,8 +174,10 @@ def check_bogeumjari(annual_income_man: float, price_man: float,
     if is_newlywed or children >= 1:
         max_loan = 40000
 
+    # 무주택/서민실수요자/처분조건부 1주택(레거시 "1주택" 별칭 포함)만 적격.
+    # 미처분 1주택은 처분조건을 충족하지 못하므로 제외.
     eligible = (
-        ownership in ("무주택", "1주택")
+        ownership not in ("다주택", "1주택(미처분)")
         and annual_income_man <= income_limit
         and price_man <= price_limit
     )
@@ -185,6 +185,8 @@ def check_bogeumjari(annual_income_man: float, price_man: float,
     reasons = []
     if ownership == "다주택":
         reasons.append("다주택")
+    elif ownership == "1주택(미처분)":
+        reasons.append("처분조건 미충족(미처분 1주택)")
     if annual_income_man > income_limit:
         reasons.append(f"연소득 {income_limit}만 초과")
     if price_man > price_limit:

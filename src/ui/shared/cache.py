@@ -12,7 +12,9 @@ from src.analysis.recommend import (
     recommend_investment_focus, region_sentiment_summary,
 )
 from src.analysis.forecast import forecast_monthly_price
-from config.settings import ROOT as APP_ROOT
+from config.settings import (
+    ROOT as APP_ROOT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
+)
 
 
 @st.cache_data(ttl=600)
@@ -74,8 +76,8 @@ def _cached_outright(seed_man: int, months: int, min_deals: int,
 def _cached_investment(seed_man: int, months: int, min_deals: int,
                         ownership: str, first_time: bool, use_loan: bool,
                         catalyst_weight: float,
-                        tier_weight: float = 0.6,
-                        prestige_weight: float = 0.10,
+                        tier_weight: float = DEFAULT_TIER_WEIGHT,
+                        prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                         dsr_cap_man: float | None = None) -> pd.DataFrame:
     return recommend_investment_focus(
         seed_man, months=months, min_trade_deals=min_deals,
