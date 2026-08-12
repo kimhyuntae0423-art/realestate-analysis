@@ -38,6 +38,20 @@ def test_upsert_trades_empty_list_is_noop():
     assert upsert_trades([]) == 0
 
 
+def test_upsert_trades_large_batch_does_not_hit_sqlite_variable_limit():
+    # 5년 백필 실행 중 실제로 발생한 버그 재현: 컬럼수 x 행수가 SQLite 바인드
+    # 파라미터 상한을 넘으면 INSERT문 전체가 "too many SQL variables"로 실패해
+    # 그 배치의 모든 행이 조용히 유실됐음 (repository._bulk_upsert가 청크 분할 안 함).
+    # 청크 크기(_MAX_SQL_VARIABLES=900) 경계를 넘나드는 3000행으로 회귀 검증.
+    rows = [_trade_row(apt=f"단지{i}", floor=i % 30 + 1) for i in range(3000)]
+    n = upsert_trades(rows)
+    assert n == 3000
+    assert len(fetch_trades_df(region_code="11680")) == 3000
+
+    # 동일 배치 재삽입 -> 청크 경계와 무관하게 전부 중복 판정(0건)돼야 함
+    assert upsert_trades(rows) == 0
+
+
 def test_fetch_trades_df_filters_by_region_and_date_range():
     upsert_trades([
         _trade_row(region="11680", d=date(2025, 1, 1), apt="A"),

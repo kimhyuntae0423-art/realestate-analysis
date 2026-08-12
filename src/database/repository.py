@@ -32,12 +32,28 @@ def session_scope():
         s.close()
 
 
+# SQLite 바인드 파라미터 상한 보수적 값. 빌드에 따라 999(구버전)~32766(3.32+)로
+# 다르므로, 거래량 많은 지역·월(예: 강남구 특정월 전월세 2천건+)에서 한 INSERT문에
+# rows*컬럼수 파라미터를 다 넣으면 "too many SQL variables"로 배치 전체가 조용히
+# 실패할 수 있어(실제로 5년 백필 중 39건 발생·확인됨) 청크로 나눠 커밋한다.
+_MAX_SQL_VARIABLES = 900
+
+
+def _chunked(rows: list[dict], size: int):
+    for i in range(0, len(rows), size):
+        yield rows[i:i + size]
+
+
 def _bulk_upsert(session, model, rows: list[dict]) -> int:
     if not rows:
         return 0
-    stmt = _make_upsert(model, rows)
-    result = session.execute(stmt)
-    return result.rowcount if result.rowcount is not None else 0
+    chunk_size = max(1, _MAX_SQL_VARIABLES // len(rows[0]))
+    total = 0
+    for chunk in _chunked(rows, chunk_size):
+        stmt = _make_upsert(model, chunk)
+        result = session.execute(stmt)
+        total += result.rowcount if result.rowcount is not None else 0
+    return total
 
 
 def upsert_trades(rows: list[dict]) -> int:
