@@ -21,7 +21,7 @@ from src.analysis.hypothesis_lab import HypothesisResult, _verdict_for, _empty_r
 SEOUL_GYEONGGI_PREFIXES = ("11", "41")  # 법정동코드 앞 2자리: 11=서울, 41=경기
 
 
-def test_redevelopment_age_effect(months: int = 36, area_tol: float = 5.0,
+def test_redevelopment_age_effect(months: int = 60, area_tol: float = 5.0,
                                    min_deals: int = 3) -> HypothesisResult:
     meta = dict(
         id="redevelopment_age",
@@ -88,7 +88,7 @@ def _load_redevelopment_catalyst_regions() -> set[str]:
 
 
 # ─── 1b. 재건축 호재 발표 vs 단순 연한 ──────────────────────────────
-def test_catalyst_announcement_vs_age(months: int = 36, area_tol: float = 5.0,
+def test_catalyst_announcement_vs_age(months: int = 60, area_tol: float = 5.0,
                                        min_deals: int = 3, age_threshold: int = 25) -> HypothesisResult:
     meta = dict(
         id="catalyst_vs_age",
@@ -148,7 +148,7 @@ def test_catalyst_announcement_vs_age(months: int = 36, area_tol: float = 5.0,
 
 
 # ─── 2. 거래량 선행지표 ─────────────────────────────────────────────
-def test_volume_leads_price(months: int = 30) -> HypothesisResult:
+def test_volume_leads_price(months: int = 60) -> HypothesisResult:
     meta = dict(
         id="volume_leads_price",
         title="거래량 선행지표",
@@ -187,7 +187,7 @@ def test_volume_leads_price(months: int = 30) -> HypothesisResult:
 
 
 # ─── 3. 모멘텀 지속 vs 평균회귀 ─────────────────────────────────────
-def test_momentum_vs_reversion(months: int = 24, area_tol: float = 5.0,
+def test_momentum_vs_reversion(months: int = 60, area_tol: float = 5.0,
                                 min_deals: int = 3) -> HypothesisResult:
     meta = dict(
         id="momentum_vs_reversion",
