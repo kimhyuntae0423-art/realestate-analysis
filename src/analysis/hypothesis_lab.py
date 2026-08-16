@@ -76,6 +76,7 @@ def get_all_hypotheses() -> list:
     """
     from src.analysis import hypothesis_tests as t
     from src.analysis import hypothesis_tests_cycles as c
+    from src.analysis import hypothesis_tests_valuation as v
     return [
         t.test_redevelopment_age_effect,
         t.test_catalyst_announcement_vs_age,
@@ -85,6 +86,7 @@ def get_all_hypotheses() -> list:
         c.test_large_units_lead_small_units,
         c.test_price_level_mean_reversion,
         c.test_regulation_balloon_effect,
+        v.test_jeonse_ratio_leads_price,
     ]
 
 
@@ -132,18 +134,13 @@ class PendingHypothesis:
 
 PENDING_HYPOTHESES: list[PendingHypothesis] = [
     PendingHypothesis(
-        id="jeonse_ratio",
-        title="전세가율 선행",
-        claim="전세가율(전세/매매)이 오르면 매매가가 뒤따라 오른다",
-        data_status="데이터 있음 — 전세 실거래 약 298만건 (2021-08~2026-05)",
-        note="검증 함수 미작성 — 바로 착수 가능",
-    ),
-    PendingHypothesis(
         id="supply_glut",
         title="입주물량(공급과잉) 효과",
         claim="입주물량이 몰리는 시기·지역일수록 가격이 하락한다",
-        data_status="데이터 있음 — config/supply.json",
-        note="검증 함수 미작성 — 바로 착수 가능",
+        data_status="데이터 있음 — supply_schedule 테이블에 2010-07~2026-03 시/도 단위(17개 광역) "
+                     "실적 3,187건 존재(source: kosis_sido). config/supply.json(미래 예정치)과는 "
+                     "별개. 단, 시군구가 아닌 시/도 단위라 해상도가 거침",
+        note="검증 함수 미작성 — 바로 착수 가능(시/도 단위 한정)",
     ),
     PendingHypothesis(
         id="population_migration",
