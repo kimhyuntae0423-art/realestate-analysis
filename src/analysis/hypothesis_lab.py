@@ -118,3 +118,57 @@ def latest_results() -> list[dict] | None:
     """가장 최근 실행 결과 (없으면 None)."""
     runs = load_log()
     return runs[-1]["results"] if runs else None
+
+
+# ─── 미검증 후보 (통계 검증을 아직 시도하지 않은 가설) ──────────────────
+@dataclass
+class PendingHypothesis:
+    id: str
+    title: str
+    claim: str
+    data_status: str  # 필요한 데이터가 있는지/없는지
+    note: str          # 왜 아직 안 만들었는지 · 다음 단계
+
+
+PENDING_HYPOTHESES: list[PendingHypothesis] = [
+    PendingHypothesis(
+        id="jeonse_ratio",
+        title="전세가율 선행",
+        claim="전세가율(전세/매매)이 오르면 매매가가 뒤따라 오른다",
+        data_status="데이터 있음 — 전세 실거래 약 298만건 (2021-08~2026-05)",
+        note="검증 함수 미작성 — 바로 착수 가능",
+    ),
+    PendingHypothesis(
+        id="supply_glut",
+        title="입주물량(공급과잉) 효과",
+        claim="입주물량이 몰리는 시기·지역일수록 가격이 하락한다",
+        data_status="데이터 있음 — config/supply.json",
+        note="검증 함수 미작성 — 바로 착수 가능",
+    ),
+    PendingHypothesis(
+        id="population_migration",
+        title="인구이동 선행",
+        claim="순유입 인구가 늘어나는 지역일수록 가격이 먼저 오른다",
+        data_status="데이터 없음 — 통계청 인구이동 데이터 미수집",
+        note="수집 파이프라인부터 필요",
+    ),
+    PendingHypothesis(
+        id="school_district",
+        title="학군 효과",
+        claim="학군이 좋은 지역일수록 가격이 더 오른다",
+        data_status="데이터 없음 — 교육부 학교알리미 데이터 미수집",
+        note="수집 파이프라인부터 필요",
+    ),
+    PendingHypothesis(
+        id="interest_rate",
+        title="기준금리 변동 선행",
+        claim="기준금리가 내리면(오르면) 가격이 뒤따라 오른다(내린다)",
+        data_status="데이터 정적 — macro.py 신호가 수동 토글식이라 과거 시계열 없음",
+        note="금리 시계열 수집부터 필요",
+    ),
+]
+
+
+def get_pending_hypotheses() -> list[PendingHypothesis]:
+    """아직 검증을 시도하지 않은 가설 후보 전체."""
+    return PENDING_HYPOTHESES

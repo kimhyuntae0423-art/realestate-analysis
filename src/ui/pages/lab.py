@@ -7,7 +7,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from src.analysis.hypothesis_lab import run_all_and_log, load_log, latest_results
+from src.analysis.hypothesis_lab import run_all_and_log, load_log, latest_results, get_pending_hypotheses
 from src.ui.shared import render_df
 
 _VERDICT_STYLE = {
@@ -81,6 +81,18 @@ def page_lab():
             with st.expander("방법론 · 반박 여지"):
                 st.markdown(f"**계산 방법**: {r['method']}")
                 st.markdown(f"**한계 / 반박 여지**: {r['caveats']}")
+
+    # ── 미검증 후보 ──────────────────────────────────────────────────
+    pending = get_pending_hypotheses()
+    if pending:
+        st.markdown("---")
+        st.markdown("### 🔬 미검증 후보")
+        st.caption("아직 통계 검증을 시도하지 않은 가설입니다.")
+        for p in pending:
+            with st.container(border=True):
+                st.markdown(f"**{p.title}** — ⚪ 미검증")
+                st.markdown(f"**주장**: {p.claim}")
+                st.caption(f"{p.data_status} · {p.note}")
 
     # ── 판정 변화 이력 ──────────────────────────────────────────────
     runs = load_log()
