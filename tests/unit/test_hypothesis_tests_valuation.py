@@ -4,7 +4,8 @@ from __future__ import annotations
 import pandas as pd
 
 from src.analysis import hypothesis_tests_valuation as v
-from src.database.repository import upsert_trades, upsert_rents
+from src.database.repository import upsert_trades, upsert_rents, session_scope
+from src.database.models import SupplySchedule, PopulationFlow
 
 
 def _trade(days_ago, region="11680", apt="A", ppp=6000, amount=100000, area=84.9):
@@ -48,4 +49,60 @@ def test_jeonse_ratio_leads_price_detects_positive_lag():
 
 def test_jeonse_ratio_leads_price_empty_when_no_data():
     r = v.test_jeonse_ratio_leads_price()
+    assert r.n == 0
+
+
+def test_supply_leads_price_decline_detects_negative_correlation():
+    # M0(3개월전) 입주물량 많음(1000) -> M1(2개월전) 매매가 -10%
+    # M1(2개월전) 입주물량 적음(100)  -> M2(1개월전) 매매가 +20%
+    # 공급 많았던 달일수록 다음달 상승폭이 작아야 가설 지지(음의 상관)
+    rows_t = []
+    for i in range(3):
+        rows_t.append(_trade(_month_ago_days(3) + i, ppp=10000))
+        rows_t.append(_trade(_month_ago_days(2) + i, ppp=9000))    # M0->M1 -10%
+        rows_t.append(_trade(_month_ago_days(1) + i, ppp=10800))   # M1->M2 +20%
+    upsert_trades(rows_t)
+
+    m0 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(3))).date()
+    m1 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(2))).date()
+    with session_scope() as s:
+        s.add(SupplySchedule(region_code="11", move_in_date=m0, units=1000, source="test"))
+        s.add(SupplySchedule(region_code="11", move_in_date=m1, units=100, source="test"))
+
+    r = v.test_supply_leads_price_decline(months=6, min_deals=3)
+    assert r.n >= 2
+    assert r.statistic < 0  # 입주물량 많을수록 다음달 상승폭 작음 -> 음의 상관
+
+
+def test_supply_leads_price_decline_empty_when_no_data():
+    r = v.test_supply_leads_price_decline()
+    assert r.n == 0
+
+
+def test_population_migration_leads_price_detects_positive_lag():
+    # M0(3개월전) 순유입 적음(-500) -> M1(2개월전) 매매가 -10%
+    # M1(2개월전) 순유입 많음(800)  -> M2(1개월전) 매매가 +20%
+    # 순유입 많았던 달일수록 다음달 상승폭이 커야 가설 지지(양의 상관)
+    rows_t = []
+    for i in range(3):
+        rows_t.append(_trade(_month_ago_days(3) + i, ppp=10000))
+        rows_t.append(_trade(_month_ago_days(2) + i, ppp=9000))    # M0->M1 -10%
+        rows_t.append(_trade(_month_ago_days(1) + i, ppp=10800))   # M1->M2 +20%
+    upsert_trades(rows_t)
+
+    m0 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(3))).date()
+    m1 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(2))).date()
+    with session_scope() as s:
+        s.add(PopulationFlow(region_code="11680", flow_date=m0, inflow=100, outflow=600,
+                              net_inflow=-500, source="test"))
+        s.add(PopulationFlow(region_code="11680", flow_date=m1, inflow=900, outflow=100,
+                              net_inflow=800, source="test"))
+
+    r = v.test_population_migration_leads_price(months=6, min_deals=3)
+    assert r.n >= 2
+    assert r.statistic > 0  # 순유입 많을수록 다음달 상승폭 큼 -> 양의 상관
+
+
+def test_population_migration_leads_price_empty_when_no_data():
+    r = v.test_population_migration_leads_price()
     assert r.n == 0

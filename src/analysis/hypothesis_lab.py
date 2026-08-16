@@ -87,6 +87,8 @@ def get_all_hypotheses() -> list:
         c.test_price_level_mean_reversion,
         c.test_regulation_balloon_effect,
         v.test_jeonse_ratio_leads_price,
+        v.test_supply_leads_price_decline,
+        v.test_population_migration_leads_price,
     ]
 
 
@@ -133,22 +135,6 @@ class PendingHypothesis:
 
 
 PENDING_HYPOTHESES: list[PendingHypothesis] = [
-    PendingHypothesis(
-        id="supply_glut",
-        title="입주물량(공급과잉) 효과",
-        claim="입주물량이 몰리는 시기·지역일수록 가격이 하락한다",
-        data_status="데이터 있음 — supply_schedule 테이블에 2010-07~2026-03 시/도 단위(17개 광역) "
-                     "실적 3,187건 존재(source: kosis_sido). config/supply.json(미래 예정치)과는 "
-                     "별개. 단, 시군구가 아닌 시/도 단위라 해상도가 거침",
-        note="검증 함수 미작성 — 바로 착수 가능(시/도 단위 한정)",
-    ),
-    PendingHypothesis(
-        id="population_migration",
-        title="인구이동 선행",
-        claim="순유입 인구가 늘어나는 지역일수록 가격이 먼저 오른다",
-        data_status="데이터 없음 — 통계청 인구이동 데이터 미수집",
-        note="수집 파이프라인부터 필요",
-    ),
     PendingHypothesis(
         id="school_district",
         title="학군 효과",

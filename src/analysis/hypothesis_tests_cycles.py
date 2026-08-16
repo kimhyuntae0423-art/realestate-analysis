@@ -184,7 +184,7 @@ def test_regulation_balloon_effect(months_before: int = 6, months_after: int = 6
                                     min_deals: int = 5) -> HypothesisResult:
     meta = dict(
         id="regulation_balloon",
-        title="규제발 풍선효과",
+        title="규제발 풍선효과 (수도권: 서울·경기·인천)",
         claim="한 지역이 규제로 묶이거나 풀리면, 나머지 지역들의 상승률이 반대 방향으로 움직인다(자금 재배치)",
         method=f"국토부 규제지역 지정·해제 이벤트 {len(REGULATION_EVENTS)}건마다, 상태가 바뀐 지역들의 "
                f"평당가 증감률(전후 각 {months_before}/{months_after}개월)과 안 바뀐 나머지 지역들의 "
