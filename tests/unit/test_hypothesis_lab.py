@@ -169,10 +169,11 @@ def test_run_all_and_log_appends_entry(tmp_path, monkeypatch):
     assert lab.load_log() == []
 
     results = lab.run_all_and_log()
-    assert len(results) == 4
+    n_hypotheses = len(lab.get_all_hypotheses())
+    assert len(results) == n_hypotheses
     runs = lab.load_log()
     assert len(runs) == 1
-    assert len(runs[0]["results"]) == 4
+    assert len(runs[0]["results"]) == n_hypotheses
     assert "verdict" in runs[0]["results"][0]
 
     lab.run_all_and_log()
@@ -184,4 +185,4 @@ def test_latest_results_returns_most_recent(tmp_path, monkeypatch):
     assert lab.latest_results() is None
     lab.run_all_and_log()
     assert lab.latest_results() is not None
-    assert len(lab.latest_results()) == 4
+    assert len(lab.latest_results()) == len(lab.get_all_hypotheses())

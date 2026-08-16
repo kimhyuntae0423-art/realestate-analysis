@@ -60,7 +60,7 @@ def page_lab():
             st.caption(f"통계치(Spearman ρ) = {stat_str} · 표본수 n = {r['n']:,} · 검증일 {r['computed_at']}")
 
             breakdown = r.get("breakdown")
-            if breakdown:
+            if breakdown and all("statistic" in d for d in breakdown.values()):
                 st.markdown("**하위그룹 분석**")
                 bd_cols = st.columns(len(breakdown))
                 for col, (label, d) in zip(bd_cols, breakdown.items()):
@@ -68,6 +68,15 @@ def page_lab():
                     bd_stat_str = "N/A" if bd_stat != bd_stat else f"{bd_stat:.4f}"
                     col.metric(label, bd_stat_str, help=f"n={d['n']:,} · {d['verdict']}")
                     col.caption(d["verdict"])
+            elif breakdown:
+                st.markdown("**이벤트별 상세**")
+                for label, d in breakdown.items():
+                    st.markdown(f"`{label}` {d.get('note', '')} — 변경지역 증감률 {d.get('shock_delta_%', 'N/A')}%")
+                    candidates = d.get("top_후보")
+                    if candidates:
+                        cand_df = pd.DataFrame(candidates).rename(
+                            columns={"region_code": "지역코드", "delta_%": "증감률(%)"})
+                        render_df(cand_df)
 
             with st.expander("방법론 · 반박 여지"):
                 st.markdown(f"**계산 방법**: {r['method']}")

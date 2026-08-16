@@ -71,15 +71,20 @@ def _empty_result(id: str, title: str, claim: str, method: str,
 def get_all_hypotheses() -> list:
     """등록된 가설 검증 함수 전체.
 
-    지연 import: hypothesis_tests.py가 이 모듈(HypothesisResult 등)을 import하므로,
+    지연 import: hypothesis_tests*.py가 이 모듈(HypothesisResult 등)을 import하므로,
     모듈 최상단에서 바로 import하면 순환참조가 생겨 함수 호출 시점에 import한다.
     """
     from src.analysis import hypothesis_tests as t
+    from src.analysis import hypothesis_tests_cycles as c
     return [
         t.test_redevelopment_age_effect,
         t.test_catalyst_announcement_vs_age,
         t.test_volume_leads_price,
         t.test_momentum_vs_reversion,
+        c.test_seoul_leads_other_regions,
+        c.test_large_units_lead_small_units,
+        c.test_price_level_mean_reversion,
+        c.test_regulation_balloon_effect,
     ]
 
 
