@@ -16,7 +16,7 @@ from sqlalchemy import select
 from src.database.repository import fetch_trades_df, fetch_rents_df, session_scope
 from src.database.models import SupplySchedule, PopulationFlow
 from src.analysis.gap_analysis import to_jeonse_equiv
-from src.analysis.hypothesis_lab import HypothesisResult, _empty_result
+from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, reindex_monthly
 
 # supply_schedule은 시/도(2자리) 단위. 실거래 DB에 해당 시/도가 있는 경우만 검증 가능.
 SUPPLY_SIDO_NAMES = {"11": "서울", "41": "경기", "28": "인천", "26": "부산"}
@@ -47,6 +47,11 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5) -> Hypot
     trade_g = df_trade.groupby(["region_code", "ym"]).agg(
         trade_ppp=("price_per_pyeong", "median"), trade_n=("price_per_pyeong", "count")
     ).reset_index()
+    # growth는 전세 데이터 유무와 무관하게 매매 데이터만으로 독립 계산 — 결측월을 명시해
+    # pct_change가 다개월 공백을 한 달 변화로 잘못 계산하는 걸 막는다.
+    trade_g = reindex_monthly(trade_g, ["region_code"], "ym").sort_values(["region_code", "ym"])
+    trade_g.loc[trade_g["trade_n"] < min_deals, "trade_ppp"] = float("nan")
+    trade_g["growth"] = trade_g.groupby("region_code")["trade_ppp"].pct_change()
 
     df_rent = to_jeonse_equiv(df_rent)
     df_rent["ppp"] = df_rent["jeonse_equiv"] / df_rent["area_m2"] * 3.3058
@@ -55,16 +60,17 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5) -> Hypot
         rent_ppp=("ppp", "median"), rent_n=("ppp", "count")
     ).reset_index()
 
-    g = trade_g.merge(rent_g, on=["region_code", "ym"], how="inner")
-    g = g[(g["trade_n"] >= min_deals) & (g["rent_n"] >= min_deals)].sort_values(["region_code", "ym"])
-    if g.empty:
+    ratio_src = trade_g[["region_code", "ym", "trade_ppp", "trade_n"]].merge(
+        rent_g, on=["region_code", "ym"], how="inner")
+    ratio_src = ratio_src[(ratio_src["trade_n"] >= min_deals) & (ratio_src["rent_n"] >= min_deals)]
+    if ratio_src.empty:
         return _empty_result(**meta)
-    g["jeonse_ratio"] = g["rent_ppp"] / g["trade_ppp"] * 100
-    g["growth"] = g.groupby("region_code")["trade_ppp"].pct_change()
+    ratio_src = ratio_src.copy()
+    ratio_src["jeonse_ratio"] = ratio_src["rent_ppp"] / ratio_src["trade_ppp"] * 100
 
-    ratio_df = g[["region_code", "ym", "jeonse_ratio"]].dropna().copy()
+    ratio_df = ratio_src[["region_code", "ym", "jeonse_ratio"]].dropna().copy()
     ratio_df["ym"] = ratio_df["ym"] + 1  # t시점 전세가율을 t+1시점 라벨로 이동(선행 정렬)
-    growth_df = g[["region_code", "ym", "growth"]].dropna()
+    growth_df = trade_g[["region_code", "ym", "growth"]].dropna()
 
     merged = growth_df.merge(ratio_df, on=["region_code", "ym"], how="inner")
     merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
@@ -102,8 +108,9 @@ def test_supply_leads_price_decline(months: int = 60, min_deals: int = 30) -> Hy
     trade_g = df_trade.groupby(["sido", "ym"]).agg(
         ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
     ).reset_index()
-    trade_g = trade_g[trade_g["n"] >= min_deals].sort_values(["sido", "ym"])
-    if trade_g.empty:
+    trade_g = reindex_monthly(trade_g, ["sido"], "ym").sort_values(["sido", "ym"])
+    trade_g.loc[trade_g["n"] < min_deals, "ppp"] = float("nan")
+    if trade_g["ppp"].notna().sum() == 0:
         return _empty_result(**meta)
     trade_g["growth"] = trade_g.groupby("sido")["ppp"].pct_change()
 
@@ -149,8 +156,9 @@ def test_population_migration_leads_price(months: int = 60, min_deals: int = 5) 
     trade_g = df_trade.groupby(["region_code", "ym"]).agg(
         ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
     ).reset_index()
-    trade_g = trade_g[trade_g["n"] >= min_deals].sort_values(["region_code", "ym"])
-    if trade_g.empty:
+    trade_g = reindex_monthly(trade_g, ["region_code"], "ym").sort_values(["region_code", "ym"])
+    trade_g.loc[trade_g["n"] < min_deals, "ppp"] = float("nan")
+    if trade_g["ppp"].notna().sum() == 0:
         return _empty_result(**meta)
     trade_g["growth"] = trade_g.groupby("region_code")["ppp"].pct_change()
 

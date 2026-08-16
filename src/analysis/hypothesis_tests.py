@@ -15,7 +15,7 @@ from scipy.stats import spearmanr, mannwhitneyu
 from config.settings import ROOT
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import _bucketize
-from src.analysis.hypothesis_lab import HypothesisResult, _verdict_for, _empty_result
+from src.analysis.hypothesis_lab import HypothesisResult, _verdict_for, _empty_result, reindex_monthly
 
 # ─── 1. 재건축 연한 효과 ────────────────────────────────────────────
 SEOUL_GYEONGGI_PREFIXES = ("11", "41")  # 법정동코드 앞 2자리: 11=서울, 41=경기
@@ -57,7 +57,7 @@ def test_redevelopment_age_effect(months: int = 60, area_tol: float = 5.0,
         return _empty_result(**meta)
 
     g["growth_%"] = (g["recent_ppp"] - g["prior_ppp"]) / g["prior_ppp"] * 100
-    g["age"] = date.today().year - g["build_year"]
+    g["age"] = end.year - g["build_year"]  # 오늘이 아니라 데이터 구간의 마지막 시점 기준
     rho, _ = spearmanr(g["age"], g["growth_%"])
 
     is_sg = g["region_code"].str.startswith(SEOUL_GYEONGGI_PREFIXES)
@@ -88,7 +88,7 @@ def _load_redevelopment_catalyst_regions() -> set[str]:
 
 
 # ─── 1b. 재건축 호재 발표 vs 단순 연한 ──────────────────────────────
-def test_catalyst_announcement_vs_age(months: int = 60, area_tol: float = 5.0,
+def test_catalyst_announcement_vs_age(months: int = 24, area_tol: float = 5.0,
                                        min_deals: int = 3, age_threshold: int = 25) -> HypothesisResult:
     meta = dict(
         id="catalyst_vs_age",
@@ -97,10 +97,15 @@ def test_catalyst_announcement_vs_age(months: int = 60, area_tol: float = 5.0,
               "재건축/재개발 호재가 실제 등록(발표)된 지역인지에 좌우된다",
         method=f"연식 {age_threshold}년 이상 단지만 추려, config/catalysts.json에 재건축·재개발 "
                "호재가 등록된 지역 vs 그렇지 않은 지역의 상승률 분포를 Mann-Whitney U 검정 "
-               "(rank-biserial 효과크기로 [-1,1] 환산, 다른 가설의 rho와 같은 방식으로 판정)",
+               "(rank-biserial 효과크기로 [-1,1] 환산, 다른 가설의 rho와 같은 방식으로 판정), "
+               f"최근 {months}개월",
         expected_sign=1,
         caveats="호재 등록은 수동 큐레이션이라, 실제로는 호재가 있는데 config에 반영 안 된 지역이 "
-                "'호재없음'으로 잘못 분류될 수 있음 — 이 검정은 config의 최신성에 의존적.",
+                "'호재없음'으로 잘못 분류될 수 있음 — 이 검정은 config의 최신성에 의존적. "
+                "config/catalysts.json은 호재별 발표일자가 없는 '현재 시점 스냅샷'이라, 다른 가설처럼 "
+                "60개월을 다 쓰면 호재가 실제 알려지기 전(과거) 상승분까지 '호재지역' 쪽으로 잘못 "
+                "설명하는 소급편향(hindsight bias) 위험이 큼 — window를 24개월로 좁혀 이 위험을 "
+                "줄였으나, 호재별 발표일이 없는 한 근본적으로 제거되진 않음.",
     )
     df = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
     if df.empty:
@@ -124,7 +129,7 @@ def test_catalyst_announcement_vs_age(months: int = 60, area_tol: float = 5.0,
     if g.empty:
         return _empty_result(**meta)
     g["growth_%"] = (g["recent_ppp"] - g["prior_ppp"]) / g["prior_ppp"] * 100
-    g["age"] = date.today().year - g["build_year"]
+    g["age"] = end.year - g["build_year"]  # 오늘이 아니라 데이터 구간의 마지막 시점 기준
 
     old = g[g["age"] >= age_threshold]
     catalyst_regions = _load_redevelopment_catalyst_regions()
@@ -148,7 +153,7 @@ def test_catalyst_announcement_vs_age(months: int = 60, area_tol: float = 5.0,
 
 
 # ─── 2. 거래량 선행지표 ─────────────────────────────────────────────
-def test_volume_leads_price(months: int = 60) -> HypothesisResult:
+def test_volume_leads_price(months: int = 60, min_deals: int = 2) -> HypothesisResult:
     meta = dict(
         id="volume_leads_price",
         title="거래량 선행지표",
@@ -157,7 +162,10 @@ def test_volume_leads_price(months: int = 60) -> HypothesisResult:
                "평당가 전월대비 변화율(t+1)의 Spearman 상관 (시군구별 시차 적용)",
         expected_sign=1,
         caveats="동시성(같은 달 거래량↔가격) 상관과 섞여있을 수 있음 — 별도로 동시성 상관도 "
-                "함께 계산해 caveats에 병기. 지역 규모가 작으면 월별 거래량 변동이 노이즈일 수 있음.",
+                "함께 계산해 caveats에 병기. 지역 규모가 작으면 월별 거래량 변동이 노이즈일 수 있음. "
+                f"거래량 자체가 검증 대상이라 다른 가설(min_deals=3~30)과 달리 문턱값을 "
+                f"{min_deals}건으로 낮게 둠 — 너무 높이면 '거래량이 적은 달'이라는 신호 자체를 "
+                "걸러내버려 가설을 검증할 수 없게 됨. 대신 1건짜리 극단치(중위가=그 거래 하나) 노이즈만 배제.",
     )
     df = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
     if df.empty:
@@ -166,7 +174,10 @@ def test_volume_leads_price(months: int = 60) -> HypothesisResult:
     g = df.groupby(["region_code", "ym"]).agg(
         volume=("deal_amount", "count"),
         ppp=("price_per_pyeong", "median"),
-    ).reset_index().sort_values(["region_code", "ym"])
+    ).reset_index()
+    # 결측월을 NaN 행으로 채워야 pct_change()가 몇 달치 공백을 한 달 변화로 잘못 계산하지 않음
+    g = reindex_monthly(g, ["region_code"], "ym").sort_values(["region_code", "ym"])
+    g.loc[g["volume"] < min_deals, "ppp"] = float("nan")  # 거래량 자체는 살리고 가격 신뢰도만 문턱 적용
 
     g["vol_chg"] = g.groupby("region_code")["volume"].pct_change()
     g["price_chg"] = g.groupby("region_code")["ppp"].pct_change()

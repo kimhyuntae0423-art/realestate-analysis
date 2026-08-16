@@ -132,7 +132,7 @@ def test_regulation_balloon_effect_detects_reallocation_pattern():
     upsert_trades(rows)
 
     r = c.test_regulation_balloon_effect(months_before=6, months_after=6, min_deals=5)
-    assert r.n == 4  # 이벤트 2건 x 대조군 2곳
+    assert r.n == 2  # 이벤트 2건 (대조군은 지역별로 뻥튀기 안 하고 이벤트당 1개로 집계)
     assert r.statistic < 0  # 많이 눌린 이벤트일수록 대조군이 더 크게 뜀 -> 음의 상관
     assert "2023-01-05" in r.breakdown
     assert "2025-10-16" in r.breakdown

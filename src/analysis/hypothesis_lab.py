@@ -22,11 +22,37 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import pandas as pd
+
 from config.settings import ROOT
 
 MIN_N = 30
 RHO_THRESHOLD = 0.15
 LOG_PATH = ROOT / "data" / "experiments" / "hypothesis_log.json"
+
+
+def reindex_monthly(g: pd.DataFrame, group_cols: list[str], ym_col: str = "ym") -> pd.DataFrame:
+    """그룹(지역 등)별로 월 인덱스를 촘촘하게 채운다 — 빠진 달을 명시적 NaN 행으로 만든다.
+
+    groupby 후 min_deals 미달 등으로 값이 없는 달을 그냥 드롭하면, 이후 pct_change()가
+    그 빈 구간을 조용히 건너뛰어 "한 달 변화율"이라 표기된 값이 실제로는 여러 달치
+    누적 변화일 수 있다. 이 함수로 결측월을 NaN 행으로 명시해두면 pct_change()가
+    결측 다음 행에도 정확히 NaN을 내보내(직전 값이 없다고 인식), 다개월 변화가 단일월
+    변화로 잘못 표기되는 걸 막는다. 호출부는 이 함수 다음에 pct_change()를 호출해야 한다.
+    """
+    if g.empty:
+        return g
+    out = []
+    for key, sub in g.groupby(group_cols):
+        full = pd.period_range(sub[ym_col].min(), sub[ym_col].max(), freq="M")
+        sub = sub.set_index(ym_col).reindex(full)
+        sub.index.name = ym_col
+        sub = sub.reset_index()
+        key_tuple = key if isinstance(key, tuple) else (key,)
+        for col, val in zip(group_cols, key_tuple):
+            sub[col] = val
+        out.append(sub)
+    return pd.concat(out, ignore_index=True)
 
 
 def _verdict_for(statistic: float, n: int, expected_sign: int) -> str:
