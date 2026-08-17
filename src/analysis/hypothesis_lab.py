@@ -187,7 +187,6 @@ def get_all_hypotheses() -> list:
     from src.analysis import hypothesis_tests_valuation as v
     from src.analysis import hypothesis_tests_kb as k
     return [
-        t.test_redevelopment_age_effect,
         t.test_catalyst_announcement_vs_age,
         t.test_volume_leads_price,
         t.test_momentum_vs_reversion,

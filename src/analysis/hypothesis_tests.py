@@ -19,65 +19,6 @@ from src.analysis.hypothesis_lab import (
     HypothesisResult, _verdict_for, _empty_result, reindex_monthly, region_growth_via_unit_tracking,
 )
 
-# ─── 1. 재건축 연한 효과 ────────────────────────────────────────────
-SEOUL_GYEONGGI_PREFIXES = ("11", "41")  # 법정동코드 앞 2자리: 11=서울, 41=경기
-
-
-def test_redevelopment_age_effect(months: int = 60, area_tol: float = 5.0,
-                                   min_deals: int = 3) -> HypothesisResult:
-    meta = dict(
-        id="redevelopment_age",
-        title="재건축 연한 효과",
-        claim="오래된(재건축 기대감 있는) 단지일수록 최근 상승률이 더 높다",
-        method=f"단지+평형 단위, 최근 {months}개월(=DB 보유 최대 범위)을 반으로 나눠 "
-               f"전반기→후반기 평당가 상승률과 연식(올해-준공연도)의 Spearman 상관. "
-               "서울/경기(법정동코드 11/41) vs 그 외 지역으로 나눈 하위그룹도 함께 계산.",
-        expected_sign=1,
-        caveats="재건축은 '연한'만이 아니라 안전진단·조합설립 진행도가 더 중요할 수 있음. "
-                "너무 오래된 단지는 오히려 슬럼화로 하락할 수도 있어 비선형(U자형) 관계일 가능성 있음.",
-    )
-    df = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
-    if df.empty:
-        return _empty_result(**meta)
-    df = _bucketize(df, area_tol)
-    df["deal_date"] = pd.to_datetime(df["deal_date"])
-    end = df["deal_date"].max()
-    mid = end - pd.DateOffset(months=months // 2)
-
-    keys = ["region_code", "apt_name", "area_bucket"]
-    recent = df[df["deal_date"] > mid]
-    prior = df[df["deal_date"] <= mid]
-    r = recent.groupby(keys).agg(recent_ppp=("price_per_pyeong", "median"),
-                                  recent_n=("price_per_pyeong", "count"),
-                                  build_year=("build_year", "max"))
-    p = prior.groupby(keys).agg(prior_ppp=("price_per_pyeong", "median"),
-                                 prior_n=("price_per_pyeong", "count"))
-    g = r.join(p, how="inner").reset_index()
-    g = g[(g["recent_n"] >= min_deals) & (g["prior_n"] >= min_deals)
-          & g["build_year"].notna() & (g["build_year"] > 1900)]
-    if g.empty:
-        return _empty_result(**meta)
-
-    g["growth_%"] = (g["recent_ppp"] - g["prior_ppp"]) / g["prior_ppp"] * 100
-    g["age"] = end.year - g["build_year"]  # 오늘이 아니라 데이터 구간의 마지막 시점 기준
-    rho, _ = spearmanr(g["age"], g["growth_%"])
-
-    is_sg = g["region_code"].str.startswith(SEOUL_GYEONGGI_PREFIXES)
-    breakdown = {}
-    for label, mask in [("서울/경기", is_sg), ("그 외 지역", ~is_sg)]:
-        sub = g[mask]
-        if len(sub) >= 2:
-            sub_rho, _ = spearmanr(sub["age"], sub["growth_%"])
-        else:
-            sub_rho = float("nan")
-        breakdown[label] = {
-            "statistic": float(sub_rho), "n": len(sub),
-            "verdict": _verdict_for(float(sub_rho), len(sub), meta["expected_sign"]),
-        }
-
-    return HypothesisResult(statistic=float(rho), n=len(g), breakdown=breakdown, **meta)
-
-
 def _load_redevelopment_catalyst_regions() -> set[str]:
     """config/catalysts.json에 재건축·재개발 타입 호재가 등록된 region_code 집합."""
     p = ROOT / "config" / "catalysts.json"
@@ -89,7 +30,7 @@ def _load_redevelopment_catalyst_regions() -> set[str]:
     }
 
 
-# ─── 1b. 재건축 호재 발표 vs 단순 연한 ──────────────────────────────
+# ─── 1. 재건축 호재 발표 vs 단순 연한 ──────────────────────────────
 def test_catalyst_announcement_vs_age(months: int = 24, area_tol: float = 5.0,
                                        min_deals: int = 3, age_threshold: int = 25) -> HypothesisResult:
     meta = dict(
