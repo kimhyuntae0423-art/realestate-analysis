@@ -3,7 +3,9 @@ from datetime import date
 import pandas as pd
 from sqlalchemy import select, and_
 
-from src.database.models import SessionLocal, AptTrade, AptRent, CollectionLog, PopulationFlow, engine
+from src.database.models import (
+    SessionLocal, AptTrade, AptRent, CollectionLog, PopulationFlow, KbSentimentIndex, engine,
+)
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -74,6 +76,13 @@ def upsert_population_flow(rows: list[dict]) -> int:
     with session_scope() as s:
         n = _bulk_upsert(s, PopulationFlow, rows)
         log.info("population_flow upsert: %d rows", n)
+        return n
+
+
+def upsert_kb_sentiment(rows: list[dict]) -> int:
+    with session_scope() as s:
+        n = _bulk_upsert(s, KbSentimentIndex, rows)
+        log.info("kb_sentiment_index upsert: %d rows", n)
         return n
 
 

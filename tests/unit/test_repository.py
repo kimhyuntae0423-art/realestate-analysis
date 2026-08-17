@@ -6,10 +6,10 @@ from datetime import date
 import pandas as pd
 
 from src.database.repository import (
-    upsert_trades, upsert_rents, upsert_population_flow,
+    upsert_trades, upsert_rents, upsert_population_flow, upsert_kb_sentiment,
     fetch_trades_df, fetch_rents_df, log_collection,
 )
-from src.database.models import CollectionLog, PopulationFlow, SessionLocal
+from src.database.models import CollectionLog, PopulationFlow, KbSentimentIndex, SessionLocal
 
 
 def _trade_row(region="11680", d=date(2025, 6, 1), apt="A", amount=100000, area=84.9, floor=5):
@@ -70,6 +70,25 @@ def test_upsert_population_flow_deduplicates_by_region_and_date():
 
 def test_upsert_population_flow_empty_list_is_noop():
     assert upsert_population_flow([]) == 0
+
+
+def _kb_sentiment_row(region="11", d=date(2025, 6, 1), sentiment_index=100.0):
+    return {"region_code": region, "ym_date": d, "buy_more_pct": 20.0, "sell_more_pct": 10.0,
+            "similar_pct": 70.0, "sentiment_index": sentiment_index, "source": "test"}
+
+
+def test_upsert_kb_sentiment_deduplicates_by_region_and_date():
+    row = _kb_sentiment_row()
+    n1 = upsert_kb_sentiment([row])
+    n2 = upsert_kb_sentiment([row])  # 동일 (region_code, ym_date) 재삽입 -> 무시
+    assert n1 == 1
+    assert n2 == 0
+    with SessionLocal() as s:
+        assert s.query(KbSentimentIndex).count() == 1
+
+
+def test_upsert_kb_sentiment_empty_list_is_noop():
+    assert upsert_kb_sentiment([]) == 0
 
 
 def test_fetch_trades_df_filters_by_region_and_date_range():

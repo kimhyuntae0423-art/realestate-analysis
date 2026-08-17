@@ -118,6 +118,25 @@ class PopulationFlow(Base):
     )
 
 
+class KbSentimentIndex(Base):
+    """시/도별 월간 KB 매수우위지수 (KB부동산 데이터허브)."""
+    __tablename__ = "kb_sentiment_index"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    region_code = Column(String(5), index=True, nullable=False)  # 시/도 2자리
+    ym_date = Column(Date, index=True, nullable=False)           # 해당월 1일
+    buy_more_pct = Column(Float)     # 매수자 많음(%)
+    sell_more_pct = Column(Float)    # 매도자 많음(%)
+    similar_pct = Column(Float)      # 비슷함(%)
+    sentiment_index = Column(Float, nullable=False)  # 매수우위지수 = 100+매수자많음-매도자많음
+    source = Column(String(50))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("region_code", "ym_date", name="uq_kb_sentiment"),
+    )
+
+
 class CollectionLog(Base):
     """수집 이력"""
     __tablename__ = "collection_log"

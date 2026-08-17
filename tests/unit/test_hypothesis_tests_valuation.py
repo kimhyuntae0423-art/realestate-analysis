@@ -5,7 +5,7 @@ import pandas as pd
 
 from src.analysis import hypothesis_tests_valuation as v
 from src.database.repository import upsert_trades, upsert_rents, session_scope
-from src.database.models import SupplySchedule, PopulationFlow
+from src.database.models import SupplySchedule, PopulationFlow, KbSentimentIndex
 
 
 def _trade(days_ago, region="11680", apt="A", ppp=6000, amount=100000, area=84.9):
@@ -105,4 +105,33 @@ def test_population_migration_leads_price_detects_positive_lag():
 
 def test_population_migration_leads_price_empty_when_no_data():
     r = v.test_population_migration_leads_price()
+    assert r.n == 0
+
+
+def test_buyer_sentiment_leads_price_detects_positive_lag():
+    # M0(3개월전) 매수우위지수 낮음(90) -> M1(2개월전) 매매가 -10%
+    # M1(2개월전) 매수우위지수 높음(150) -> M2(1개월전) 매매가 +20%
+    # 매수우위지수 높았던 달일수록 다음달 상승폭이 커야 가설 지지(양의 상관)
+    rows_t = []
+    for i in range(3):
+        rows_t.append(_trade(_month_ago_days(3) + i, ppp=10000))
+        rows_t.append(_trade(_month_ago_days(2) + i, ppp=9000))    # M0->M1 -10%
+        rows_t.append(_trade(_month_ago_days(1) + i, ppp=10800))   # M1->M2 +20%
+    upsert_trades(rows_t)
+
+    m0 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(3))).date()
+    m1 = (pd.Timestamp.today() - pd.Timedelta(days=_month_ago_days(2))).date()
+    with session_scope() as s:
+        s.add(KbSentimentIndex(region_code="11", ym_date=m0, sentiment_index=90.0,
+                                buy_more_pct=20, sell_more_pct=30, similar_pct=50, source="test"))
+        s.add(KbSentimentIndex(region_code="11", ym_date=m1, sentiment_index=150.0,
+                                buy_more_pct=60, sell_more_pct=10, similar_pct=30, source="test"))
+
+    r = v.test_buyer_sentiment_leads_price(months=6, min_deals=3)
+    assert r.n >= 2
+    assert r.statistic > 0  # 매수우위지수 높을수록 다음달 상승폭 큼 -> 양의 상관
+
+
+def test_buyer_sentiment_leads_price_empty_when_no_data():
+    r = v.test_buyer_sentiment_leads_price()
     assert r.n == 0

@@ -115,6 +115,7 @@ def get_all_hypotheses() -> list:
         v.test_jeonse_ratio_leads_price,
         v.test_supply_leads_price_decline,
         v.test_population_migration_leads_price,
+        v.test_buyer_sentiment_leads_price,
     ]
 
 

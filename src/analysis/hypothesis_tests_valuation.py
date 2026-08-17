@@ -14,7 +14,7 @@ from scipy.stats import spearmanr
 from sqlalchemy import select
 
 from src.database.repository import fetch_trades_df, fetch_rents_df, session_scope
-from src.database.models import SupplySchedule, PopulationFlow
+from src.database.models import SupplySchedule, PopulationFlow, KbSentimentIndex
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, reindex_monthly
 
@@ -179,4 +179,58 @@ def test_population_migration_leads_price(months: int = 60, min_deals: int = 5) 
     if len(merged) < 2:
         return _empty_result(**meta)
     rho, _ = spearmanr(merged["net_inflow"], merged["growth"])
+    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
+
+
+# ─── 12. KB 매수우위지수 선행 ───────────────────────────────────────────
+def test_buyer_sentiment_leads_price(months: int = 60, min_deals: int = 30) -> HypothesisResult:
+    sido_label = "·".join(SUPPLY_SIDO_NAMES.values())
+    meta = dict(
+        id="buyer_sentiment_leads_price",
+        title=f"KB 매수우위지수 선행 (시/도 단위: {sido_label})",
+        claim="KB 매수우위지수가 높은 시/도일수록 다음달 가격이 더 오른다",
+        method=f"시/도 단위({sido_label}) 월별 KB 매수우위지수(KB부동산 데이터허브)와 매매 "
+               f"평당가를 시/도로 집계 — 이번달 매수우위지수(t) vs 다음달 가격 변화율(t+1)의 "
+               f"Spearman 상관, 최근 {months}개월",
+        expected_sign=1,
+        caveats="recommend.py의 자체 매수심리 proxy(_buyer_sentiment_signals)와는 별개 지표 — "
+                "이건 KB가 공인중개사 설문으로 직접 발표하는 실제 지수, 자체 proxy와의 정확도 "
+                "비교는 하지 않음(별도 가설로 가능). 시/도 단위라 해상도 거침(supply_glut과 동일한 한계).",
+    )
+    df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
+    if df_trade.empty:
+        return _empty_result(**meta)
+    df_trade = df_trade.copy()
+    df_trade["sido"] = df_trade["region_code"].str[:2]
+    df_trade = df_trade[df_trade["sido"].isin(SUPPLY_SIDO_NAMES)]
+    if df_trade.empty:
+        return _empty_result(**meta)
+    df_trade["ym"] = pd.to_datetime(df_trade["deal_date"]).dt.to_period("M")
+    trade_g = df_trade.groupby(["sido", "ym"]).agg(
+        ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
+    ).reset_index()
+    trade_g = reindex_monthly(trade_g, ["sido"], "ym").sort_values(["sido", "ym"])
+    trade_g.loc[trade_g["n"] < min_deals, "ppp"] = float("nan")
+    if trade_g["ppp"].notna().sum() == 0:
+        return _empty_result(**meta)
+    trade_g["growth"] = trade_g.groupby("sido")["ppp"].pct_change()
+
+    with session_scope() as s:
+        rows = s.execute(select(KbSentimentIndex.region_code, KbSentimentIndex.ym_date,
+                                 KbSentimentIndex.sentiment_index)).all()
+    sent_df = pd.DataFrame(rows, columns=["sido", "ym_date", "sentiment_index"])
+    sent_df = sent_df[sent_df["sido"].isin(SUPPLY_SIDO_NAMES)]
+    if sent_df.empty:
+        return _empty_result(**meta)
+    sent_df = sent_df.copy()
+    sent_df["ym"] = pd.to_datetime(sent_df["ym_date"]).dt.to_period("M")
+    sent_g = sent_df.groupby(["sido", "ym"])["sentiment_index"].mean().reset_index()
+    sent_g["ym"] = sent_g["ym"] + 1  # 이번달 지수를 다음달 라벨로 이동(선행 정렬)
+
+    growth_df = trade_g[["sido", "ym", "growth"]].dropna()
+    merged = growth_df.merge(sent_g, on=["sido", "ym"], how="inner")
+    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
+    if len(merged) < 2:
+        return _empty_result(**meta)
+    rho, _ = spearmanr(merged["sentiment_index"], merged["growth"])
     return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
