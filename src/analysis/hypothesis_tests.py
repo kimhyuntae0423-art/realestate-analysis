@@ -15,7 +15,9 @@ from scipy.stats import spearmanr, mannwhitneyu
 from config.settings import ROOT
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import _bucketize
-from src.analysis.hypothesis_lab import HypothesisResult, _verdict_for, _empty_result, reindex_monthly
+from src.analysis.hypothesis_lab import (
+    HypothesisResult, _verdict_for, _empty_result, reindex_monthly, region_growth_via_unit_tracking,
+)
 
 # ─── 1. 재건축 연한 효과 ────────────────────────────────────────────
 SEOUL_GYEONGGI_PREFIXES = ("11", "41")  # 법정동코드 앞 2자리: 11=서울, 41=경기
@@ -153,34 +155,39 @@ def test_catalyst_announcement_vs_age(months: int = 24, area_tol: float = 5.0,
 
 
 # ─── 2. 거래량 선행지표 ─────────────────────────────────────────────
-def test_volume_leads_price(months: int = 60, min_deals: int = 2) -> HypothesisResult:
+def test_volume_leads_price(months: int = 60, min_deals: int = 2,
+                             area_tol: float = 5.0, min_unit_deals: int = 1) -> HypothesisResult:
     meta = dict(
         id="volume_leads_price",
         title="거래량 선행지표",
         claim="이번 달 거래량이 늘면(줄면) 다음 달 가격이 오른다(내린다) — 거래량이 가격을 선행한다",
-        method=f"시군구×월 단위, 최근 {months}개월. 거래량 전월대비 변화율(t) vs "
-               "평당가 전월대비 변화율(t+1)의 Spearman 상관 (시군구별 시차 적용)",
+        method=f"시군구×월 단위, 최근 {months}개월. 거래량 전월대비 변화율(t) vs 단지+평형 "
+               "추적 평당가 성장률(t+1, 구성효과 제거)의 Spearman 상관 (시군구별 시차 적용)",
         expected_sign=1,
         caveats="동시성(같은 달 거래량↔가격) 상관과 섞여있을 수 있음 — 별도로 동시성 상관도 "
                 "함께 계산해 caveats에 병기. 지역 규모가 작으면 월별 거래량 변동이 노이즈일 수 있음. "
                 f"거래량 자체가 검증 대상이라 다른 가설(min_deals=3~30)과 달리 문턱값을 "
                 f"{min_deals}건으로 낮게 둠 — 너무 높이면 '거래량이 적은 달'이라는 신호 자체를 "
-                "걸러내버려 가설을 검증할 수 없게 됨. 대신 1건짜리 극단치(중위가=그 거래 하나) 노이즈만 배제.",
+                "걸러내버려 가설을 검증할 수 없게 됨(거래량은 원시 건수, 가격만 단지단위 추적).",
     )
     df = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
     if df.empty:
         return _empty_result(**meta)
     df["ym"] = pd.to_datetime(df["deal_date"]).dt.to_period("M")
-    g = df.groupby(["region_code", "ym"]).agg(
-        volume=("deal_amount", "count"),
-        ppp=("price_per_pyeong", "median"),
-    ).reset_index()
-    # 결측월을 NaN 행으로 채워야 pct_change()가 몇 달치 공백을 한 달 변화로 잘못 계산하지 않음
-    g = reindex_monthly(g, ["region_code"], "ym").sort_values(["region_code", "ym"])
-    g.loc[g["volume"] < min_deals, "ppp"] = float("nan")  # 거래량 자체는 살리고 가격 신뢰도만 문턱 적용
 
-    g["vol_chg"] = g.groupby("region_code")["volume"].pct_change()
-    g["price_chg"] = g.groupby("region_code")["ppp"].pct_change()
+    # 거래량은 지역 전체 원시 건수(그 자체가 신호라 단지단위로 쪼갤 필요 없음)
+    vol_g = df.groupby(["region_code", "ym"]).size().reset_index(name="volume")
+    # 결측월을 NaN 행으로 채워야 pct_change()가 몇 달치 공백을 한 달 변화로 잘못 계산하지 않음
+    vol_g = reindex_monthly(vol_g, ["region_code"], "ym").sort_values(["region_code", "ym"])
+    vol_g.loc[vol_g["volume"] < min_deals, "volume"] = float("nan")
+    vol_g["vol_chg"] = vol_g.groupby("region_code")["volume"].pct_change()
+
+    # 가격은 단지+평형 추적 성장률(구성효과 제거) — vol_g의 연속월 인덱스에 맞춰 붙인다
+    price_g = region_growth_via_unit_tracking(df, ["region_code"], area_tol, min_unit_deals)
+    price_g = price_g.rename(columns={"growth": "price_chg"})[["region_code", "ym", "price_chg"]]
+
+    g = vol_g[["region_code", "ym", "vol_chg"]].merge(
+        price_g, on=["region_code", "ym"], how="left").sort_values(["region_code", "ym"])
     g["price_chg_next"] = g.groupby("region_code")["price_chg"].shift(-1)
 
     lead = g[["vol_chg", "price_chg_next"]].replace([np.inf, -np.inf], np.nan).dropna()

@@ -12,64 +12,63 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 from src.database.repository import fetch_trades_df
-from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, reindex_monthly
+from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, region_growth_via_unit_tracking
 
 LEADER_REGION = "11680"  # 강남구
 
 
 # ─── 4. 순환매(키맞추기) 효과 ────────────────────────────────────────
 def test_seoul_leads_other_regions(months: int = 60, leader_region: str = LEADER_REGION,
-                                    min_deals: int = 5) -> HypothesisResult:
+                                    area_tol: float = 5.0, min_unit_deals: int = 1) -> HypothesisResult:
     meta = dict(
         id="region_leadlag",
         title="순환매(키맞추기) 효과",
         claim="강남(선도지역) 가격이 오르면, 시차를 두고 다른 지역들도 따라 오른다",
-        method=f"시군구x월 평당가 변화율. 강남구(11680) 이번달 변화율(t) vs 다른 지역들의 "
-               f"다음달 변화율(t+1, 지역간 중앙값으로 집계)의 Spearman 상관, 최근 {months}개월",
+        method=f"단지+평형 단위로 추적한 성장률을 거래량가중평균해 지역 성장률로 집계(구성효과 "
+               f"제거) — 강남구(11680) 이번달 성장률(t) vs 다른 지역들의 다음달 성장률(t+1, "
+               f"지역간 중앙값으로 집계)의 Spearman 상관, 최근 {months}개월",
         expected_sign=1,
         caveats="강남 하나만 선도지역으로 가정 — 실제론 여러 상급지가 동시에 선도할 수 있음. "
                 "전국 동시 매크로 충격(금리·정책)이 있으면 진짜 '선도-추종'이 아니라 동시반응일 수 있음. "
-                "n은 '월' 단위 독립 관측치 수 — 지역별로 뻥튀기하지 않음(강남 변화율 하나를 "
-                "그 달 모든 지역에 복제하면 가짜로 표본이 커져 통계 검정력이 과대평가됨).",
+                "n은 '월' 단위 독립 관측치 수 — 지역별로 뻥튀기하지 않음. 지역 전체 중위가의 "
+                "월간 변화(구성효과)로 계산했을 땐 KB 공식 가격지수와 상관이 거의 없었음(rho=-0.2) "
+                "— 단지+평형 추적 방식으로 바꿔 KB와의 상관을 rho=+0.63까지 개선한 버전.",
     )
     df = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
     if df.empty:
         return _empty_result(**meta)
-    df["ym"] = pd.to_datetime(df["deal_date"]).dt.to_period("M")
-    g = df.groupby(["region_code", "ym"]).agg(
-        ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
-    ).reset_index()
-    g = reindex_monthly(g, ["region_code"], "ym").sort_values(["region_code", "ym"])
-    g.loc[g["n"] < min_deals, "ppp"] = float("nan")  # 결측월과 동일하게 취급해 pct_change가 건너뜀
-    g["chg"] = g.groupby("region_code")["ppp"].pct_change()
+    g = region_growth_via_unit_tracking(df, ["region_code"], area_tol, min_unit_deals)
+    if g.empty:
+        return _empty_result(**meta)
 
-    leader = g[g["region_code"] == leader_region][["ym", "chg"]].rename(
-        columns={"chg": "leader_chg"}).dropna().copy()
+    leader = g[g["region_code"] == leader_region][["ym", "growth"]].rename(
+        columns={"growth": "leader_chg"}).dropna().copy()
     if leader.empty:
         return _empty_result(**meta)
-    leader["ym"] = leader["ym"] + 1  # 직전월 강남 변화율을 이번월 라벨로 이동(선행 정렬)
+    leader["ym"] = leader["ym"] + 1  # 직전월 강남 성장률을 이번월 라벨로 이동(선행 정렬)
 
     # 지역별로 각각 짝지으면 같은 달 leader_chg 하나가 수십 개 지역에 복제돼 표본이
     # 가짜로 부풀려짐(pseudo-replication) -> 월별 중앙값 하나로 집계해 "월"을 관측 단위로 삼는다.
-    followers = g[g["region_code"] != leader_region][["ym", "chg"]].dropna()
-    follower_monthly = followers.groupby("ym")["chg"].median().reset_index()
+    followers = g[g["region_code"] != leader_region][["ym", "growth"]].dropna()
+    follower_monthly = followers.groupby("ym")["growth"].median().reset_index()
     merged = follower_monthly.merge(leader, on="ym", how="inner")
     merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
     if len(merged) < 2:
         return _empty_result(**meta)
-    rho, _ = spearmanr(merged["leader_chg"], merged["chg"])
+    rho, _ = spearmanr(merged["leader_chg"], merged["growth"])
     return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
 
 
 # ─── 5. 평형별 순환 (큰 평형 선행) ────────────────────────────────────
 def test_large_units_lead_small_units(months: int = 60, area_threshold: float = 85.0,
-                                       min_deals: int = 5) -> HypothesisResult:
+                                       area_tol: float = 5.0, min_unit_deals: int = 1) -> HypothesisResult:
     meta = dict(
         id="size_rotation",
         title="평형별 순환 (큰 평형 선행)",
         claim=f"큰 평형({area_threshold}㎡ 이상)이 먼저 오르고, 작은 평형이 시차를 두고 따라 오른다",
-        method=f"지역x평형그룹(대/소)x월 평당가 변화율. 같은 지역의 큰 평형 이번달 변화율(t) vs "
-               f"작은 평형 다음달 변화율(t+1)의 Spearman 상관, 최근 {months}개월",
+        method=f"단지+평형 단위로 추적한 성장률을 거래량가중평균해 지역x평형그룹(대/소) "
+               f"성장률로 집계(구성효과 제거) — 같은 지역의 큰 평형 이번달 성장률(t) vs "
+               f"작은 평형 다음달 성장률(t+1)의 Spearman 상관, 최근 {months}개월",
         expected_sign=1,
         caveats="평형 컷을 85㎡ 하나로 단순화. 반대 방향(소형·실수요가 먼저 움직인다)을 주장하는 "
                 "통념도 있어 부호가 반대로 나올 수 있음.",
@@ -79,19 +78,14 @@ def test_large_units_lead_small_units(months: int = 60, area_threshold: float = 
         return _empty_result(**meta)
     df = df.copy()
     df["size_class"] = np.where(df["area_m2"] >= area_threshold, "large", "small")
-    df["ym"] = pd.to_datetime(df["deal_date"]).dt.to_period("M")
-    g = df.groupby(["region_code", "size_class", "ym"]).agg(
-        ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
-    ).reset_index()
-    g = reindex_monthly(g, ["region_code", "size_class"], "ym").sort_values(
-        ["region_code", "size_class", "ym"])
-    g.loc[g["n"] < min_deals, "ppp"] = float("nan")
-    g["chg"] = g.groupby(["region_code", "size_class"])["ppp"].pct_change()
+    g = region_growth_via_unit_tracking(df, ["region_code", "size_class"], area_tol, min_unit_deals)
+    if g.empty:
+        return _empty_result(**meta)
 
-    large = g[g["size_class"] == "large"][["region_code", "ym", "chg"]].rename(
-        columns={"chg": "large_chg"}).dropna().copy()
-    small = g[g["size_class"] == "small"][["region_code", "ym", "chg"]].rename(
-        columns={"chg": "small_chg"}).dropna()
+    large = g[g["size_class"] == "large"][["region_code", "ym", "growth"]].rename(
+        columns={"growth": "large_chg"}).dropna().copy()
+    small = g[g["size_class"] == "small"][["region_code", "ym", "growth"]].rename(
+        columns={"growth": "small_chg"}).dropna()
     if large.empty or small.empty:
         return _empty_result(**meta)
     large["ym"] = large["ym"] + 1

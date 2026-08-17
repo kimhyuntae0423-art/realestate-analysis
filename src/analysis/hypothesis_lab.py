@@ -22,6 +22,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 from config.settings import ROOT
@@ -53,6 +54,43 @@ def reindex_monthly(g: pd.DataFrame, group_cols: list[str], ym_col: str = "ym") 
             sub[col] = val
         out.append(sub)
     return pd.concat(out, ignore_index=True)
+
+
+def region_growth_via_unit_tracking(df: pd.DataFrame, group_cols: list[str],
+                                     area_tol: float = 5.0, min_unit_deals: int = 1) -> pd.DataFrame:
+    """지역(구성원 그룹) 전체의 "이번달 중위가 vs 다음달 중위가"로 성장률을 재면,
+    그 달 우연히 어떤 단지·평형이 거래됐는지(구성효과)에 따라 실제 가격 변동과 무관하게
+    출렁인다 — KB 공식 가격지수와 비교했더니 이 방식의 월간 성장률은 상관이 거의 0(-0.2)
+    이었음(2026-08-17 감리). 같은 단지+평형을 이번달->다음달로 추적한 성장률을 거래량
+    가중평균해 지역 성장률로 집계하면 이 노이즈가 크게 줄어든다(같은 비교로 상관 +0.63).
+
+    df는 region_code, apt_name, area_m2, deal_date, price_per_pyeong 컬럼과
+    group_cols에 필요한 추가 컬럼(sido, size_class 등)을 이미 갖고 있어야 한다.
+    반환: group_cols + ["ym", "growth", "n"] — n은 그 달 성장률 계산에 쓰인 거래 건수 합
+    (지역 단위 신뢰도 필터링용). 그룹 첫 시점은 growth가 NaN(직전 없음)이라 애초에 빠짐.
+    """
+    from src.analysis.recommend import _bucketize
+
+    if df.empty:
+        return pd.DataFrame(columns=group_cols + ["ym", "growth", "n"])
+    df = _bucketize(df, area_tol)
+    df["ym"] = pd.to_datetime(df["deal_date"]).dt.to_period("M")
+    unit_keys = group_cols + ["apt_name", "area_bucket"]
+    unit_g = df.groupby(unit_keys + ["ym"]).agg(
+        ppp=("price_per_pyeong", "median"), n=("price_per_pyeong", "count")
+    ).reset_index()
+    unit_g = unit_g[unit_g["n"] >= min_unit_deals].sort_values(unit_keys + ["ym"])
+    unit_g["unit_growth"] = unit_g.groupby(unit_keys)["ppp"].pct_change()
+
+    valid = unit_g.replace([np.inf, -np.inf], np.nan).dropna(subset=["unit_growth"]).copy()
+    if valid.empty:
+        return pd.DataFrame(columns=group_cols + ["ym", "growth"])
+    valid["weighted"] = valid["unit_growth"] * valid["n"]
+    agg = valid.groupby(group_cols + ["ym"]).agg(
+        weighted_sum=("weighted", "sum"), n=("n", "sum")
+    ).reset_index()
+    agg["growth"] = agg["weighted_sum"] / agg["n"]
+    return agg[group_cols + ["ym", "growth", "n"]]
 
 
 def _verdict_for(statistic: float, n: int, expected_sign: int) -> str:

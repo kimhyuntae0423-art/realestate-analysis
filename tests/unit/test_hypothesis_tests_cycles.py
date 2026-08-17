@@ -44,7 +44,7 @@ def test_seoul_leads_other_regions_detects_positive_lag():
         rows.append(_trade(_month_ago_days(1) + i, region="11350", apt="Y", ppp=7200))    # 후행 t2+1: +20%
     upsert_trades(rows)
 
-    r = c.test_seoul_leads_other_regions(months=6, min_deals=3)
+    r = c.test_seoul_leads_other_regions(months=6, min_unit_deals=1)
     assert r.n >= 2
     assert r.statistic > 0  # 강남 상승폭이 클수록 다음달 다른 지역 상승폭도 큼 -> 양의 상관
 
@@ -73,7 +73,7 @@ def test_large_units_lead_small_units_detects_positive_lag():
         rows.append(_trade(_month_ago_days(1) + i, region="11350", area=50.0, apt="SMALL", ppp=6000))
     upsert_trades(rows)
 
-    r = c.test_large_units_lead_small_units(months=6, min_deals=3)
+    r = c.test_large_units_lead_small_units(months=6, min_unit_deals=1)
     assert r.n >= 2
     assert r.statistic > 0
 

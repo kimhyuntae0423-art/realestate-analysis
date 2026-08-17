@@ -69,7 +69,7 @@ def test_supply_leads_price_decline_detects_negative_correlation():
         s.add(SupplySchedule(region_code="11", move_in_date=m0, units=1000, source="test"))
         s.add(SupplySchedule(region_code="11", move_in_date=m1, units=100, source="test"))
 
-    r = v.test_supply_leads_price_decline(months=6, min_deals=3)
+    r = v.test_supply_leads_price_decline(months=6, min_unit_deals=1)
     assert r.n >= 2
     assert r.statistic < 0  # 입주물량 많을수록 다음달 상승폭 작음 -> 음의 상관
 
@@ -98,7 +98,7 @@ def test_population_migration_leads_price_detects_positive_lag():
         s.add(PopulationFlow(region_code="11680", flow_date=m1, inflow=900, outflow=100,
                               net_inflow=800, source="test"))
 
-    r = v.test_population_migration_leads_price(months=6, min_deals=3)
+    r = v.test_population_migration_leads_price(months=6, min_unit_deals=1)
     assert r.n >= 2
     assert r.statistic > 0  # 순유입 많을수록 다음달 상승폭 큼 -> 양의 상관
 
@@ -127,7 +127,7 @@ def test_buyer_sentiment_leads_price_detects_positive_lag():
         s.add(KbSentimentIndex(region_code="11", ym_date=m1, sentiment_index=150.0,
                                 buy_more_pct=60, sell_more_pct=10, similar_pct=30, source="test"))
 
-    r = v.test_buyer_sentiment_leads_price(months=6, min_deals=3)
+    r = v.test_buyer_sentiment_leads_price(months=6, min_unit_deals=1)
     assert r.n >= 2
     assert r.statistic > 0  # 매수우위지수 높을수록 다음달 상승폭 큼 -> 양의 상관
 
