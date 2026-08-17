@@ -17,6 +17,7 @@ from src.database.models import EcosSeries
 from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, region_growth_via_unit_tracking
 
 M2_SERIES = "m2_eop_raw"
+MORTGAGE_SERIES = "mortgage_loan_eop"
 
 _M2_LAG_EXPLORED = (
     "2026-08-18 시차 스캔(전국+서울 분리, 0~24개월): 1개월(전국 rho=-0.09)에선 신호가 "
@@ -30,20 +31,24 @@ _M2_LAG_EXPLORED = (
 )
 
 
-def _m2_yoy_panel() -> pd.DataFrame:
-    """M2(말잔, 원계열) 전국 월별 시계열에서 전년동월대비(YoY) 증가율 패널을 만든다."""
+def _ecos_yoy_panel(series: str, out_col: str) -> pd.DataFrame:
+    """ECOS 월별 원시계열에서 전년동월대비(YoY) 증가율 패널을 만든다 (M2, 주담대 등 공용)."""
     with session_scope() as s:
         rows = s.execute(
             select(EcosSeries.ym_date, EcosSeries.value)
-            .where(EcosSeries.series == M2_SERIES)
+            .where(EcosSeries.series == series)
         ).all()
     df = pd.DataFrame(rows, columns=["ym_date", "value"])
     if df.empty:
-        return pd.DataFrame(columns=["ym", "m2_yoy"])
+        return pd.DataFrame(columns=["ym", out_col])
     df["ym"] = pd.to_datetime(df["ym_date"]).dt.to_period("M")
     df = df.sort_values("ym")
-    df["m2_yoy"] = df["value"].pct_change(12)
-    return df[["ym", "m2_yoy"]]
+    df[out_col] = df["value"].pct_change(12)
+    return df[["ym", out_col]]
+
+
+def _m2_yoy_panel() -> pd.DataFrame:
+    return _ecos_yoy_panel(M2_SERIES, "m2_yoy")
 
 
 def _national_price_growth_panel(months: int) -> pd.DataFrame:
@@ -109,7 +114,8 @@ def test_price_leads_money_supply(months: int = 60, lag_months: int = 12) -> Hyp
                 "money_supply_leads_price의 음의 상관과 이 가설의 양의 상관이 서로 완전히 "
                 "독립적인 증거는 아님 — 두 결과를 합쳐 '가격이 M2를 선행하고, M2 자체는 "
                 "가격의 독립적 선행지표가 아니다'로 해석하는 게 더 정확함. 신용창조 채널을 "
-                "직접 검증하려면 M2가 아니라 가계대출(주담대) 통계가 더 적합하나 아직 미수집.",
+                "더 직접 검증하려면 M2가 아니라 가계대출(주담대) 통계가 더 적합 — "
+                "test_mortgage_loan_leads_price 참고.",
         explored=_M2_LAG_EXPLORED,
     )
     price_g = _national_price_growth_panel(months)
@@ -128,4 +134,49 @@ def test_price_leads_money_supply(months: int = 60, lag_months: int = 12) -> Hyp
     if len(merged) < 2:
         return _empty_result(**meta)
     rho, _ = spearmanr(merged["growth"], merged["m2_yoy"])
+    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
+
+
+# ─── 3. 가계 주택담보대출 증가 선행 (신용창조 채널 직접검증) ───────────
+def test_mortgage_loan_leads_price(months: int = 60, lag_months: int = 1) -> HypothesisResult:
+    meta = dict(
+        id="mortgage_loan_leads_price",
+        title="가계 주택담보대출 증가 선행",
+        claim=f"주택담보대출(전 금융권) 증가율이 높을수록 {lag_months}개월 뒤 전국 아파트 "
+              "가격이 더 오른다",
+        method=f"한국은행 ECOS 주택관련대출(예금취급기관, 말잔) 전년동월대비(YoY) 증가율(t) vs "
+               f"{lag_months}개월 후 전국 단지+평형 추적 매매가 성장률(t+{lag_months}, 구성효과 "
+               f"제거)의 Spearman 상관, 최근 {months}개월. M2는 정기예적금까지 섞여 위험회피 "
+               "시에도 늘 수 있어 신호가 뒤집혔지만(money_supply_leads_price 참고), 주담대는 "
+               "실제 매수 자금 집행이라 더 직접적인 신호일 것으로 기대.",
+        expected_sign=1,
+        caveats="국가 단위 월별 시계열이라 표본(n)이 지역×월 패널보다 훨씬 작음. M2와 마찬가지로 "
+                "정책(DSR·LTV 규제, 정책모기지 등)이 대출 증가율 자체를 좌우해 인과가 역방향일 "
+                "가능성도 배제 못함 — 다만 시차 스캔 결과(아래 explored)는 M2와 달리 짧은 시차에서 "
+                "가장 강하고 6개월부터 약해지는 패턴이라, M2에서 발견된 역인과(장기 시차일수록 "
+                "강해지는 패턴)와는 형태가 달라 직접 대출 실행 시점 효과일 가능성이 더 큼.",
+        explored=(
+            "2026-08-18 시차 스캔(전국, 1~12개월): 1개월 rho=+0.412(p=0.002)로 시작해 2개월 "
+            "+0.405, 3개월 +0.388까지 비슷하게 유지되다 6개월 +0.314(p=0.015)로 약해지고, "
+            "9개월 +0.101(유의하지 않음), 12개월 -0.130(유의하지 않음)으로 신호가 사라짐/역전됨. "
+            "등록된 기본값(1개월)이 이미 최적점이라 재조정 불필요 — M2(장기 시차일수록 강해짐, "
+            "역인과 의심)와 반대로 짧은 시차에서 감쇠하는 형태라 대출 실행 자체가 매수 완료 "
+            "시점과 가깝다는 직접효과 해석에 더 부합."
+        ),
+    )
+    price_g = _national_price_growth_panel(months)
+    if price_g.empty:
+        return _empty_result(**meta)
+
+    loan = _ecos_yoy_panel(MORTGAGE_SERIES, "loan_yoy").dropna(subset=["loan_yoy"])
+    if loan.empty:
+        return _empty_result(**meta)
+    loan = loan.copy()
+    loan["ym"] = loan["ym"] + lag_months  # t시점 주담대 증가율을 t+lag시점 라벨로 이동(선행 정렬)
+
+    merged = price_g.merge(loan, on="ym", how="inner")
+    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
+    if len(merged) < 2:
+        return _empty_result(**meta)
+    rho, _ = spearmanr(merged["loan_yoy"], merged["growth"])
     return HypothesisResult(statistic=float(rho), n=len(merged), **meta)

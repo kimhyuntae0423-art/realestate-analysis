@@ -205,6 +205,7 @@ def get_all_hypotheses() -> list:
         k.test_buyer_sentiment_leads_price_kb,
         e.test_money_supply_leads_price,
         e.test_price_leads_money_supply,
+        e.test_mortgage_loan_leads_price,
     ]
 
 

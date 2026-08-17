@@ -14,16 +14,20 @@ def _trade(days_ago, apt="A", ppp=6000, area=84.9, amount=100000):
             "area_m2": area, "deal_amount": amount, "price_per_pyeong": ppp}
 
 
-def _m2_rows_ending_at(anchor_month, yoy_at_anchor=5.0, yoy_at_next=15.0):
+def _ecos_rows_ending_at(series, anchor_month, yoy_at_anchor=5.0, yoy_at_next=15.0):
     """anchor_month, anchor_month+1 시점에 각각 YoY(전년동월대비)=5%/15%가 정의되도록
-    anchor_month-12 ~ anchor_month+1까지 14개월 연속 M2 원값을 만든다."""
+    anchor_month-12 ~ anchor_month+1까지 14개월 연속 원값을 만든다 (M2/주담대 공용)."""
     values = [100, 100, 101, 101, 102, 102, 103, 103, 104, 104, 104, 104,
               100 * (1 + yoy_at_anchor / 100), 100 * (1 + yoy_at_next / 100)]
     return [
-        {"series": "m2_eop_raw", "ym_date": (anchor_month + (k - 12)).to_timestamp().date(),
+        {"series": series, "ym_date": (anchor_month + (k - 12)).to_timestamp().date(),
          "value": float(val), "source": "test"}
         for k, val in enumerate(values)
     ]
+
+
+def _m2_rows_ending_at(anchor_month, yoy_at_anchor=5.0, yoy_at_next=15.0):
+    return _ecos_rows_ending_at("m2_eop_raw", anchor_month, yoy_at_anchor, yoy_at_next)
 
 
 def test_money_supply_leads_price_computes_correlation_direction():
@@ -70,4 +74,28 @@ def test_price_leads_money_supply_computes_correlation_direction():
 
 def test_price_leads_money_supply_empty_when_no_data():
     r = e.test_price_leads_money_supply()
+    assert r.n == 0
+
+
+def test_mortgage_loan_leads_price_detects_positive_lag():
+    # 가격(단일 단지+평형): T0(90일전)->T1(60일전) +5%, T1->T2(30일전) +25%
+    rows_t = []
+    for i in range(3):
+        rows_t.append(_trade(90 + i, ppp=10000))
+        rows_t.append(_trade(60 + i, ppp=10500))  # T0->T1 +5%
+        rows_t.append(_trade(30 + i, ppp=13125))  # T1->T2 +25%
+    upsert_trades(rows_t)
+
+    # 주담대 YoY를 T0=5%, T1=15%로 설계 -> 가격 성장(5%->25%)과 같은 방향 -> 양의 상관.
+    # 등록된 기본값이 이미 lag_months=1이라 fixture와 그대로 맞음.
+    t0_month = (pd.Timestamp.today() - pd.Timedelta(days=90)).to_period("M")
+    upsert_ecos_series(_ecos_rows_ending_at("mortgage_loan_eop", t0_month))
+
+    r = e.test_mortgage_loan_leads_price(months=6)
+    assert r.n >= 2
+    assert r.statistic > 0  # 주담대 증가율 클수록 다음달 가격 상승폭도 큼 -> 양의 상관
+
+
+def test_mortgage_loan_leads_price_empty_when_no_data():
+    r = e.test_mortgage_loan_leads_price()
     assert r.n == 0
