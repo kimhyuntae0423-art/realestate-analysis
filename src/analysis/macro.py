@@ -47,22 +47,32 @@ def signal_volume_momentum() -> dict:
 
 
 def signal_jeonse_ratio() -> dict:
-    """전국 평균 전세가율 (전세환산/매매)."""
+    """전국 평균 전세가율 (전세환산/매매).
+
+    매매·전세 각각 독립적으로 구한 전국 median끼리 나누면 그 90일간 우연히 어떤
+    단지·평형이 거래됐는지(구성효과)가 분자·분모에 이중으로 껴서 왜곡된다 — KB 공식
+    전세가격비율과 비교했더니 지역별로 쪼개면 전부 반대 부호였음(2026-08-17 감리).
+    같은 단지+평형 유닛에서 매매·전세가 동시에 관측된 경우만 매칭해 계산한다.
+    """
+    from src.analysis.hypothesis_lab import jeonse_ratio_via_unit_matching
+
     now = date.today()
     df_t = fetch_trades_df(date_from=now - timedelta(days=90))
     df_r = fetch_rents_df(date_from=now - timedelta(days=90))
     if df_t.empty or df_r.empty:
         return {"name": "전세가율", "level": "yellow", "value": "N/A", "detail": ""}
     df_r = to_jeonse_equiv(df_r)
-    median_trade = df_t["deal_amount"].median()
-    median_rent = df_r["jeonse_equiv"].median()
-    ratio = median_rent / median_trade * 100 if median_trade else 0
+    df_r["ppp"] = df_r["jeonse_equiv"] / df_r["area_m2"] * 3.3058
+    ratio_g = jeonse_ratio_via_unit_matching(df_t, df_r, [])
+    if ratio_g.empty:
+        return {"name": "전세가율", "level": "yellow", "value": "N/A", "detail": ""}
+    ratio = (ratio_g["jeonse_ratio"] * ratio_g["n"]).sum() / ratio_g["n"].sum()
     level = _signal(ratio, 70, 55)  # 70%↑ 녹(매수 유리), 55%↓ 적
     return {
         "name": "전세가율",
         "level": level,
         "value": f"{ratio:.1f}%",
-        "detail": "전국 평균. 70% 이상이면 갭축소·매매 강세 신호",
+        "detail": "전국 평균(단지+평형 유닛 매칭). 70% 이상이면 갭축소·매매 강세 신호",
     }
 
 

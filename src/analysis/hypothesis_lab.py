@@ -93,6 +93,50 @@ def region_growth_via_unit_tracking(df: pd.DataFrame, group_cols: list[str],
     return agg[group_cols + ["ym", "growth", "n"]]
 
 
+def jeonse_ratio_via_unit_matching(df_trade: pd.DataFrame, df_rent: pd.DataFrame,
+                                    group_cols: list[str], area_tol: float = 5.0) -> pd.DataFrame:
+    """전세가율(전세/매매)을 지역(구성원 그룹)×월 raw median끼리 나누면, 그 달 매매/전세
+    각각 우연히 어떤 단지·평형이 거래됐는지(구성효과)가 분자·분모에 이중으로 껴서 왜곡된다
+    — KB 공식 전세가격비율과 비교했더니 지역별로 쪼개면 전부 반대 부호(rho -0.15~-0.68)였음
+    (2026-08-17 감리). 같은 단지+평형 유닛에서 그 달 매매와 전세가 동시에 관측된 경우만
+    매칭해 유닛별 비율을 구하고, 거래량(min(매매건수,전세건수)) 가중평균으로 집계하면
+    부호가 KB와 같은 방향으로 돌아온다(같은 비교로 rho -0.185 -> +0.157).
+
+    df_trade는 price_per_pyeong, df_rent는 ppp(전세환산 평당가) 컬럼이 이미 있어야 한다.
+    반환: group_cols + ["ym", "jeonse_ratio", "n"] — n은 매칭에 쓰인 거래건수(가중치용).
+    """
+    from src.analysis.recommend import _bucketize
+
+    cols = group_cols + ["ym", "jeonse_ratio", "n"]
+    if df_trade.empty or df_rent.empty:
+        return pd.DataFrame(columns=cols)
+    t = _bucketize(df_trade, area_tol)
+    r = _bucketize(df_rent, area_tol)
+    t["ym"] = pd.to_datetime(t["deal_date"]).dt.to_period("M")
+    r["ym"] = pd.to_datetime(r["deal_date"]).dt.to_period("M")
+    unit_keys = group_cols + ["apt_name", "area_bucket", "ym"]
+    t_u = t.groupby(unit_keys).agg(
+        trade_med=("price_per_pyeong", "median"), trade_n=("price_per_pyeong", "count")
+    ).reset_index()
+    r_u = r.groupby(unit_keys).agg(
+        rent_med=("ppp", "median"), rent_n=("ppp", "count")
+    ).reset_index()
+
+    unit = t_u.merge(r_u, on=unit_keys, how="inner")
+    if unit.empty:
+        return pd.DataFrame(columns=cols)
+    unit["ratio"] = unit["rent_med"] / unit["trade_med"] * 100
+    unit["n"] = unit[["trade_n", "rent_n"]].min(axis=1)
+    unit = unit.replace([np.inf, -np.inf], np.nan).dropna(subset=["ratio"])
+    unit["weighted"] = unit["ratio"] * unit["n"]
+
+    agg = unit.groupby(group_cols + ["ym"]).agg(
+        weighted_sum=("weighted", "sum"), n=("n", "sum")
+    ).reset_index()
+    agg["jeonse_ratio"] = agg["weighted_sum"] / agg["n"]
+    return agg[cols]
+
+
 def _verdict_for(statistic: float, n: int, expected_sign: int) -> str:
     if n < MIN_N or statistic != statistic:  # NaN check
         return "🟡 불확실 (표본부족)"

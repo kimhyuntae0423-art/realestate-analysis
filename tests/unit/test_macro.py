@@ -44,11 +44,13 @@ def test_signal_volume_momentum_recent_surge_is_green():
 
 
 def test_signal_jeonse_ratio_computes_percentage():
-    upsert_trades([_trade_row(10, amount=100000)])
-    upsert_rents([_rent_row(10, deposit=70000)])
+    # 단지+평형 유닛 매칭 방식(2026-08-17 재설계) — 매매ppp=6000, 전세ppp=deposit/84.9*3.3058
+    # 이 되도록 deposit=115570으로 잡으면 두 ppp의 비율이 정확히 75.0%가 됨
+    upsert_trades([_trade_row(10, ppp=6000)])
+    upsert_rents([_rent_row(10, deposit=115570)])
     out = macro.signal_jeonse_ratio()
-    assert out["value"] == "70.0%"
-    assert out["level"] == "green"  # 70% >= threshold
+    assert out["value"] == "75.0%"
+    assert out["level"] == "green"  # 75% >= 70 threshold
 
 
 def test_signal_jeonse_ratio_no_data_is_yellow():

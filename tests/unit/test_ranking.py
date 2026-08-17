@@ -28,14 +28,16 @@ def test_region_ranking_unmapped_code_falls_back_to_code():
 
 def test_apt_growth_filters_by_min_deals():
     rows = []
-    # apt A: 충분한 거래량 (recent 5건, prior 5건), 가격 상승
+    # apt A: 충분한 거래량 (recent 5건, prior 5건), 가격 상승 (동일 평형이라 area_bucket 하나로만 묶임)
     for i in range(5):
-        rows.append({"apt_name": "A", "price_per_pyeong": 6000, "deal_date": date(2025, 1, 1 + i)})
+        rows.append({"apt_name": "A", "price_per_pyeong": 6000, "area_m2": 84.9,
+                     "deal_date": date(2025, 1, 1 + i)})
     for i in range(5):
-        rows.append({"apt_name": "A", "price_per_pyeong": 5000, "deal_date": date(2023, 6, 1 + i)})
+        rows.append({"apt_name": "A", "price_per_pyeong": 5000, "area_m2": 84.9,
+                     "deal_date": date(2023, 6, 1 + i)})
     # apt B: 거래량 부족 (min_deals=4 미만) → 결과에서 제외되어야 함
-    rows.append({"apt_name": "B", "price_per_pyeong": 9000, "deal_date": date(2025, 1, 1)})
-    rows.append({"apt_name": "B", "price_per_pyeong": 8000, "deal_date": date(2023, 6, 1)})
+    rows.append({"apt_name": "B", "price_per_pyeong": 9000, "area_m2": 59.9, "deal_date": date(2025, 1, 1)})
+    rows.append({"apt_name": "B", "price_per_pyeong": 8000, "area_m2": 59.9, "deal_date": date(2023, 6, 1)})
     df = pd.DataFrame(rows)
     out = apt_growth(df, lookback_months=12, min_deals=4)
     assert list(out["apt_name"]) == ["A"]

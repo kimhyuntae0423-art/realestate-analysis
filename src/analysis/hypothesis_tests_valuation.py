@@ -16,7 +16,8 @@ from sqlalchemy import select
 from src.database.repository import fetch_trades_df, fetch_rents_df, session_scope
 from src.database.models import SupplySchedule, PopulationFlow, KbSentimentIndex
 from src.analysis.gap_analysis import to_jeonse_equiv
-from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, region_growth_via_unit_tracking
+from src.analysis.hypothesis_lab import (HypothesisResult, _empty_result,
+                                          region_growth_via_unit_tracking, jeonse_ratio_via_unit_matching)
 
 # supply_schedule은 시/도(2자리) 단위. 실거래 DB에 해당 시/도가 있는 경우만 검증 가능.
 SUPPLY_SIDO_NAMES = {"11": "서울", "41": "경기", "28": "인천", "26": "부산"}
@@ -29,15 +30,16 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5,
         id="jeonse_ratio_leads_price",
         title="전세가율 선행",
         claim="전세가율(전세/매매)이 오르면 매매가가 뒤따라 오른다",
-        method=f"시군구x월 패널. 전세(월세 포함, 전세환산금액=보증금+월세x100)의 평당가와 "
-               f"매매 평당가로 전세가율(%) 계산 — 이번달 전세가율(t) vs 다음달 단지+평형 "
-               f"추적 매매가 성장률(t+1, 구성효과 제거)의 Spearman 상관, 최근 {months}개월",
+        method=f"시군구x월 패널. 같은 단지+평형 유닛에서 그 달 매매·전세가 동시에 관측된 "
+               f"경우만 매칭해 전세가율(%) 계산(구성효과 제거) — 이번달 전세가율(t) vs 다음달 "
+               f"단지+평형 추적 매매가 성장률(t+1, 구성효과 제거)의 Spearman 상관, 최근 {months}개월",
         expected_sign=1,
         caveats="전세가율이 매매가 상승의 원인이 아니라, 둘 다 같은 시장 심리(매수 관망 시 "
                 "전세 수요 증가)의 결과일 수 있어 인과관계로 해석 불가. 투자추천 페이지의 "
                 "'전세가율 가속도' 신호와 같은 원천 데이터를 쓰지만, 이 실험실의 검증 방식은 "
-                "그 신호와 독립적으로 새로 계산한 것. 전세가율 자체(수준)는 지역 중위가 기준이지만, "
-                "선행성 검증에 쓰는 매매가 성장률은 단지+평형 추적 방식(구성효과 제거)으로 계산.",
+                "그 신호와 독립적으로 새로 계산한 것. 전세가율·매매가 성장률 모두 단지+평형 "
+                "유닛 단위(구성효과 제거)로 계산 — 같은 유닛에서 매매·전세가 동시에 관측된 "
+                "달만 표본이 되므로 원시 지역 median 방식보다 표본이 적을 수 있음.",
     )
     df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
     df_rent = fetch_rents_df(date_from=date.today() - timedelta(days=30 * months))
@@ -45,28 +47,16 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5,
         return _empty_result(**meta)
 
     df_trade = df_trade.copy()
-    df_trade["ym"] = pd.to_datetime(df_trade["deal_date"]).dt.to_period("M")
-    trade_level = df_trade.groupby(["region_code", "ym"]).agg(
-        trade_ppp=("price_per_pyeong", "median"), trade_n=("price_per_pyeong", "count")
-    ).reset_index()
-    # 전세가율 계산용 매매 수준(level)은 지역 중위가, 성장률은 단지+평형 추적(구성효과 제거)으로 분리
     growth_g = region_growth_via_unit_tracking(df_trade, ["region_code"], area_tol, min_unit_deals)
 
     df_rent = to_jeonse_equiv(df_rent)
     df_rent["ppp"] = df_rent["jeonse_equiv"] / df_rent["area_m2"] * 3.3058
-    df_rent["ym"] = pd.to_datetime(df_rent["deal_date"]).dt.to_period("M")
-    rent_g = df_rent.groupby(["region_code", "ym"]).agg(
-        rent_ppp=("ppp", "median"), rent_n=("ppp", "count")
-    ).reset_index()
-
-    ratio_src = trade_level.merge(rent_g, on=["region_code", "ym"], how="inner")
-    ratio_src = ratio_src[(ratio_src["trade_n"] >= min_deals) & (ratio_src["rent_n"] >= min_deals)]
-    if ratio_src.empty:
+    ratio_g = jeonse_ratio_via_unit_matching(df_trade, df_rent, ["region_code"], area_tol)
+    ratio_g = ratio_g[ratio_g["n"] >= min_deals]
+    if ratio_g.empty:
         return _empty_result(**meta)
-    ratio_src = ratio_src.copy()
-    ratio_src["jeonse_ratio"] = ratio_src["rent_ppp"] / ratio_src["trade_ppp"] * 100
 
-    ratio_df = ratio_src[["region_code", "ym", "jeonse_ratio"]].dropna().copy()
+    ratio_df = ratio_g[["region_code", "ym", "jeonse_ratio"]].dropna().copy()
     ratio_df["ym"] = ratio_df["ym"] + 1  # t시점 전세가율을 t+1시점 라벨로 이동(선행 정렬)
     growth_df = growth_g[["region_code", "ym", "growth"]].dropna()
 

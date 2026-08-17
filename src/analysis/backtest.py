@@ -57,32 +57,32 @@ def _load_region_map() -> dict[str, str]:
 # ── 시점별 시그널 ──────────────────────────────────────────────────
 
 def _region_price_growth(start: date, mid: date, end: date,
-                          min_deals: int = 20) -> pd.DataFrame:
-    """시군구별 가격 상승률 [mid~end 중위 평당가 / start~mid 중위 평당가 - 1].
+                          min_deals: int = 20, area_tol: float = 5.0,
+                          min_unit_deals: int = 1) -> pd.DataFrame:
+    """시군구별 가격 상승률 — 단지+평형 유닛별 성장률을 거래량 가중평균해 지역 단위로 집계.
 
-    min_deals: 양쪽 윈도우 모두에서 요구되는 최소 거래수.
+    원시 지역 median(mid~end) vs median(start~mid) 비교는 그 구간에 우연히 어떤 단지·평형이
+    거래됐는지(구성효과)에 좌우돼 region_backtest의 "정답지" 자체가 노이즈일 위험이 있었음
+    (2026-08-17 감리, region_growth_via_unit_tracking과 동일 문제). 단지+평형 단위 성장률
+    (_apt_price_growth)을 거래량 가중평균해 지역으로 올린다.
+
+    min_deals: 지역 단위 신뢰도 필터 — 양쪽 윈도우 거래량 중 작은 쪽을 유닛별로 합산한 값 기준.
+    min_unit_deals: 유닛(단지+평형) 단위 최소 거래수(양쪽 윈도우 모두), _apt_price_growth로 전달.
     """
-    df = fetch_trades_df(date_from=start, date_to=end)
-    if df.empty:
+    unit_growth = _apt_price_growth(start, mid, end, area_tol=area_tol, min_deals=min_unit_deals)
+    if unit_growth.empty:
         return pd.DataFrame()
-    df["deal_date"] = pd.to_datetime(df["deal_date"])
-    mid_ts = pd.Timestamp(mid)
-
-    recent = df[df["deal_date"] > mid_ts]
-    prior = df[df["deal_date"] <= mid_ts]
-
-    r = recent.groupby("region_code").agg(
-        recent_ppp=("price_per_pyeong", "median"),
-        recent_deals=("price_per_pyeong", "count"),
-    )
-    p = prior.groupby("region_code").agg(
-        prior_ppp=("price_per_pyeong", "median"),
-        prior_deals=("price_per_pyeong", "count"),
-    )
-    g = r.join(p, how="inner")
-    g = g[(g["recent_deals"] >= min_deals) & (g["prior_deals"] >= min_deals)]
-    g["growth_%"] = ((g["recent_ppp"] - g["prior_ppp"]) / g["prior_ppp"] * 100).round(2)
-    return g.reset_index()
+    unit_growth = unit_growth.copy()
+    unit_growth["weight"] = unit_growth[["recent_deals", "prior_deals"]].min(axis=1)
+    unit_growth["weighted"] = unit_growth["growth_%"] * unit_growth["weight"]
+    g = unit_growth.groupby("region_code").agg(
+        weighted_sum=("weighted", "sum"), weight_sum=("weight", "sum"),
+    ).reset_index()
+    g = g[g["weight_sum"] >= min_deals]
+    if g.empty:
+        return pd.DataFrame()
+    g["growth_%"] = (g["weighted_sum"] / g["weight_sum"]).round(2)
+    return g[["region_code", "growth_%"]]
 
 
 def _region_volume_momentum(start: date, mid: date, end: date) -> pd.DataFrame:

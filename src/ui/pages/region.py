@@ -13,10 +13,8 @@ from src.analysis.price_trend import monthly_summary, apt_summary, yoy_change
 from src.analysis.gap_analysis import gap_table
 from src.analysis.yield_calc import rental_yield
 from src.analysis.ranking import apt_growth
-from src.analysis.fair_value import (
-    fair_value_by_jeonse, fair_value_by_yield,
-    fair_value_ppp_trend, fair_value_apt_vs_ma,
-)
+from src.analysis.fair_value import fair_value_ppp_trend, fair_value_apt_vs_ma
+from src.analysis.fair_value_reverse import fair_value_by_jeonse, fair_value_by_yield
 from src.analysis.supply import supply_for_region, supply_pressure_score
 from src.ui.shared import (
     REGIONS, REGION_MAP, render_table, render_df,
@@ -330,15 +328,15 @@ def page_region():
             if trend.empty:
                 st.info("이동평균 계산에 필요한 데이터가 부족합니다 (최소 6개월 이상).")
             else:
-                # 라인 차트
+                # 라인 차트 (구성효과 보정된 tracked_ppp 기준 — avg_ppp는 원본 참고용, 표에만 노출)
                 fig_trend = px.line(
                     trend,
-                    x="ym", y=["avg_ppp", "ma_ppp"],
+                    x="ym", y=["tracked_ppp", "ma_ppp"],
                     labels={"ym": "년월", "value": "평당가 (만원/평)", "variable": "구분"},
                     title=f"평당가 vs {ma_months}개월 이동평균",
-                    color_discrete_map={"avg_ppp": "#3b82f6", "ma_ppp": "#f97316"},
+                    color_discrete_map={"tracked_ppp": "#3b82f6", "ma_ppp": "#f97316"},
                 )
-                newnames = {"avg_ppp": "월 평균평당가", "ma_ppp": f"{ma_months}개월 이동평균"}
+                newnames = {"tracked_ppp": "월 평균평당가(추적보정)", "ma_ppp": f"{ma_months}개월 이동평균"}
                 fig_trend.for_each_trace(lambda t: t.update(name=newnames.get(t.name, t.name)))
                 st.plotly_chart(fig_trend, width='stretch')
 
@@ -357,7 +355,7 @@ def page_region():
                 fig_os.update_traces(marker_color=color_vals.tolist())
                 st.plotly_chart(fig_os, width='stretch')
 
-                show_trend = ["ym", "avg_ppp", "ma_ppp", "overshoot_%", "verdict"]
+                show_trend = ["ym", "avg_ppp", "tracked_ppp", "ma_ppp", "overshoot_%", "verdict"]
                 render_table(trend[show_trend], height=400)
 
             st.markdown("---")

@@ -6,9 +6,9 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src.analysis.fair_value import (
-    fair_value_by_jeonse, fair_value_by_yield, fair_value_ppp_trend,
-    fair_value_apt_vs_ma, enrich_with_fair_value,
+    fair_value_ppp_trend, fair_value_apt_vs_ma, enrich_with_fair_value,
 )
+from src.analysis.fair_value_reverse import fair_value_by_jeonse, fair_value_by_yield
 
 
 def test_fair_value_by_jeonse_premium_sign():
@@ -75,10 +75,13 @@ def test_fair_value_ppp_trend_requires_6_months():
 
 
 def test_fair_value_ppp_trend_computes_overshoot():
+    # 단일 단지+평형만 거래되므로 tracked_ppp(단지+평형 추적)가 avg_ppp와 동일한 궤적이 됨
     rows = []
     for m in range(1, 8):
-        rows.append({"deal_date": date(2025, m, 1), "price_per_pyeong": 6000, "deal_amount": 100000})
-    rows.append({"deal_date": date(2025, 8, 1), "price_per_pyeong": 9000, "deal_amount": 100000})
+        rows.append({"deal_date": date(2025, m, 1), "price_per_pyeong": 6000, "deal_amount": 100000,
+                     "apt_name": "A", "area_m2": 84.9})
+    rows.append({"deal_date": date(2025, 8, 1), "price_per_pyeong": 9000, "deal_amount": 100000,
+                "apt_name": "A", "area_m2": 84.9})
     df = pd.DataFrame(rows)
     out = fair_value_ppp_trend(df, ma_months=24)
     assert not out.empty
