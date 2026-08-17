@@ -30,6 +30,18 @@ _M2_LAG_EXPLORED = (
     "M2 자체의 독립적 인과력을 증명하진 않는다 — test_price_leads_money_supply 참고."
 )
 
+_MULTIVARIATE_EXPLORED = (
+    "2026-08-18 다중회귀(M2_yoy + loan_yoy -> 가격성장률, 표준화계수) 진단: 1개월 지연(주담대 "
+    "최적점)에서 결합 R²=0.316(주담대 단독 0.184 + M2 단독 0.068보다 높음) — 두 변수 다 유의미 "
+    "(주담대 coef=+0.51 p<0.0001, M2 coef=-0.37 p=0.002). 특히 M2는 단독일 때(-0.26, p=0.05, "
+    "경계선)보다 주담대를 통제했을 때 더 강해짐 — M2가 '주담대(가격에 긍정적) + 나머지(정기예금 "
+    "등, 가격에 부정적)'로 쪼개져 있고, 주담대 성분을 걷어내니 나머지의 위험회피 신호가 더 "
+    "선명해진 것으로 해석됨. 반대로 12개월 지연(M2 최적점)에서는 주담대가 완전히 무의미해짐 "
+    "(coef=-0.005, p=0.97) — M2의 장기 음의 상관은 주담대와 무관한 별개 메커니즘(정책반응/경기 "
+    "순환)임을 재확인. 결론: 단기(1개월)엔 두 지표를 같이 봐야 각자의 순수 성분이 드러나고, "
+    "장기(12개월)엔 M2 단독 신호만 유효 — 전략에 반영 시 참고."
+)
+
 
 def _ecos_yoy_panel(series: str, out_col: str) -> pd.DataFrame:
     """ECOS 월별 원시계열에서 전년동월대비(YoY) 증가율 패널을 만든다 (M2, 주담대 등 공용)."""
@@ -77,7 +89,7 @@ def test_money_supply_leads_price(months: int = 60, lag_months: int = 12) -> Hyp
                 "M2에 반영된 뒤(신용창조 경로) 그 다음 국면의 가격 둔화와 겹쳐 보이는 역인과/시차 "
                 "아티팩트일 가능성이 있음 — test_price_leads_money_supply(가격이 M2를 선행)가 "
                 "이 해석을 뒷받침하는 별도 증거.",
-        explored=_M2_LAG_EXPLORED,
+        explored=_M2_LAG_EXPLORED + " " + _MULTIVARIATE_EXPLORED,
     )
     price_g = _national_price_growth_panel(months)
     if price_g.empty:
@@ -116,7 +128,7 @@ def test_price_leads_money_supply(months: int = 60, lag_months: int = 12) -> Hyp
                 "가격의 독립적 선행지표가 아니다'로 해석하는 게 더 정확함. 신용창조 채널을 "
                 "더 직접 검증하려면 M2가 아니라 가계대출(주담대) 통계가 더 적합 — "
                 "test_mortgage_loan_leads_price 참고.",
-        explored=_M2_LAG_EXPLORED,
+        explored=_M2_LAG_EXPLORED + " " + _MULTIVARIATE_EXPLORED,
     )
     price_g = _national_price_growth_panel(months)
     if price_g.empty:
@@ -161,7 +173,7 @@ def test_mortgage_loan_leads_price(months: int = 60, lag_months: int = 1) -> Hyp
             "9개월 +0.101(유의하지 않음), 12개월 -0.130(유의하지 않음)으로 신호가 사라짐/역전됨. "
             "등록된 기본값(1개월)이 이미 최적점이라 재조정 불필요 — M2(장기 시차일수록 강해짐, "
             "역인과 의심)와 반대로 짧은 시차에서 감쇠하는 형태라 대출 실행 자체가 매수 완료 "
-            "시점과 가깝다는 직접효과 해석에 더 부합."
+            "시점과 가깝다는 직접효과 해석에 더 부합. " + _MULTIVARIATE_EXPLORED
         ),
     )
     price_g = _national_price_growth_panel(months)
