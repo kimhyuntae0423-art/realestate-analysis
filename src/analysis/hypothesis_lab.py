@@ -189,6 +189,7 @@ def get_all_hypotheses() -> list:
     from src.analysis import hypothesis_tests_valuation as v
     from src.analysis import hypothesis_tests_kb as k
     from src.analysis import hypothesis_tests_ecos as e
+    from src.analysis import hypothesis_tests_ecos_rate as er
     return [
         t.test_catalyst_announcement_vs_age,
         t.test_volume_leads_price,
@@ -206,6 +207,8 @@ def get_all_hypotheses() -> list:
         e.test_money_supply_leads_price,
         e.test_price_leads_money_supply,
         e.test_mortgage_loan_leads_price,
+        er.test_m1_m2_ratio_leads_price,
+        er.test_real_rate_leads_price,
     ]
 
 
@@ -258,13 +261,6 @@ PENDING_HYPOTHESES: list[PendingHypothesis] = [
         claim="학군이 좋은 지역일수록 가격이 더 오른다",
         data_status="데이터 없음 — 교육부 학교알리미 데이터 미수집",
         note="수집 파이프라인부터 필요",
-    ),
-    PendingHypothesis(
-        id="interest_rate",
-        title="기준금리 변동 선행",
-        claim="기준금리가 내리면(오르면) 가격이 뒤따라 오른다(내린다)",
-        data_status="데이터 정적 — macro.py 신호가 수동 토글식이라 과거 시계열 없음",
-        note="금리 시계열 수집부터 필요",
     ),
 ]
 
