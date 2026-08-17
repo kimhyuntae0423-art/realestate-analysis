@@ -4,7 +4,8 @@ import pandas as pd
 from sqlalchemy import select, and_
 
 from src.database.models import (
-    SessionLocal, AptTrade, AptRent, CollectionLog, PopulationFlow, KbSentimentIndex, engine,
+    SessionLocal, AptTrade, AptRent, CollectionLog, PopulationFlow,
+    KbSentimentIndex, KbPriceSeries, engine,
 )
 from src.utils.logger import get_logger
 
@@ -83,6 +84,13 @@ def upsert_kb_sentiment(rows: list[dict]) -> int:
     with session_scope() as s:
         n = _bulk_upsert(s, KbSentimentIndex, rows)
         log.info("kb_sentiment_index upsert: %d rows", n)
+        return n
+
+
+def upsert_kb_price_series(rows: list[dict]) -> int:
+    with session_scope() as s:
+        n = _bulk_upsert(s, KbPriceSeries, rows)
+        log.info("kb_price_series upsert: %d rows", n)
         return n
 
 

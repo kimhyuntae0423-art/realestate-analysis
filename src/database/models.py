@@ -137,6 +137,25 @@ class KbSentimentIndex(Base):
     )
 
 
+class KbPriceSeries(Base):
+    """KB부동산 데이터허브 - 가격 시계열 통계 (가격지수/평균가/중위가/전세가율/선도50지수 등을
+    long-format 하나의 테이블에 저장 — 지표가 늘어도 스키마 변경 없이 series 값만 추가).
+    """
+    __tablename__ = "kb_price_series"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series = Column(String(30), index=True, nullable=False)      # price_index_apt_sale 등
+    region_code = Column(String(5), index=True, nullable=False)  # 시/도 2자리, 전국단일지표는 "00"
+    ym_date = Column(Date, index=True, nullable=False)           # 해당월 1일
+    value = Column(Float, nullable=False)
+    source = Column(String(50))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("series", "region_code", "ym_date", name="uq_kb_price_series"),
+    )
+
+
 class CollectionLog(Base):
     """수집 이력"""
     __tablename__ = "collection_log"

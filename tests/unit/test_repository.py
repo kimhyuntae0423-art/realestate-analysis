@@ -6,10 +6,12 @@ from datetime import date
 import pandas as pd
 
 from src.database.repository import (
-    upsert_trades, upsert_rents, upsert_population_flow, upsert_kb_sentiment,
+    upsert_trades, upsert_rents, upsert_population_flow, upsert_kb_sentiment, upsert_kb_price_series,
     fetch_trades_df, fetch_rents_df, log_collection,
 )
-from src.database.models import CollectionLog, PopulationFlow, KbSentimentIndex, SessionLocal
+from src.database.models import (
+    CollectionLog, PopulationFlow, KbSentimentIndex, KbPriceSeries, SessionLocal,
+)
 
 
 def _trade_row(region="11680", d=date(2025, 6, 1), apt="A", amount=100000, area=84.9, floor=5):
@@ -89,6 +91,34 @@ def test_upsert_kb_sentiment_deduplicates_by_region_and_date():
 
 def test_upsert_kb_sentiment_empty_list_is_noop():
     assert upsert_kb_sentiment([]) == 0
+
+
+def _kb_price_row(series="price_index_apt_sale", region="11", d=date(2025, 6, 1), value=100.0):
+    return {"series": series, "region_code": region, "ym_date": d, "value": value, "source": "test"}
+
+
+def test_upsert_kb_price_series_deduplicates_by_series_region_and_date():
+    row = _kb_price_row()
+    n1 = upsert_kb_price_series([row])
+    n2 = upsert_kb_price_series([row])  # 동일 (series, region_code, ym_date) 재삽입 -> 무시
+    assert n1 == 1
+    assert n2 == 0
+    with SessionLocal() as s:
+        assert s.query(KbPriceSeries).count() == 1
+
+
+def test_upsert_kb_price_series_allows_different_series_same_region_and_date():
+    # series가 다르면 같은 (region, date)라도 별개 행 — long-format 설계 확인
+    n1 = upsert_kb_price_series([_kb_price_row(series="price_index_apt_sale")])
+    n2 = upsert_kb_price_series([_kb_price_row(series="median_price_apt_sale")])
+    assert n1 == 1
+    assert n2 == 1
+    with SessionLocal() as s:
+        assert s.query(KbPriceSeries).count() == 2
+
+
+def test_upsert_kb_price_series_empty_list_is_noop():
+    assert upsert_kb_price_series([]) == 0
 
 
 def test_fetch_trades_df_filters_by_region_and_date_range():
