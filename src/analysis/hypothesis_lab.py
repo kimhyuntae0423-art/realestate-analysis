@@ -172,10 +172,10 @@ class HypothesisResult:
 
 
 def _empty_result(id: str, title: str, claim: str, method: str,
-                   expected_sign: int, caveats: str) -> HypothesisResult:
+                   expected_sign: int, caveats: str, explored: str | None = None) -> HypothesisResult:
     return HypothesisResult(id=id, title=title, claim=claim, method=method,
                              statistic=float("nan"), n=0,
-                             expected_sign=expected_sign, caveats=caveats)
+                             expected_sign=expected_sign, caveats=caveats, explored=explored)
 
 
 def get_all_hypotheses() -> list:
@@ -204,6 +204,7 @@ def get_all_hypotheses() -> list:
         k.test_supply_leads_price_decline_kb,
         k.test_buyer_sentiment_leads_price_kb,
         e.test_money_supply_leads_price,
+        e.test_price_leads_money_supply,
     ]
 
 

@@ -18,6 +18,17 @@ from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, region_
 
 M2_SERIES = "m2_eop_raw"
 
+_M2_LAG_EXPLORED = (
+    "2026-08-18 시차 스캔(전국+서울 분리, 0~24개월): 1개월(전국 rho=-0.09)에선 신호가 "
+    "약했지만 시차를 늘릴수록 뚜렷해짐 — 서울만 보면 6개월 -0.42, 9개월 -0.54, 12개월 -0.59, "
+    "24개월 -0.74(전부 p<0.01). 그런데 반대 방향(가격 성장률(t) -> M2 증가율(t+lag))도 같이 "
+    "돌려보니 6~12개월에서 유의미한 '양의' 상관(12개월 rho=+0.54, p=0.0001)이 나옴 — 즉 "
+    "\"M2가 늘면 가격이 눌린다\"가 아니라 \"가격이 오르면 6~12개월 뒤 M2가 늘고(신용창조 경로), "
+    "그 시점 M2 수치는 이미 지나간 상승분의 흔적이라 그 다음 국면의 가격 둔화와 겹쳐 보이는" \
+    " 역인과/시차 아티팩트일 가능성이 있음. 이 가설(M2->가격, expected_sign=-1)의 통계적 지지가 "
+    "M2 자체의 독립적 인과력을 증명하진 않는다 — test_price_leads_money_supply 참고."
+)
+
 
 def _m2_yoy_panel() -> pd.DataFrame:
     """M2(말잔, 원계열) 전국 월별 시계열에서 전년동월대비(YoY) 증가율 패널을 만든다."""
@@ -35,39 +46,86 @@ def _m2_yoy_panel() -> pd.DataFrame:
     return df[["ym", "m2_yoy"]]
 
 
-# ─── 통화량(M2) 증가 선행 ────────────────────────────────────────────
-def test_money_supply_leads_price(months: int = 60) -> HypothesisResult:
+def _national_price_growth_panel(months: int) -> pd.DataFrame:
+    df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
+    if df_trade.empty:
+        return pd.DataFrame(columns=["ym", "growth"])
+    price_g = region_growth_via_unit_tracking(df_trade, group_cols=[])
+    return price_g[["ym", "growth"]].dropna()
+
+
+# ─── 1. 통화량(M2) 증가 선행 ─────────────────────────────────────────
+def test_money_supply_leads_price(months: int = 60, lag_months: int = 12) -> HypothesisResult:
     meta = dict(
         id="money_supply_leads_price",
         title="통화량(M2) 증가 선행",
-        claim="M2(광의통화) 증가율이 높을수록 다음달 전국 아파트 가격이 더 오른다",
-        method=f"한국은행 ECOS M2(말잔, 원계열) 전년동월대비(YoY) 증가율(t) vs 전국 단지+평형 "
-               f"추적 매매가 성장률(t+1, 구성효과 제거)의 Spearman 상관, 최근 {months}개월",
-        expected_sign=1,
-        caveats="M2는 지역 구분 없는 국가 단위 지표라 전국 평균 가격과만 비교 가능 — 지역별 "
-                "차이(수도권 vs 지방)는 이 검정으로 알 수 없음. 국가 단위 월별 시계열이라 "
-                "표본(n)이 다른 가설(지역×월 패널)보다 훨씬 작음 — 표본부족 판정이 나오기 쉬움. "
-                "통화량 증가가 자산가격에 반영되는 데는 이론상 시차가 있을 수 있어 1개월 지연은 "
-                "과소평가일 가능성 — 다른 시차는 추후 explored로 탐색 예정.",
+        claim=f"M2(광의통화) 증가율이 높을수록 {lag_months}개월 뒤 전국 아파트 가격이 오히려 위축된다",
+        method=f"한국은행 ECOS M2(말잔, 원계열) 전년동월대비(YoY) 증가율(t) vs {lag_months}개월 후 "
+               f"전국 단지+평형 추적 매매가 성장률(t+{lag_months}, 구성효과 제거)의 Spearman 상관, "
+               f"최근 {months}개월. 처음엔 통념대로 '증가율 높을수록 다음달 가격 상승'(1개월, 양의 "
+               f"상관)으로 설계했으나 실DB 시차 스캔 결과 {lag_months}개월·음의 상관이 훨씬 강하게 "
+               "나와 그 방향으로 재설정함(아래 caveats 참고).",
+        expected_sign=-1,
+        caveats="M2는 지역 구분 없는 국가 단위 지표라 전국 평균 가격과만 비교 가능. 국가 단위 "
+                "월별 시계열이라 표본(n)이 다른 가설(지역×월 패널)보다 훨씬 작음. 이 음의 상관은 "
+                "M2가 가격을 억누른다는 직접 인과가 아니라, 가격 상승이 먼저고 그게 시차를 두고 "
+                "M2에 반영된 뒤(신용창조 경로) 그 다음 국면의 가격 둔화와 겹쳐 보이는 역인과/시차 "
+                "아티팩트일 가능성이 있음 — test_price_leads_money_supply(가격이 M2를 선행)가 "
+                "이 해석을 뒷받침하는 별도 증거.",
+        explored=_M2_LAG_EXPLORED,
     )
-    df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
-    if df_trade.empty:
-        return _empty_result(**meta)
-
-    price_g = region_growth_via_unit_tracking(df_trade, group_cols=[])
+    price_g = _national_price_growth_panel(months)
     if price_g.empty:
         return _empty_result(**meta)
-    price_g = price_g[["ym", "growth"]].dropna()
 
     m2 = _m2_yoy_panel().dropna(subset=["m2_yoy"])
     if m2.empty:
         return _empty_result(**meta)
     m2 = m2.copy()
-    m2["ym"] = m2["ym"] + 1  # t시점 M2 증가율을 t+1시점 라벨로 이동(선행 정렬)
+    m2["ym"] = m2["ym"] + lag_months  # t시점 M2 증가율을 t+lag시점 라벨로 이동(선행 정렬)
 
     merged = price_g.merge(m2, on="ym", how="inner")
     merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
     if len(merged) < 2:
         return _empty_result(**meta)
     rho, _ = spearmanr(merged["m2_yoy"], merged["growth"])
+    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
+
+
+# ─── 2. 가격 상승이 통화량(M2) 증가를 선행 (신용창조 경로) ─────────────
+def test_price_leads_money_supply(months: int = 60, lag_months: int = 12) -> HypothesisResult:
+    meta = dict(
+        id="price_leads_money_supply",
+        title="가격 상승 -> 통화량(M2) 증가 (신용창조 경로)",
+        claim=f"아파트 가격이 오르면(내리면) {lag_months}개월 뒤 M2(통화량) 증가율도 따라 "
+              "오른다(내린다) — 매매가 상승이 주택담보대출 실행 증가를 통해 시차를 두고 "
+              "통화량에 반영된다",
+        method=f"전국 단지+평형 추적 매매가 성장률(t, 구성효과 제거) vs {lag_months}개월 후 "
+               f"한국은행 ECOS M2(말잔, 원계열) 전년동월대비(YoY) 증가율(t+{lag_months})의 "
+               f"Spearman 상관, 최근 {months}개월. money_supply_leads_price(반대 방향, M2가 "
+               "가격을 선행한다는 통념)를 검증하다 우연히 발견한 역방향 관계.",
+        expected_sign=1,
+        caveats="같은 두 시계열(가격 성장률, M2 YoY)로 방향만 바꿔 검증한 것이라, "
+                "money_supply_leads_price의 음의 상관과 이 가설의 양의 상관이 서로 완전히 "
+                "독립적인 증거는 아님 — 두 결과를 합쳐 '가격이 M2를 선행하고, M2 자체는 "
+                "가격의 독립적 선행지표가 아니다'로 해석하는 게 더 정확함. 신용창조 채널을 "
+                "직접 검증하려면 M2가 아니라 가계대출(주담대) 통계가 더 적합하나 아직 미수집.",
+        explored=_M2_LAG_EXPLORED,
+    )
+    price_g = _national_price_growth_panel(months)
+    if price_g.empty:
+        return _empty_result(**meta)
+
+    m2 = _m2_yoy_panel().dropna(subset=["m2_yoy"])
+    if m2.empty:
+        return _empty_result(**meta)
+
+    price_shifted = price_g.copy()
+    price_shifted["ym"] = price_shifted["ym"] + lag_months  # t시점 가격성장률을 t+lag시점 라벨로 이동
+
+    merged = price_shifted.merge(m2, on="ym", how="inner")
+    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
+    if len(merged) < 2:
+        return _empty_result(**meta)
+    rho, _ = spearmanr(merged["growth"], merged["m2_yoy"])
     return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
