@@ -156,6 +156,25 @@ class KbPriceSeries(Base):
     )
 
 
+class EcosSeries(Base):
+    """한국은행 ECOS 거시경제 시계열 (M2 통화량 등, 전국 단일지표 — long-format).
+
+    KbPriceSeries와 같은 패턴: 지표(series)가 늘어도(M2 → 기준금리 등) 스키마 변경 없음.
+    """
+    __tablename__ = "ecos_series"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    series = Column(String(30), index=True, nullable=False)  # m2_eop_raw 등
+    ym_date = Column(Date, index=True, nullable=False)        # 해당월 1일
+    value = Column(Float, nullable=False)
+    source = Column(String(50))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("series", "ym_date", name="uq_ecos_series"),
+    )
+
+
 class CollectionLog(Base):
     """수집 이력"""
     __tablename__ = "collection_log"

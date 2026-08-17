@@ -22,6 +22,7 @@ DATA_GO_KR_API_KEY = _get_secret("DATA_GO_KR_API_KEY")
 KAKAO_REST_API_KEY = _get_secret("KAKAO_REST_API_KEY")
 VWORLD_API_KEY     = _get_secret("VWORLD_API_KEY")
 KOSIS_API_KEY      = _get_secret("KOSIS_API_KEY")
+ECOS_API_KEY       = _get_secret("ECOS_API_KEY")
 
 DATABASE_URL = _get_secret("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'processed' / 'realestate.db'}")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

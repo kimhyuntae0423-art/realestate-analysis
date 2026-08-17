@@ -5,7 +5,7 @@ from sqlalchemy import select, and_
 
 from src.database.models import (
     SessionLocal, AptTrade, AptRent, CollectionLog, PopulationFlow,
-    KbSentimentIndex, KbPriceSeries, engine,
+    KbSentimentIndex, KbPriceSeries, EcosSeries, engine,
 )
 from src.utils.logger import get_logger
 
@@ -91,6 +91,13 @@ def upsert_kb_price_series(rows: list[dict]) -> int:
     with session_scope() as s:
         n = _bulk_upsert(s, KbPriceSeries, rows)
         log.info("kb_price_series upsert: %d rows", n)
+        return n
+
+
+def upsert_ecos_series(rows: list[dict]) -> int:
+    with session_scope() as s:
+        n = _bulk_upsert(s, EcosSeries, rows)
+        log.info("ecos_series upsert: %d rows", n)
         return n
 
 

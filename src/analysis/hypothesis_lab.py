@@ -188,6 +188,7 @@ def get_all_hypotheses() -> list:
     from src.analysis import hypothesis_tests_cycles as c
     from src.analysis import hypothesis_tests_valuation as v
     from src.analysis import hypothesis_tests_kb as k
+    from src.analysis import hypothesis_tests_ecos as e
     return [
         t.test_catalyst_announcement_vs_age,
         t.test_volume_leads_price,
@@ -202,6 +203,7 @@ def get_all_hypotheses() -> list:
         v.test_buyer_sentiment_leads_price,
         k.test_supply_leads_price_decline_kb,
         k.test_buyer_sentiment_leads_price_kb,
+        e.test_money_supply_leads_price,
     ]
 
 
