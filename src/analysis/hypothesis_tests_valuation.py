@@ -65,7 +65,18 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5,
     if len(merged) < 2:
         return _empty_result(**meta)
     rho, _ = spearmanr(merged["jeonse_ratio"], merged["growth"])
-    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
+    explored = (
+        "2026-08-17 다음 변형들을 실DB로 시도했으나 전부 결론(음의 상관, 기각) 안 바뀜 — "
+        "재시도 의미 없음: "
+        "①시차 1~12개월 스캔(전부 rho -0.13~-0.19), "
+        "②누적 3/6/12개월 평균 전세가율(윈도우 늘릴수록 오히려 더 강한 음수, -0.19→-0.25), "
+        "③인구 순유입 지역 필터(순유입 -0.196 vs 순유출 -0.204, 차이 없음), "
+        "④입주물량 필터(적음 -0.274 vs 많음 -0.115 — 이론과 반대로 공급 적을 때 더 강한 음수), "
+        "⑤규제완화기 vs 강화기(완화기 -0.300 vs 강화기 -0.166 — 매수전환 열린 시기에 더 강한 음수). "
+        "④⑤는 '규제완화=매매약세 국면의 대응'이라는 confound로 설명 가능 — 전세가율은 "
+        "선행지표가 아니라 매매약세의 후행/동행 결과일 가능성에 무게."
+    )
+    return HypothesisResult(statistic=float(rho), n=len(merged), explored=explored, **meta)
 
 
 # ─── 10. 입주물량(공급과잉) 효과 ───────────────────────────────────────

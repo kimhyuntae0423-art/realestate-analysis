@@ -159,6 +159,8 @@ class HypothesisResult:
     computed_at: str = field(default_factory=lambda: datetime.now().isoformat(timespec="seconds"))
     # 하위그룹 분석 (선택): {그룹명: {"statistic":, "n":, "verdict":}}
     breakdown: dict | None = None
+    # 이미 시도해봤지만 결론이 안 바뀐 변형들 (선택) — 다음에 같은 걸 또 시도하지 않도록 기록
+    explored: str | None = None
 
     @property
     def verdict(self) -> str:

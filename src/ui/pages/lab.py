@@ -81,6 +81,8 @@ def page_lab():
             with st.expander("방법론 · 반박 여지"):
                 st.markdown(f"**계산 방법**: {r['method']}")
                 st.markdown(f"**한계 / 반박 여지**: {r['caveats']}")
+                if r.get("explored"):
+                    st.markdown(f"**이미 시도해본 것들 (재시도 전 참고)**: {r['explored']}")
 
     # ── 미검증 후보 ──────────────────────────────────────────────────
     pending = get_pending_hypotheses()
