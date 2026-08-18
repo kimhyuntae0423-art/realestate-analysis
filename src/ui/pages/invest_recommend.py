@@ -12,7 +12,7 @@ from src.analysis.location import is_kakao_ready, enrich_with_location
 from src.ui.shared import (
     REGION_MAP, render_table, render_df, naver_land_url,
     _cached_gap, _cached_yield, _cached_outright, _cached_investment,
-    _cached_region_sentiment,
+    _cached_region_sentiment, _cached_region_momentum, _cached_market_timing,
 )
 from src.ui.pages.invest_compare import _render_compare_view
 from src.ui.pages.invest_stress import _render_stress_test
@@ -45,6 +45,27 @@ def render_recommend_tab(inputs: dict):
         return
     if submitted:
         st.session_state["rec_has_run"] = True
+
+    # ─── 🌡️ 매크로 타이밍 진단 (WHEN축 — 국가 단위, 전략 무관) ───
+    timing = _cached_market_timing()
+    if timing["score"] is not None:
+        score = timing["score"]
+        if score >= 60:
+            t_icon, t_label = "🟢", "우호적"
+        elif score <= 40:
+            t_icon, t_label = "🔴", "불리"
+        else:
+            t_icon, t_label = "🟡", "중립"
+        with st.expander(f"{t_icon} 매크로 타이밍: {score}/100 ({t_label}) — 신호별 상세"):
+            st.caption(
+                "실험실에서 검증된 국가 단위 신호 기준. 단기(1개월, 직접효과)와 장기"
+                "(12~18개월, 정책 내생성 의심이라 낮은 가중치) 신호를 섞어 계산 — "
+                "참고용이며 매수·매도 신호가 아님."
+            )
+            tdf = pd.DataFrame(timing["signals"])[
+                ["label", "tier", "weight", "current_value", "percentile", "favorability", "as_of"]
+            ]
+            render_df(tdf)
 
     seed_man = int(seed_eok * 10000)
 
@@ -315,6 +336,21 @@ def render_recommend_tab(inputs: dict):
         c6.metric("최저 자기자본", f"{rec['required_equity'].min()/10000:.2f} 억")
 
     if strategy == "🚀 투자수익":
+        # ─── 📍 지역 모멘텀 랭킹 (WHERE축 — 어느 지역이 지금 좋은가) ───
+        mom = _cached_region_momentum(months)
+        if not mom.empty:
+            mom_disp = mom.copy()
+            mom_disp["region"] = mom_disp["region_code"].map(REGION_MAP).fillna(mom_disp["region_code"])
+            mom_disp["tier_label"] = mom_disp["tier_label"].astype(str).str.extract(r"^(\d)", expand=False)
+            mom_disp = mom_disp.rename(columns={"growth_%": "가격모멘텀(%)", "vol_momentum": "거래량모멘텀"})
+            st.markdown("### 📍 지역 모멘텀 랭킹")
+            st.caption(
+                "region_backtest 검증(2026-08-18, spearman 0.73→0.78) 기반 — 입지등급 20%"
+                "+가격모멘텀(구성효과 제거) 48%+거래량모멘텀 32%. 지금 모멘텀 좋은 지역 상위 15개."
+            )
+            render_df(mom_disp[["region", "tier_label", "가격모멘텀(%)", "거래량모멘텀", "momentum_score"]].head(15))
+            st.markdown("")
+
         st.markdown("### 🏆 지역 추천순위")
         st.caption(
             f"✅ 시드 {seed_eok}억 기준 (부대비용 포함) · "

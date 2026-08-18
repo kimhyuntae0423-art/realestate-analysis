@@ -98,3 +98,15 @@ def _cached_all_trades(months: int) -> pd.DataFrame:
     from datetime import date, timedelta
     cutoff = date.today() - timedelta(days=30 * months)
     return fetch_trades_df(date_from=cutoff)
+
+
+@st.cache_data(ttl=600, show_spinner="📍 지역 모멘텀 계산 중...")
+def _cached_region_momentum(months: int) -> pd.DataFrame:
+    from src.analysis.region_momentum import region_momentum_ranking
+    return region_momentum_ranking(months=months)
+
+
+@st.cache_data(ttl=600, show_spinner="🌡️ 매크로 타이밍 진단 중...")
+def _cached_market_timing() -> dict:
+    from src.analysis.market_timing import market_timing_signal
+    return market_timing_signal()
