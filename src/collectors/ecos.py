@@ -12,6 +12,8 @@ M2는 "신지표"(1.1.3, 통계표 161Y008)와 "구지표"(1.7.3, 통계표 101Y
 161Y004/BBKA00 = "M1(말잔, 원계열)", 월별, 2003-10~현재.
 722Y001/0101000 = "한국은행 기준금리", 월별(원래 일별, 월말 스냅샷), 1999-05~현재.
 511Y003/FMB = "향후1년 기대인플레이션율"(소비자동향조사), 월별, 2002-02~현재.
+901Y089 = "아파트 매매 실거래가격지수"(한국부동산원, ECOS 재배포), 월별, 2006-01~현재,
+지역코드는 시/도 전체가 있음(우리 sido 코드와 다른 KAB 자체 코드, KAB_APT_INDEX_REGIONS로 매핑).
 """
 from __future__ import annotations
 
@@ -34,6 +36,15 @@ SERIES = [
     ("base_rate", "722Y001", "0101000"),           # 한국은행 기준금리, %
     ("expected_inflation", "511Y003", "FMB"),      # 향후1년 기대인플레이션율, %
 ]
+
+# 아파트 매매 실거래가격지수(901Y089) — KAB 자체 지역코드 -> 우리 sido 코드("00"=전국)
+KAB_APT_INDEX_REGIONS = {
+    "100": "00",  # 전국
+    "200": "11",  # 서울
+    "C00": "41",  # 경기
+    "700": "28",  # 인천
+    "500": "26",  # 부산
+}
 
 
 def _ym_n_years_ago(years: int) -> str:
@@ -73,5 +84,14 @@ class EcosCollector:
         for series, stat_code, item_code in SERIES:
             r = self.fetch_series(series, stat_code, item_code, years)
             log.info("ECOS %s: %d행", series, len(r))
+            rows += r
+        return rows
+
+    def fetch_kab_apt_price_index(self, years: int = 8) -> list[dict]:
+        """한국부동산원 아파트 매매 실거래가격지수 — 우리가 추적하는 4개 시/도 + 전국."""
+        rows = []
+        for item_code, sido in KAB_APT_INDEX_REGIONS.items():
+            r = self.fetch_series(f"kab_apt_price_idx_{sido}", "901Y089", item_code, years)
+            log.info("ECOS kab_apt_price_idx_%s: %d행", sido, len(r))
             rows += r
         return rows
