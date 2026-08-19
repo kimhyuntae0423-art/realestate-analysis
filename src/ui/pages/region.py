@@ -18,7 +18,7 @@ from src.analysis.fair_value_reverse import fair_value_by_jeonse, fair_value_by_
 from src.analysis.supply import supply_for_region, supply_pressure_score
 from src.ui.shared import (
     REGIONS, REGION_MAP, render_table, render_df,
-    _cached_forecast, _cached_region_sentiment,
+    _cached_forecast, _cached_region_sentiment, _cached_region_momentum,
 )
 
 
@@ -45,6 +45,22 @@ def page_region():
     """📊 지역 분석 - 단일 시군구 시계열 깊이 분석."""
     st.title("📊 지역 분석")
     st.caption("특정 시군구의 추이·단지·갭·수익률·상승률을 한 번에")
+
+    # ─── 🗺️ 전체 지역 모멘텀 비교 (예산 무관, 순수 지역 비교) ───
+    with st.expander("🗺️ 전체 지역 모멘텀 비교 (예산 무관)"):
+        mom = _cached_region_momentum(12)
+        if not mom.empty:
+            mom_disp = mom.copy()
+            mom_disp["region"] = mom_disp["region_code"].map(REGION_MAP).fillna(mom_disp["region_code"])
+            mom_disp["tier_label"] = mom_disp["tier_label"].astype(str).str.extract(r"^(\d)", expand=False)
+            mom_disp = mom_disp.rename(columns={"growth_%": "가격모멘텀(%)", "vol_momentum": "거래량모멘텀"})
+            st.caption(
+                "region_backtest 검증(2026-08-18, spearman 0.73→0.78) 기반 — 입지등급 20%"
+                "+가격모멘텀(구성효과 제거) 48%+거래량모멘텀 32%. 예산과 무관한 전국 지역 비교(상위 30개)."
+            )
+            render_table(mom_disp[["region", "tier_label", "가격모멘텀(%)", "거래량모멘텀", "momentum_score"]].head(30))
+        else:
+            st.caption("모멘텀 데이터가 부족합니다.")
 
     with st.container(border=True):
         st.markdown("##### 분석 대상")

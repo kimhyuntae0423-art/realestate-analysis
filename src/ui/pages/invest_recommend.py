@@ -392,39 +392,6 @@ def render_recommend_tab(inputs: dict):
                                      & (buyable_rec["build_year"] >= y_lo)
                                      & (buyable_rec["build_year"] <= y_hi)]
 
-        # ─── 시군구 단위 요약 표 (한눈에 비교) ──────────────────
-        if not buyable_rec.empty:
-            sig = buyable_rec.groupby("region_code").agg(
-                n_buyable=("apt_name", "count"),
-                n_apts=("apt_name", "nunique"),
-                max_score=("score", "max"),
-                avg_score=("score", "mean"),
-                best_roi_=("expected_roi_%", "max"),
-                avg_growth_=("price_growth_%", "mean"),
-                min_trade=("trade_median", "min"),
-                avg_prestige=("prestige_score", "mean"),
-            ).reset_index()
-            sig["region"] = sig["region_code"].map(REGION_MAP).fillna(sig["region_code"])
-            sig["tier_label"] = (
-                sig["region_code"].apply(region_tier_label).astype(str)
-                .str.extract(r"^(\d)", expand=False)
-            )
-            sig = sig.sort_values("max_score", ascending=False).reset_index(drop=True)
-            sig["rank"] = range(1, len(sig) + 1)
-            sig["best_score"] = sig["max_score"].round(1)
-            sig["avg_score"] = sig["avg_score"].round(1)
-            sig["best_roi_%"] = sig["best_roi_"].round(2)
-            sig["avg_growth_%"] = sig["avg_growth_"].round(2)
-            sig["avg_prestige"] = sig["avg_prestige"].round(1)
-            cols_sig = ["rank", "region", "tier_label",
-                        "n_buyable", "n_apts",
-                        "best_score", "avg_score", "avg_prestige",
-                        "best_roi_%", "avg_growth_%", "min_trade"]
-            st.markdown("#### 📊 시군구 한눈 요약 (점수·매물수·수익률)")
-            st.caption("매수가능 매물 기준 시군구 집계. 최고점수 내림차순.")
-            render_table(sig[cols_sig].head(30), height=380)
-            st.markdown("")
-        # ────────────────────────────────────────────────────
         if "dong" in buyable_rec.columns:
             buyable_rec["dong"] = buyable_rec["dong"].fillna("").astype(str).str.strip()
             buyable_rec.loc[buyable_rec["dong"] == "", "dong"] = "(동 미상)"
