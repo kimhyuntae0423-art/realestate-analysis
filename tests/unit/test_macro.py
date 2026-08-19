@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from src.analysis import macro
-from src.database.repository import upsert_trades, upsert_rents
+from src.database.repository import upsert_trades, upsert_rents, upsert_ecos_series
 
 
 def _trade_row(days_ago, region="11680", ppp=6000, amount=100000):
@@ -50,7 +50,7 @@ def test_signal_jeonse_ratio_computes_percentage():
     upsert_rents([_rent_row(10, deposit=115570)])
     out = macro.signal_jeonse_ratio()
     assert out["value"] == "75.0%"
-    assert out["level"] == "green"  # 75% >= 70 threshold
+    assert out["level"] == "yellow"  # 실험실 검증 결과 선행지표 아님 — 항상 참고용(yellow)
 
 
 def test_signal_jeonse_ratio_no_data_is_yellow():
@@ -64,9 +64,36 @@ def test_signal_regulation_is_static_red():
     assert out["level"] == "red"
 
 
-def test_signal_interest_rate_is_static_yellow():
+def test_signal_interest_rate_no_data_is_yellow():
     out = macro.signal_interest_rate()
     assert out["level"] == "yellow"
+    assert out["value"] == "N/A"
+
+
+def _base_rate_rows(values):
+    base = pd.Timestamp.today().replace(day=1)
+    rows = []
+    for i, v in enumerate(reversed(values)):
+        d = (base - pd.DateOffset(months=i)).date()
+        rows.append({"series": "base_rate", "ym_date": d, "value": v, "source": "test"})
+    return rows
+
+
+def test_signal_interest_rate_cut_is_green():
+    # 3개월 전 3.50% -> 이번달 3.25% (인하 0.25%p)
+    upsert_ecos_series(_base_rate_rows([3.50, 3.50, 3.50, 3.25]))
+    out = macro.signal_interest_rate()
+    assert out["level"] == "green"
+    assert out["value"] == "3.25%"
+    assert "인하" in out["detail"]
+
+
+def test_signal_interest_rate_hike_is_red():
+    # 3개월 전 3.50% -> 이번달 3.75% (인상 0.25%p)
+    upsert_ecos_series(_base_rate_rows([3.50, 3.50, 3.50, 3.75]))
+    out = macro.signal_interest_rate()
+    assert out["level"] == "red"
+    assert "인상" in out["detail"]
 
 
 def test_signal_supply_levels(tmp_path, monkeypatch):

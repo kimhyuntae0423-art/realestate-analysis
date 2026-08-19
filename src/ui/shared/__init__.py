@@ -17,3 +17,4 @@ from src.ui.shared.format import (
 from src.ui.shared.data_refresh import _data_freshness, _refresh_recent_data
 from src.ui.shared.sidebar_nav import _sidebar_nav
 from src.ui.shared.personal_inputs import _personal_inputs_block
+from src.ui.shared.market_timing_panel import _render_market_timing_panel

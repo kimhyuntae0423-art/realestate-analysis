@@ -12,7 +12,7 @@ from src.analysis.location import is_kakao_ready, enrich_with_location
 from src.ui.shared import (
     REGION_MAP, render_table, render_df, naver_land_url,
     _cached_gap, _cached_yield, _cached_outright, _cached_investment,
-    _cached_region_sentiment, _cached_region_momentum, _cached_market_timing,
+    _cached_region_sentiment, _cached_region_momentum, _render_market_timing_panel,
 )
 from src.ui.pages.invest_compare import _render_compare_view
 from src.ui.pages.invest_stress import _render_stress_test
@@ -47,25 +47,7 @@ def render_recommend_tab(inputs: dict):
         st.session_state["rec_has_run"] = True
 
     # ─── 🌡️ 매크로 타이밍 진단 (WHEN축 — 국가 단위, 전략 무관) ───
-    timing = _cached_market_timing()
-    if timing["score"] is not None:
-        score = timing["score"]
-        if score >= 60:
-            t_icon, t_label = "🟢", "우호적"
-        elif score <= 40:
-            t_icon, t_label = "🔴", "불리"
-        else:
-            t_icon, t_label = "🟡", "중립"
-        with st.expander(f"{t_icon} 매크로 타이밍: {score}/100 ({t_label}) — 신호별 상세"):
-            st.caption(
-                "실험실에서 검증된 국가 단위 신호 기준. 단기(1개월, 직접효과)와 장기"
-                "(12~18개월, 정책 내생성 의심이라 낮은 가중치) 신호를 섞어 계산 — "
-                "참고용이며 매수·매도 신호가 아님."
-            )
-            tdf = pd.DataFrame(timing["signals"])[
-                ["label", "tier", "weight", "current_value", "percentile", "favorability", "as_of"]
-            ]
-            render_df(tdf)
+    _render_market_timing_panel(expanded=False)
 
     seed_man = int(seed_eok * 10000)
 

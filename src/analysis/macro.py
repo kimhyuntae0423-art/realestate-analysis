@@ -47,12 +47,16 @@ def signal_volume_momentum() -> dict:
 
 
 def signal_jeonse_ratio() -> dict:
-    """전국 평균 전세가율 (전세환산/매매).
+    """전국 평균 전세가율 (전세환산/매매) — 참고용 서술 지표.
 
     매매·전세 각각 독립적으로 구한 전국 median끼리 나누면 그 90일간 우연히 어떤
     단지·평형이 거래됐는지(구성효과)가 분자·분모에 이중으로 껴서 왜곡된다 — KB 공식
     전세가격비율과 비교했더니 지역별로 쪼개면 전부 반대 부호였음(2026-08-17 감리).
     같은 단지+평형 유닛에서 매매·전세가 동시에 관측된 경우만 매칭해 계산한다.
+
+    실험실에서 시차·누적·인구·공급·규제 5방향으로 검증했지만 전부 기각됨(2026-08-18,
+    전세가율은 가격 선행지표가 아님) — 그래서 green/red 판정 없이 항상 yellow(참고용)로만
+    표시하고, 매수·매도 신호로 쓰지 않는다는 점을 detail에 명시한다.
     """
     from src.analysis.hypothesis_lab import jeonse_ratio_via_unit_matching
 
@@ -67,12 +71,11 @@ def signal_jeonse_ratio() -> dict:
     if ratio_g.empty:
         return {"name": "전세가율", "level": "yellow", "value": "N/A", "detail": ""}
     ratio = (ratio_g["jeonse_ratio"] * ratio_g["n"]).sum() / ratio_g["n"].sum()
-    level = _signal(ratio, 70, 55)  # 70%↑ 녹(매수 유리), 55%↓ 적
     return {
         "name": "전세가율",
-        "level": level,
+        "level": "yellow",
         "value": f"{ratio:.1f}%",
-        "detail": "전국 평균(단지+평형 유닛 매칭). 70% 이상이면 갭축소·매매 강세 신호",
+        "detail": "전국 평균(단지+평형 유닛 매칭). 실험실 검증 결과 가격 선행지표 아님(참고용)",
     }
 
 
@@ -111,13 +114,28 @@ def signal_regulation() -> dict:
 
 
 def signal_interest_rate() -> dict:
-    """기준금리 방향 — 수동 토글 권장 (현재는 정적 데이터)."""
-    # 2026 기준 한은 인하 기조
+    """기준금리 방향 — ECOS 실데이터(base_rate, 매달 자동 수집) 기준.
+
+    이전엔 하드코딩된 정적 텍스트("인하 기조")였으나, ECOS 연동(2026-08-19) 이후
+    실제 수치로 교체. 3개월 전 대비 변화로 인상/인하/동결을 판정한다.
+    """
+    from src.analysis.hypothesis_tests_ecos_rate import _ecos_level_panel
+
+    panel = _ecos_level_panel("base_rate", "base_rate")
+    if panel.empty or len(panel) < 2:
+        return {"name": "기준금리", "level": "yellow", "value": "N/A", "detail": "ECOS 데이터 없음"}
+    panel = panel.sort_values("ym")
+    latest = panel.iloc[-1]
+    prior_idx = max(0, len(panel) - 1 - 3)  # 3개월 전(데이터 부족 시 가장 이른 시점)
+    prior = panel.iloc[prior_idx]
+    change = round(float(latest["base_rate"]) - float(prior["base_rate"]), 2)
+    level = _signal(change, -0.05, 0.05, reverse=True)  # 인하(↓)=우호(녹), 인상(↑)=불리(적)
+    direction = "인하" if change < -0.01 else ("인상" if change > 0.01 else "동결")
     return {
         "name": "기준금리",
-        "level": "yellow",
-        "value": "인하 기조",
-        "detail": "2025~2026 한은 점진적 인하. 대출 부담 완화 방향",
+        "level": level,
+        "value": f"{latest['base_rate']:.2f}%",
+        "detail": f"{prior['ym']}→{latest['ym']} {direction} ({change:+.2f}%p). 인하=대출부담완화(우호)",
     }
 
 
