@@ -124,21 +124,21 @@ def render_recommend_tab(inputs: dict):
 
     if strategy == "🚀 투자수익":
         half_mo = max(months // 2, 3)
-        st.info(
-            f"💡 **투자수익 전략** — 미래 상승을 노리는 **레버리지 매수**\n\n"
-            f"- 자금구조: 자기자본 {seed_eok}억 + **LTV 대출** = 매매가\n"
-            f"- 매수 후 매도까지 보유 (실거주 또는 단순 보유)\n"
-            f"- 매월 이자 부담 있음 (≈ 대출액 × 4~5% / 12)\n"
-            f"- 종합점수 = **지역시장강도+호재(region_score)** × **{int(tier_weight*100)}%** + **대장단지(prestige_score)** × **{int(prestige_weight*100)}%**\n"
-            f"- region_score = 시군구 평당가 시장강도 + 호재점수 × 호재가중치({int(catalyst_weight*100)}%) (100점 상한)\n"
-            f"- 상급지등급(tier_score)은 참고 표시용이며 다중 시점 백테스트 결과에 따라 점수 산식에는 포함되지 않음\n"
-            f"- 과거상승률·레버리지수익률·시드활용률도 점수에 포함되지 않고 별도 참고 지표로 표시\n"
-            f"- 대장단지: 시군구 내 평당가 백분위(60%) + 동(dong) 평당가 백분위(40%). 그 지역의 1군 단지에 가산점.\n\n"
-            f"📅 **수익률 기간 기준**: 분석기간 {months}개월 → 최근 **{half_mo}개월** vs 이전 **{half_mo}개월** 실거래 평당가 비교\n"
-            f"- **예상평가차익·예상자기자본수익률은 연환산이 아닌 {half_mo}개월치 가격 변화율 × 레버리지**\n"
-            f"- 연환산 참고치 = 표시값 ÷ {half_mo} × 12\n\n"
-            f"⚙️ `config/catalysts.json`·`config/region_tiers.json` 직접 편집 가능"
-        )
+        with st.expander("💡 투자수익 전략 — 미래 상승을 노리는 레버리지 매수 (자세히)"):
+            st.markdown(
+                f"- 자금구조: 자기자본 {seed_eok}억 + **LTV 대출** = 매매가\n"
+                f"- 매수 후 매도까지 보유 (실거주 또는 단순 보유)\n"
+                f"- 매월 이자 부담 있음 (≈ 대출액 × 4~5% / 12)\n"
+                f"- 종합점수 = **지역시장강도+호재(region_score)** × **{int(tier_weight*100)}%** + **대장단지(prestige_score)** × **{int(prestige_weight*100)}%**\n"
+                f"- region_score = 시군구 평당가 시장강도 + 호재점수 × 호재가중치({int(catalyst_weight*100)}%) (100점 상한)\n"
+                f"- 상급지등급(tier_score)은 참고 표시용이며 다중 시점 백테스트 결과에 따라 점수 산식에는 포함되지 않음\n"
+                f"- 과거상승률·레버리지수익률·시드활용률도 점수에 포함되지 않고 별도 참고 지표로 표시\n"
+                f"- 대장단지: 시군구 내 평당가 백분위(60%) + 동(dong) 평당가 백분위(40%). 그 지역의 1군 단지에 가산점.\n\n"
+                f"📅 **수익률 기간 기준**: 분석기간 {months}개월 → 최근 **{half_mo}개월** vs 이전 **{half_mo}개월** 실거래 평당가 비교\n"
+                f"- **예상평가차익·예상자기자본수익률은 연환산이 아닌 {half_mo}개월치 가격 변화율 × 레버리지**\n"
+                f"- 연환산 참고치 = 표시값 ÷ {half_mo} × 12\n\n"
+                f"⚙️ `config/catalysts.json`·`config/region_tiers.json` 직접 편집 가능"
+            )
         rec = _cached_investment(seed_man, months, min_deals,
                                   ownership, first_time, use_loan, catalyst_weight,
                                   tier_weight, prestige_weight, dsr_cap_man)
