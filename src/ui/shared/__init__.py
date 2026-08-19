@@ -5,7 +5,7 @@
 """
 from src.ui.shared.regions import REGIONS, REGION_MAP
 from src.ui.shared.cache import (
-    _load_region_coords, _cached_forecast, _cached_gap, _cached_yield,
+    _cached_forecast, _cached_gap, _cached_yield,
     _cached_outright, _cached_investment, _cached_region_sentiment,
     _cached_all_trades, _cached_region_momentum, _cached_market_timing,
 )

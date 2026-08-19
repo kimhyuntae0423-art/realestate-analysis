@@ -14,7 +14,7 @@ from config.settings import ROOT as APP_ROOT
 ROOT = APP_ROOT
 
 from src.ui.shared import _sidebar_nav
-from src.ui.pages.map_signals import page_map, page_market_signals
+from src.ui.pages.map_signals import page_market_signals
 from src.ui.pages.capacity import page_my_capacity
 from src.ui.pages.undervalued import page_undervalued
 from src.ui.pages.region import page_region
@@ -35,8 +35,6 @@ def main():
         page_undervalued()
     elif page.startswith("📊"):
         page_region()
-    elif page.startswith("🗺️"):
-        page_map()
     elif page.startswith("🚦"):
         page_market_signals()
     elif page.startswith("🔬"):

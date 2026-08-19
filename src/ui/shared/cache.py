@@ -12,19 +12,7 @@ from src.analysis.recommend import (
     recommend_investment_focus, region_sentiment_summary,
 )
 from src.analysis.forecast import forecast_monthly_price
-from config.settings import (
-    ROOT as APP_ROOT, DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT,
-)
-
-
-@st.cache_data(ttl=600)
-def _load_region_coords() -> dict:
-    import json
-    p = APP_ROOT / "config" / "region_coords.json"
-    if not p.exists():
-        return {}
-    with open(p, encoding="utf-8") as f:
-        return {k: v for k, v in json.load(f).items() if not k.startswith("_")}
+from config.settings import DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT
 
 
 @st.cache_data(ttl=600, show_spinner="📈 가격 예측 중...")
