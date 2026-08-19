@@ -7,7 +7,13 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+from config.settings import DEFAULT_CATALYST_WEIGHT, DEFAULT_TIER_WEIGHT
 from src.ui.shared import render_df
+
+# region_backtest()의 tier_weight 기본값과 동일 (grid_search_region 실측 최적값,
+# region_momentum_ranking()의 근거) — apt용 DEFAULT_TIER_WEIGHT(0.70, region_score 비중)와는
+# 의미가 다른 파라미터라 별도 상수로 구분한다.
+DEFAULT_REGION_TIER_WEIGHT = 0.20
 
 
 def page_strategy_backtest():
@@ -180,7 +186,8 @@ def page_strategy_backtest():
         st.markdown("#### 🚀 투자수익 전략 검증")
         st.markdown(
             "**이 전략의 핵심 질문:** 시장 강도(매수 심리)와 단지 명성(prestige)이 높은 곳이 실제로 더 오르는가?  \n"
-            "점수 = `region_score(시장강도+호재) × 0.7 + prestige × 0.3` (아래 표의 채택 모델 기준)  \n"
+            "- 단지 점수 = `region_score(시장강도+호재) × 0.7 + prestige × 0.3` (투자추천 탭 실제 공식)  \n"
+            "- 지역 점수 = `tier × 0.2 + 가격모멘텀 × 0.48 + 거래량모멘텀 × 0.32` (`region_momentum_ranking()`과 동일 — 투자추천 탭이 실제로 지역 정렬에 쓰는 공식)  \n"
             "ρ > 0.3 이면 이 점수가 미래 상승을 예측한다는 것이 통계적으로 입증됩니다."
         )
 
@@ -205,22 +212,28 @@ def page_strategy_backtest():
                 """
             )
 
-        c1_inv, c2_inv = st.columns(2)
-        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, 0.1, 0.05, key="bt_inv_cw",
+        c1_inv, c2_inv, c3_inv = st.columns(3)
+        cw_inv = c1_inv.slider("호재 가중치", 0.0, 0.3, DEFAULT_CATALYST_WEIGHT, 0.05, key="bt_inv_cw",
                                help="개발·교통 호재의 점수 반영 강도. 높일수록 호재 지역이 상위권 차지")
-        tw_inv = c2_inv.slider("상급지 가중치", 0.0, 1.0, 0.3, 0.05, key="bt_inv_tw",
-                               help="강남·마포 등 상급지 보너스 강도. 현재 최적값은 0.3~0.6")
+        tw_apt_inv = c2_inv.slider("단지 가중치 (region_score)", 0.0, 1.0, DEFAULT_TIER_WEIGHT, 0.05,
+                               key="bt_inv_tw_apt",
+                               help="단지 점수 중 region_score(시장강도+호재) 비중, 나머지는 prestige. "
+                                    "실제 서비스 기본값 0.70")
+        tw_reg_inv = c3_inv.slider("지역 가중치 (tier)", 0.0, 1.0, DEFAULT_REGION_TIER_WEIGHT, 0.05,
+                               key="bt_inv_tw_reg",
+                               help="지역 점수 중 상급지등급(tier) 비중, 나머지는 가격·거래량모멘텀. "
+                                    "실제 서비스 기본값 0.20 (region_momentum_ranking()과 동일)")
 
         if st.button("▶ 투자수익 재실행", key="run_invest"):
             with st.spinner("계산 중..."):
                 try:
                     ri_apt = apt_backtest(
                         train_months=train_months, test_months=test_months,
-                        catalyst_weight=cw_inv, tier_weight=tw_inv,
+                        catalyst_weight=cw_inv, tier_weight=tw_apt_inv,
                     )
                     ri_reg = region_backtest(
                         train_months=train_months, test_months=test_months,
-                        catalyst_weight=cw_inv, tier_weight=tw_inv,
+                        catalyst_weight=cw_inv, tier_weight=tw_reg_inv,
                     )
                     ci1, ci2 = st.columns(2)
                     with ci1:

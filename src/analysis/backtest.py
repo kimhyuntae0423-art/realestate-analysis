@@ -168,13 +168,19 @@ def region_backtest(
     min_train_deals: int = 30,
     min_test_deals: int = 30,
     catalyst_weight: float = 0.0,
-    tier_weight: float = 0.60,
+    tier_weight: float = 0.20,
 ) -> BacktestResult:
     """시군구 단위 백테스트.
 
     - 점수 시점: as_of (default: today - test_months)
     - 점수 입력 데이터: as_of - train_months ~ as_of
     - 정답지: as_of ~ as_of + test_months
+
+    tier_weight 기본값 0.20은 grid_search_region()의 실측 최적값(2026-08-18,
+    catalyst_w=0/tier_w=0.2/rest=0.8)과 동일하며, 이 가중치가 그대로
+    region_momentum.py::region_momentum_ranking()(투자추천 탭이 실제로 쓰는
+    지역 정렬 공식: tier 20%+가격모멘텀 48%+거래량모멘텀 32%)의 근거가 됐다.
+    즉 기본값 그대로 호출하면 이 함수와 region_momentum_ranking()은 동일한 공식이다.
     """
     today = date.today()
     if as_of is None:
