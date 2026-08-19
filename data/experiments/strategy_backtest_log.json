@@ -1,0 +1,34 @@
+{
+  "runs": [
+    {
+      "run_at": "2026-08-19T23:49:15",
+      "region": {
+        "current_spearman": 0.7296,
+        "current_top10": 0.5,
+        "best_spearman": 0.777,
+        "best_top10": 0.5,
+        "best_weights": {
+          "catalyst_w": 0.0,
+          "tier_w": 0.3,
+          "rest_w": 0.7
+        },
+        "improvement": 0.0474,
+        "meaningful": true
+      },
+      "apt": {
+        "current_spearman": 0.5762,
+        "current_top10": 0.438,
+        "best_spearman": 0.6069,
+        "best_combo": "market+region_momentum+train_growth+prestige",
+        "best_weights": {
+          "market": 0.4,
+          "region_momentum": 0.4,
+          "train_growth": 0.0,
+          "prestige": 0.2
+        },
+        "improvement": 0.0307,
+        "meaningful": true
+      }
+    }
+  ]
+}
