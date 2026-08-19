@@ -336,20 +336,25 @@ def render_recommend_tab(inputs: dict):
         c6.metric("최저 자기자본", f"{rec['required_equity'].min()/10000:.2f} 억")
 
     if strategy == "🚀 투자수익":
-        # ─── 📍 지역 모멘텀 랭킹 (WHERE축 — 어느 지역이 지금 좋은가) ───
+        # ─── 📍 지역 모멘텀 랭킹 (WHERE축 — 예산 내에서 매수 가능한 지역만, 모멘텀 좋은 순) ───
         mom = _cached_region_momentum(months)
-        if not mom.empty:
-            mom_disp = mom.copy()
+        buyable_region_codes = set(rec["region_code"].unique()) if "region_code" in rec.columns else set()
+        mom_buyable = mom[mom["region_code"].isin(buyable_region_codes)] if not mom.empty else mom
+        if not mom_buyable.empty:
+            mom_disp = mom_buyable.copy()
             mom_disp["region"] = mom_disp["region_code"].map(REGION_MAP).fillna(mom_disp["region_code"])
             mom_disp["tier_label"] = mom_disp["tier_label"].astype(str).str.extract(r"^(\d)", expand=False)
             mom_disp = mom_disp.rename(columns={"growth_%": "가격모멘텀(%)", "vol_momentum": "거래량모멘텀"})
-            st.markdown("### 📍 지역 모멘텀 랭킹")
+            st.markdown("### 📍 지역 모멘텀 랭킹 (매수 가능 지역만)")
             st.caption(
-                "region_backtest 검증(2026-08-18, spearman 0.73→0.78) 기반 — 입지등급 20%"
-                "+가격모멘텀(구성효과 제거) 48%+거래량모멘텀 32%. 지금 모멘텀 좋은 지역 상위 15개."
+                f"시드 {seed_eok}억 + 대출한도 내에서 실제 매수 가능한 매물이 있는 지역만, "
+                "모멘텀 좋은 순으로 정렬 — region_backtest 검증(2026-08-18, spearman 0.73→0.78) 기반 "
+                "(입지등급 20%+가격모멘텀(구성효과 제거) 48%+거래량모멘텀 32%)."
             )
             render_df(mom_disp[["region", "tier_label", "가격모멘텀(%)", "거래량모멘텀", "momentum_score"]].head(15))
             st.markdown("")
+        elif not mom.empty:
+            st.caption("📍 매수 가능한 지역 중 모멘텀 데이터가 있는 곳이 없습니다.")
 
         st.markdown("### 🏆 지역 추천순위")
         st.caption(
