@@ -335,27 +335,15 @@ def render_recommend_tab(inputs: dict):
     else:
         c6.metric("최저 자기자본", f"{rec['required_equity'].min()/10000:.2f} 억")
 
+    # 지역 모멘텀(region_momentum_ranking) — 표로 따로 안 보여주고, 아래 단지 리스트
+    # 정렬에 반영한다("지역 순위가 좋으면 위로 뜨게" 요청 — 2026-08-19).
+    region_momentum_map: dict[str, float] = {}
     if strategy == "🚀 투자수익":
-        # ─── 📍 지역 모멘텀 랭킹 (WHERE축 — 예산 내에서 매수 가능한 지역만, 모멘텀 좋은 순) ───
         mom = _cached_region_momentum(months)
-        buyable_region_codes = set(rec["region_code"].unique()) if "region_code" in rec.columns else set()
-        mom_buyable = mom[mom["region_code"].isin(buyable_region_codes)] if not mom.empty else mom
-        if not mom_buyable.empty:
-            mom_disp = mom_buyable.copy()
-            mom_disp["region"] = mom_disp["region_code"].map(REGION_MAP).fillna(mom_disp["region_code"])
-            mom_disp["tier_label"] = mom_disp["tier_label"].astype(str).str.extract(r"^(\d)", expand=False)
-            mom_disp = mom_disp.rename(columns={"growth_%": "가격모멘텀(%)", "vol_momentum": "거래량모멘텀"})
-            st.markdown("### 📍 지역 모멘텀 랭킹 (매수 가능 지역만)")
-            st.caption(
-                f"시드 {seed_eok}억 + 대출한도 내에서 실제 매수 가능한 매물이 있는 지역만, "
-                "모멘텀 좋은 순으로 정렬 — region_backtest 검증(2026-08-18, spearman 0.73→0.78) 기반 "
-                "(입지등급 20%+가격모멘텀(구성효과 제거) 48%+거래량모멘텀 32%)."
-            )
-            render_df(mom_disp[["region", "tier_label", "가격모멘텀(%)", "거래량모멘텀", "momentum_score"]].head(15))
-            st.markdown("")
-        elif not mom.empty:
-            st.caption("📍 매수 가능한 지역 중 모멘텀 데이터가 있는 곳이 없습니다.")
+        if not mom.empty:
+            region_momentum_map = dict(zip(mom["region_code"], mom["momentum_score"]))
 
+    if strategy == "🚀 투자수익":
         st.markdown("### 🏆 지역 추천순위")
         st.caption(
             f"✅ 시드 {seed_eok}억 기준 (부대비용 포함) · "
@@ -617,7 +605,16 @@ def render_recommend_tab(inputs: dict):
                       "ppp_median", "region_median_ppp", "value_ratio",
                       "trade_count", "score"]
 
-    # 추천 순위 부여: rec_disp는 이미 score 내림차순 정렬 → 1,2,3...
+    # 지역모멘텀 우선 정렬 — 모멘텀 좋은 지역의 단지가 리스트 위쪽에 뜨도록
+    # (같은 지역 안에서는 기존 score 순서 유지)
+    if region_momentum_map and "region_code" in rec_disp.columns:
+        rec_disp = rec_disp.copy()
+        rec_disp["_region_momentum"] = rec_disp["region_code"].map(region_momentum_map).fillna(0.0)
+        rec_disp = rec_disp.sort_values(
+            ["_region_momentum", "score"], ascending=[False, False]
+        ).drop(columns=["_region_momentum"]).reset_index(drop=True)
+
+    # 추천 순위 부여: rec_disp는 이미 정렬됨 → 1,2,3...
     rec_disp_ranked = rec_disp.copy()
     rec_disp_ranked["rank"] = range(1, len(rec_disp_ranked) + 1)
     # 네이버 부동산 검색 링크 (지역명 + 단지명)
