@@ -25,12 +25,20 @@
 | **갭투자 종합점수 공식** | `src/analysis/recommend.py::_apply_gap_scores()` (tier_score 80% + activity 20%) | `recommend.py` docstring, `gap_backtest.py::gap_score_backtest()` docstring, `streamlit_app.py` UI 안내문 | **2026-07-20 수정**: 실제 공식은 이미 2요소(80/20)로 리팩터링됐는데 위 3곳 전부 예전 5요소(25/20/20/20/15%) 설명을 그대로 갖고 있었음. 계산 함수를 바꾸면 이 3곳도 항상 같이 확인할 것 |
 | **투자수익 전략 가중치 기본값** (catalyst/tier/prestige) | `config/settings.py::DEFAULT_CATALYST_WEIGHT/TIER_WEIGHT/PRESTIGE_WEIGHT` (0.10/0.70/0.30) | `recommend.py`, `backtest.py`, `streamlit_app.py` 슬라이더·하드코딩 호출 전체 | **2026-07-20 해결**: `apt_backtest()`가 이미 폐기된 7요소 공식을 검증하던 버그를 먼저 고친 뒤(아래 항목 참고), `grid_search_apt(n=6251)`로 실측 — catalyst≈0(0.10과 오차범위), region_score:prestige≈0.7:0.3이 최적 구간(spearman 0.57~0.58). 이 값을 config 상수로 박고 흩어져 있던 7곳 전부 통일. `streamlit_app.py`의 `_invest_sidebar_inputs_UNUSED()`(이름 그대로 미사용 함수)는 안 건드림 |
 | **apt_backtest() 점수공식** | `src/analysis/recommend.py::recommend_investment_focus()` (region_score×tw/total + prestige_score×pw/total, 2026-05 단순화) | `src/analysis/backtest.py::apt_backtest()` | **2026-07-20 해결**: 백테스트가 이미 운영에서 폐기된 7요소 가중합(rs_score 30%+jeonse_accel 25%+supply_pressure 10%+population 10%+train_growth 15%+recent_deals 10%)을 그대로 검증하고 있었음 — "아무도 안 쓰는 공식"을 최적화하고 있었던 것. 실제 운영 공식으로 교체. 무거운 신호 계산과 가중치 재계산을 분리(`_apt_backtest_base`/`_apt_backtest_score`)해서 그리드서치 245콤보가 수시간→수분으로 단축됨 |
+| 금액 → "N.NN억/N만" 표기 | `src/ui/pages/portfolio/context.py::_eok` (소수점 2자리) | `portfolio/` 패키지 5개 탭 전체 | 2026-09-09 분리 시 SSOT로 승격. `src/analysis/portfolio_strategy.py:17`에 **소수점 1자리** 판이 따로 있음 — 자리수가 달라 일부러 통합하지 않았다(통합하면 화면 표기가 바뀜). 표기를 바꿀 일이 생기면 두 곳을 같이 볼 것 |
 | tier_score×0.6 + market_score×0.4 조합 | `recommend.py:357`, `recommend.py:386` (두 함수에 각각 리터럴 복붙) | `_apply_gap_scores()`, `_apply_rental_scores()` | 낮은 우선순위 — 현재는 값이 같아서 문제 없지만 한쪽만 튜닝되면 갈라질 구조. 상수화 검토 |
 
 ## 알려진 잔여 항목 (일부러 안 건드림)
 
-- `src/ui/streamlit_app.py`가 5112줄 단일 파일 — claude-supervisor 원칙4(300줄 초과 시 모듈화)
-  위반. 오늘 발견했지만 이 세션의 요청 범위(크로스커팅 연계 맵) 밖이라 별도 논의 필요.
+- ~~`src/ui/streamlit_app.py`가 5112줄 단일 파일~~ → 해소됨. `streamlit_app.py`(45줄) +
+  `src/ui/pages/`(페이지별) + `src/ui/shared/`(공용 헬퍼)로 분리 완료.
+  2026-09-09에 마지막 남은 `pages/portfolio.py`(1065줄)를 `pages/portfolio/` 패키지
+  (입력 UI + 탭 5개 + 공용 컨텍스트)로 분리. 순수 이동이라 렌더 결과는 분리 전과
+  동일함을 4개 경로 × 767줄 출력 대조로 확인.
+- 300줄 초과가 남아 있는 UI 파일: `invest_compare.py`(656), `invest_recommend.py`(636),
+  `backtest.py`(518), `region.py`(470), `portfolio/inputs.py`(389),
+  `portfolio/tab_payout.py`(343). claude-supervisor 원칙4 기준으로는 여전히 위반이지만,
+  각각 응집도 있는 단위(입력 폼 하나 / 탭 하나)라 더 쪼개면 인위적이 됨 — 별도 논의 대상.
 - `src/analysis/loan.py` 모듈 docstring이 "2025-10-15 대책" → "2026-07 대책(확정판)" 순서로
   두 블록 있는데, 실제로는 정책 변경 이력을 남겨둔 체인지로그 구조라 모순은 아님. 다만
   파일을 처음 읽는 사람이 첫 블록만 보고 구버전 LTV%를 재인용할 위험은 있음.
