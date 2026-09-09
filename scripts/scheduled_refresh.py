@@ -33,6 +33,7 @@ from src.database.repository import (
     upsert_population_flow,
 )
 from src.analysis.hypothesis_lab import run_all_and_log
+from src.utils.ca_bundle import ensure_ca_bundle
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -119,6 +120,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--months", type=int, default=3, help="최근 N개월 증분 수집 (기본 3)")
     args = ap.parse_args()
+
+    # 사내망 SSL 인터셉션 대응 — 이게 없으면 실거래 API 호출이 전부
+    # CERTIFICATE_VERIFY_FAILED 로 실패한다 (2026-05 수집 중단 원인).
+    ensure_ca_bundle()
 
     init_db()
     log.info("=== 정기 데이터 갱신 시작 ===")

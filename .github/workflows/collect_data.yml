@@ -1,9 +1,17 @@
-name: 주간 부동산 데이터 수집
+name: 부동산 데이터 수집 (수동 전용)
 
+# 2026-09-09: 주간 예약 실행(cron)을 껐다.
+#
+# GitHub Actions 러너에서 apis.data.go.kr 로 TCP 접속이 안 된다 —
+# 모든 요청이 ConnectTimeoutError(connect timeout=20)로 죽고, 20초×3회 재시도
+# 때문에 6개 지역×3개월 36콜이 30분 job 타임아웃을 넘겨 취소된다.
+# (8/10 실행은 1분 33초에 성공했으므로 그 사이 data.go.kr 쪽이 바뀐 것으로 보인다.
+#  같은 API가 국내망 PC에서는 정상 응답한다.)
+#
+# 그래서 정기 수집은 Windows 작업 스케줄러 → scripts/run_scheduled_refresh.bat
+# (국내 IP)로 옮겼다. 이 워크플로는 나중에 data.go.kr 접근이 복구되는지
+# 확인해 볼 때를 위해 수동 실행만 남겨둔다.
 on:
-  schedule:
-    # 매주 월요일 00:00 UTC = 09:00 KST
-    - cron: "0 0 * * 1"
   workflow_dispatch:
 
 permissions:

@@ -6,6 +6,7 @@ __pycache__/
 data/raw/
 data/processed/*.db
 data/processed/*.db-journal
+data/processed/ca_bundle.pem
 data/reports/
 logs/
 .streamlit/secrets.toml
