@@ -52,7 +52,10 @@ Streamlit 대시보드 + 분석 모듈로 지역별 시세·갭·수익률·호�
 ├── src/
 │   ├── collectors/          # 외부 API 호출
 │   │   ├── molit_api.py     # 국토부 실거래가 (매매/전세/월세)
-│   │   ├── kosis_api.py     # 통계청 KOSIS (인구/세대수)
+│   │   ├── ecos.py          # 한국은행 ECOS (금리 등 거시지표)
+│   │   ├── kb_price.py      # KB 시세지수
+│   │   ├── kb_sentiment.py  # KB 매수우위지수 등 심리지표
+│   │   ├── zigbang_api.py   # 직방 (단지 정보)
 │   │   └── kakao_api.py     # 카카오 (좌표·입지 점수)
 │   ├── parsers/             # XML/JSON → dict 정규화
 │   ├── database/
@@ -92,7 +95,7 @@ Streamlit 대시보드 + 분석 모듈로 지역별 시세·갭·수익률·호�
 | 출처 | 용도 | 설정 위치 |
 |---|---|---|
 | 국토부 실거래가 (data.go.kr) | 아파트 매매/전세/월세 | `config/settings.py` MOLIT_BASE |
-| 통계청 KOSIS | 인구·세대수 | `src/collectors/kosis_api.py` |
+| 통계청 KOSIS | 인구이동(population_flow) | `scripts/backfill_population_api.py`, `scripts/import_kosis_csv.py` |
 | 카카오 로컬 API | 좌표 변환·입지 점수 | `src/collectors/kakao_api.py` |
 
 ### 신뢰성 위계 (분석 시 우선순위)

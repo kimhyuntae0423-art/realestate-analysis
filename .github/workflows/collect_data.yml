@@ -42,8 +42,7 @@ jobs:
         run: |
           python scripts/collect_data.py \
             --regions 11680,11650,11710,11440,11170,41135 \
-            --months 3 \
-            --skip-reg-news
+            --months 3
         env:
           DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
 
