@@ -143,12 +143,39 @@ python scripts/init_db.py
 # 데이터 수집 (강남구 12개월)
 python scripts/collect_data.py --region 11680 --months 12
 
-# 대시보드 (로컬)
-streamlit run src/ui/streamlit_app.py
-
-# 대시보드 (배포)
-# https://realestate-analysis-p6jdtbkpo6u245ekj4cy4d.streamlit.app/
+# 대시보드 (로컬 — 유일한 실행 경로)
+.venv\Scripts\python.exe -m streamlit run src/ui/streamlit_app.py
 
 # 엑셀 보고서
 python -m src.reports.excel_report --region 11680 --output report.xlsx
 ```
+
+---
+
+## 운영 구성 (2026-09-10 확정 — 로컬 전용)
+
+**클라우드를 쓰지 않는다.** 배포 Streamlit·Supabase·GitHub Actions 수집을 전부 접었다.
+아래는 그 결정의 근거이므로, 다시 클라우드로 가려 하기 전에 먼저 읽을 것.
+
+| 접은 것 | 이유 |
+|---|---|
+| GitHub Actions 주간 수집 | 러너에서 `apis.data.go.kr` 접속이 `ConnectTimeoutError`로 전부 실패(20초×3회 재시도 → 30분 job 타임아웃 초과). 같은 API가 국내망 PC에서는 정상. 2026-08-10 실행은 1분 33초에 성공했으므로 그 사이 data.go.kr 쪽이 바뀐 것으로 보인다. `workflow_dispatch`만 남겨둠 |
+| Supabase + 배포 Streamlit | 무료 플랜 한도 500MB인데 DB가 이미 **562MB**(apt_rent 377 + apt_trade 175). 실거래 이력이 2024-06~2026-09 **28개월뿐**인데, 백테스트는 train 12 + test 12 = **최소 24개월**을 요구하고 가설검증은 대부분 `months=60`이 기본값이다. 즉 한도에 맞춰 12개월로 줄이면 검증이 아예 불가능해지고, 배포 앱의 백테스트·실험실 페이지가 잘린 데이터로 **조용히 다른 결과**를 내게 된다. Pro(월 $25) 아니면 성립하지 않아 로컬 전용을 택함 |
+
+**정기 갱신**: Windows 작업 스케줄러 `RealEstate Weekly Refresh` — 매주 월요일 09:00,
+`scripts/run_scheduled_refresh.bat` 실행. `StartWhenAvailable`(놓친 실행 따라잡기) +
+`WakeToRun`(절전 해제) 설정. 실거래 증분 수집 → KB/ECOS 갱신 → 가설 전체 재검증.
+
+**사내망 SSL**: 프록시가 TLS를 가로채 자체서명 CA로 재서명하므로 certifi 만으로는
+`CERTIFICATE_VERIFY_FAILED`로 전부 실패한다(2026-05 수집 중단의 원인).
+`src/utils/ca_bundle.py::ensure_ca_bundle()`이 실행 시마다 Windows 인증서 저장소를
+PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 않는다.
+
+**`.venv`는 Python 3.12 여야 한다.** 3.14(OpenSSL 3.5.x)는 사내 CA를
+`Missing Authority Key Identifier`로 거부해서 CA 번들을 아무리 잘 만들어도 실패한다.
+`.venv`를 다시 만들 일이 있으면 반드시 `py -3.12 -m venv .venv`.
+
+**검증 상태 (2026-09-10)**: 실거래 2024-06~2026-09 / apt_trade 598,487 · apt_rent 1,316,295.
+`ecos_series` 568행(6개 시리즈). `population_flow`·`supply_schedule`은 0행 —
+전자는 KOSIS 키 미발급, 후자는 KOSIS가 시군구 단위 API를 안 줘서 CSV 수동 업로드만 가능.
+둘 다 `recommend.py`의 점수 산식에서 제외돼 있어 추천 결과에는 영향 없음.
