@@ -145,6 +145,18 @@ def main():
     for r in results:
         stat_str = f"{r.statistic:.4f}" if r.statistic == r.statistic else "NaN"
         log.info("%s | %s | n=%d | stat=%s", r.id, r.verdict, r.n, stat_str)
+
+    # 배포 Streamlit 이 읽는 클라우드 복제본에 반영. 이 접속이 주 1회 발생하므로
+    # Supabase 무료 플랜의 "7일 미사용 시 자동 정지"도 함께 막힌다.
+    # 실패해도 로컬 갱신 결과는 유효하므로 전체를 중단시키지 않는다.
+    log.info("=== Supabase 동기화 시작 ===")
+    try:
+        from scripts.migrate_to_supabase import run_sync
+        rc = run_sync()
+        log.info("Supabase 동기화 종료 rc=%s", rc)
+    except Exception:
+        log.exception("Supabase 동기화 실패 — 로컬 데이터는 정상")
+
     log.info("=== 정기 갱신 완료 ===")
 
 

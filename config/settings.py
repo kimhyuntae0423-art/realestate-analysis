@@ -25,6 +25,12 @@ KOSIS_API_KEY      = _get_secret("KOSIS_API_KEY")
 ECOS_API_KEY       = _get_secret("ECOS_API_KEY")
 
 DATABASE_URL = _get_secret("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'processed' / 'realestate.db'}")
+
+# 조회 전용 클라우드 복제본(배포 Streamlit 이 읽는 곳). PC 에서는 비워두고 로컬
+# SQLite 를 SSOT 로 쓰되, scripts/migrate_to_supabase.py 가 이 주소로 밀어넣는다.
+# DATABASE_URL 과 분리한 이유: PC 의 수집·분석은 로컬 SQLite 에 그대로 하고,
+# 동기화 대상만 따로 지정하기 위함.
+SUPABASE_DATABASE_URL = _get_secret("SUPABASE_DATABASE_URL")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 RAW_DIR = ROOT / "data" / "raw"
