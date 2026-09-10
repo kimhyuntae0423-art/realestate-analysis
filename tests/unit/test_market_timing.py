@@ -39,13 +39,37 @@ def test_market_timing_signal_computes_weighted_score():
     # 데이터 없는 나머지 신호는 None으로 스킵되지만 에러 없이 처리됨
     assert by_id["kb_sentiment"]["favorability"] is None
 
-    # 종합점수: 주담대(0.35, 87.5점) + M2(0.10, 12.5점) 가중평균만 반영 (나머지는 weight_total 제외)
-    expected_score = round((87.5 * 0.35 + 12.5 * 0.10) / (0.35 + 0.10), 1)
-    assert out["score"] == expected_score
-    assert out["score"] > 50  # 가중치 큰 단기신호(주담대)가 우호적 쪽이라 중립(50) 넘어야 함
+    # 커버리지 게이트(2026-09-10): 주담대(0.35)+M2(0.10)=0.45 로 최소기준 0.60 미달이라
+    # 종합점수를 내지 않는다. 예전에는 살아있는 가중치로 재정규화해 70.8 을 표시했는데,
+    # 근거의 55%가 없는 상태를 정상처럼 보여주는 것이라 None 으로 바꿨다.
+    assert out["coverage"] == 0.45
+    assert out["score"] is None
+    assert set(out["missing"]) == {
+        "KB 매수우위지수", "실질금리(기준금리-기대인플레)", "M1/M2 비율",
+    }
+
+
+def test_market_timing_signal_scores_when_coverage_sufficient():
+    """커버리지 게이트가 정상 동작까지 막지 않는지 — ECOS 4개가 채워지면 점수가 나온다.
+
+    주담대(0.35)+M2(0.10)+실질금리(0.10)+M1/M2(0.10)=0.65 >= 0.60.
+    KB(0.35)는 여전히 비어 있어 커버리지 100%는 아니다.
+    """
+    start = (pd.Timestamp.today() - pd.Timedelta(days=30 * 20)).to_period("M")
+    rows = []
+    for series in ("mortgage_loan_eop", "m2_eop_raw", "base_rate",
+                   "expected_inflation", "m1_eop_raw"):
+        rows += _rising_yoy_rows(series, start)
+    upsert_ecos_series(rows)
+
+    out = market_timing_signal()
+    assert out["coverage"] >= out["min_coverage"]
+    assert out["score"] is not None
+    assert 0 <= out["score"] <= 100
 
 
 def test_market_timing_signal_empty_when_no_data():
     out = market_timing_signal()
     assert out["score"] is None
+    assert out["coverage"] == 0.0
     assert all(s["favorability"] is None for s in out["signals"])

@@ -14,7 +14,16 @@ from src.ui.shared.format import render_df
 def _render_market_timing_panel(expanded: bool = False):
     timing = _cached_market_timing()
     if timing["score"] is None:
-        st.info("매크로 타이밍 신호를 계산할 데이터가 부족합니다.")
+        missing = timing.get("missing") or []
+        cov = timing.get("coverage")
+        msg = "매크로 타이밍 신호를 계산할 데이터가 부족합니다."
+        if cov is not None:
+            msg += (f"  \n신호 가중치의 **{cov:.0%}**만 확보돼 "
+                    f"최소 기준({timing.get('min_coverage', 0):.0%})에 미달합니다 — "
+                    "일부 신호만으로 종합점수를 내면 오해를 부르므로 표시하지 않습니다.")
+        if missing:
+            msg += "  \n데이터 없는 신호: " + ", ".join(missing)
+        st.warning(msg)
         return
     score = timing["score"]
     if score >= 60:

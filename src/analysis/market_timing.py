@@ -16,6 +16,7 @@ from __future__ import annotations
 import pandas as pd
 from sqlalchemy import select
 
+from config.settings import MARKET_TIMING_MIN_COVERAGE
 from src.database.repository import session_scope
 from src.database.models import KbSentimentIndex
 from src.analysis.hypothesis_tests_ecos import _m2_yoy_panel, _ecos_yoy_panel, MORTGAGE_SERIES
@@ -98,9 +99,22 @@ def market_timing_signal() -> dict:
         weighted_sum += favorability * sig["weight"]
         weight_total += sig["weight"]
 
-    score = round(weighted_sum / weight_total, 1) if weight_total > 0 else None
+    # 값이 있는 신호들의 가중치 합이 전체의 몇 %인지. 이게 낮은데도 남은 가중치로
+    # 재정규화해서 점수를 내면, 근거 대부분이 없는 상태를 정상처럼 보여주게 된다.
+    weight_defined = sum(s["weight"] for s in SIGNALS)
+    coverage = (weight_total / weight_defined) if weight_defined > 0 else 0.0
+    missing = [r["label"] for r in rows if r["favorability"] is None]
+
+    if coverage >= MARKET_TIMING_MIN_COVERAGE and weight_total > 0:
+        score = round(weighted_sum / weight_total, 1)
+    else:
+        score = None
+
     return {
         "score": score,
+        "coverage": round(coverage, 3),
+        "min_coverage": MARKET_TIMING_MIN_COVERAGE,
+        "missing": missing,
         "signals": rows,
         "computed_at": pd.Timestamp.now().isoformat(timespec="seconds"),
     }

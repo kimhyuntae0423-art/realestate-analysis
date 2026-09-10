@@ -53,6 +53,20 @@ DEFAULT_CATALYST_WEIGHT = 0.10
 DEFAULT_TIER_WEIGHT = 0.70      # 파라미터명은 tier_weight이지만 실제로는 region_score(시세+호재) 비중
 DEFAULT_PRESTIGE_WEIGHT = 0.30
 
+# ── 매크로 타이밍 최소 데이터 커버리지 (market_timing.py::market_timing_signal) ──
+# 신호 5개 중 값이 있는 것들의 가중치 합이 전체의 이 비율에 못 미치면 종합점수를
+# 내지 않고 None 을 반환한다(UI는 "데이터 부족"으로 표시).
+#
+# 2026-09-10에 넣은 이유: ECOS 키가 없어 ecos_series 가 0행이면 5개 중 4개
+# (주담대 0.35 + M2 0.10 + 실질금리 0.10 + M1/M2 0.10 = 0.65)가 null 인데,
+# 기존 코드는 살아있는 가중치로 재정규화해서 KB 매수우위지수(0.35) 하나의 값을
+# 종합점수 76.9 로 그대로 표시했다. 근거의 65%가 없는데 화면은 정상으로 보였다 —
+# CLAUDE.md 절대원칙 3("모르는 숫자는 만들지 않는다") 위반.
+#
+# 0.60 인 이유: 단기(직접효과) 두 신호 합이 0.70 이라 그 축이 살아있으면 통과하고,
+# 배경지표(장기 0.30)만 남거나 KB(0.35) 하나만 남는 경우는 걸러진다.
+MARKET_TIMING_MIN_COVERAGE = 0.60
+
 # ── 매수심리(sentiment) 지표 기본값 (recommend.py::_buyer_sentiment_signals) ──
 # 2026-08 매직넘버 정리: 클립 범위·가중치를 하드코딩에서 이전. 값 자체는 불변.
 SENTIMENT_VOL_CLIP = (0.0, 3.0)
