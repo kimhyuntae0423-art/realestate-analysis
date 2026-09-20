@@ -21,7 +21,7 @@ def _render_compare_view(
     catalyst_weight: float, tier_weight: float, prestige_weight: float,
     dsr_cap_man, top_n: int, area_range, year_range,
     max_buy_reg_net: int = 0, max_buy_nonreg_net: int = 0,
-    kb_ratio: float = 1.0, trade_months: int = 3,
+    kb_ratio: float = 1.0, trade_months: int = 2,
 ):
     """3전략 동시 비교 — 겹치는 단지가 높은 확신도."""
     st.markdown("### 🔀 3전략 동시 비교")

@@ -64,8 +64,8 @@ def page_invest():
                 year_range = st.slider(
                     "준공연도 범위",
                     min_value=1970, max_value=_this_year + 5,
-                    value=(_this_year - 10, _this_year + 5), step=1,
-                    help=f"기본 최근 10년({_this_year-10}~{_this_year+5}). 구축까지 보려면 하한 내리기.",
+                    value=(2000, _this_year + 5), step=1,
+                    help=f"기본 2000년~{_this_year+5}(분양권 포함). 신축만 보려면 하한을 올리기.",
                 )
             with c9:
                 prestige_weight = st.slider(
@@ -75,10 +75,11 @@ def page_invest():
                 )
 
             trade_months = st.slider(
-                "현재 매매가 기준 기간 (개월)", 1, min(months, 12), min(3, months),
+                "현재 매매가 기준 기간 (개월)", 1, min(months, 12), min(2, months),
                 help="추천에 쓰는 매매가(trade_median)를 이 기간 내 실거래로만 계산. "
                      "'분석 기간'을 통째로 쓰면 그 기간 초반의 낮은 가격까지 섞여 "
                      "최근 급등을 놓친 매매가가 나온다 — 짧을수록 최근 실거래를 반영. "
+                     "너무 짧으면(1개월) 신고 지연으로 거래가 없어 전체기간으로 자동 fallback될 수 있음. "
                      "거래건수 필터는 '분석 기간' 전체 기준으로 유지.",
             )
 

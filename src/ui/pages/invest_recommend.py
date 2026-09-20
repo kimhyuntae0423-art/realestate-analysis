@@ -25,7 +25,7 @@ def render_recommend_tab(inputs: dict):
     use_loan = inputs["use_loan"]
     strategy = inputs["strategy"]
     months = inputs["months"]
-    trade_months = inputs.get("trade_months", min(3, months))
+    trade_months = inputs.get("trade_months", min(2, months))
     min_deals = inputs["min_deals"]
     top_n = inputs["top_n"]
     catalyst_weight = inputs["catalyst_weight"]

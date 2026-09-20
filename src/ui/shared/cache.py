@@ -29,7 +29,7 @@ def _cached_forecast(region_code: str, months_data: int, periods: int) -> pd.Dat
 def _cached_gap(seed_man: int, months: int, min_deals: int,
                 ownership: str, first_time: bool,
                 dsr_cap_man: float | None = None,
-                trade_months: int = 3) -> pd.DataFrame:
+                trade_months: int = 2) -> pd.DataFrame:
     return recommend_gap_investment(
         seed_man, months=months,
         min_trade_deals=min_deals, min_rent_deals=min_deals,
@@ -42,7 +42,7 @@ def _cached_gap(seed_man: int, months: int, min_deals: int,
 def _cached_yield(seed_man: int, months: int, min_deals: int,
                   ownership: str, first_time: bool, use_loan: bool,
                   dsr_cap_man: float | None = None,
-                  trade_months: int = 3) -> pd.DataFrame:
+                  trade_months: int = 2) -> pd.DataFrame:
     return recommend_rental_yield(
         seed_man, months=months,
         min_trade_deals=min_deals, min_rent_deals=min_deals,
@@ -55,7 +55,7 @@ def _cached_yield(seed_man: int, months: int, min_deals: int,
 def _cached_outright(seed_man: int, months: int, min_deals: int,
                      ownership: str, first_time: bool, use_loan: bool,
                      dsr_cap_man: float | None = None,
-                     trade_months: int = 3) -> pd.DataFrame:
+                     trade_months: int = 2) -> pd.DataFrame:
     return recommend_buy_outright(
         seed_man, months=months, min_trade_deals=min_deals,
         ownership=ownership, first_time_buyer=first_time, use_loan=use_loan,
@@ -70,7 +70,7 @@ def _cached_investment(seed_man: int, months: int, min_deals: int,
                         tier_weight: float = DEFAULT_TIER_WEIGHT,
                         prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                         dsr_cap_man: float | None = None,
-                        trade_months: int = 3) -> pd.DataFrame:
+                        trade_months: int = 2) -> pd.DataFrame:
     return recommend_investment_focus(
         seed_man, months=months, min_trade_deals=min_deals,
         ownership=ownership, first_time_buyer=first_time, use_loan=use_loan,

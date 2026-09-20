@@ -428,7 +428,7 @@ def recommend_gap_investment(seed_man: int, months: int = 6, area_tol: float = 5
                               ownership: str = "무주택",
                               first_time_buyer: bool = False,
                               dsr_cap_man: float | None = None,
-                              trade_months: int = 3) -> pd.DataFrame:
+                              trade_months: int = 2) -> pd.DataFrame:
     """갭투자용. 시드(만원)로 살 수 있는 (지역+단지+평형) 추천.
 
     갭투자는 일반적으로 전세 보증금이 임차인 부담분이므로 LTV 대출은 받지 않음.
@@ -502,7 +502,7 @@ def recommend_rental_yield(seed_man: int, months: int = 12, area_tol: float = 5.
                             first_time_buyer: bool = False,
                             use_loan: bool = True,
                             dsr_cap_man: float | None = None,
-                            trade_months: int = 3) -> pd.DataFrame:
+                            trade_months: int = 2) -> pd.DataFrame:
     """임대수익형. 시드로 가능한 (매매가-보증금) 매물 중 연수익률 높은 순."""
     df_t, df_r = _load_recent(months)
     if df_t.empty or df_r.empty:
@@ -568,7 +568,7 @@ def recommend_buy_outright(seed_man: int, months: int = 12, area_tol: float = 5.
                             first_time_buyer: bool = False,
                             use_loan: bool = True,
                             dsr_cap_man: float | None = None,
-                            trade_months: int = 3) -> pd.DataFrame:
+                            trade_months: int = 2) -> pd.DataFrame:
     """자가매입형. (시드 + 지역별 LTV 대출)로 살 수 있는 매물 + 저평가된 순.
 
     trade_median·ppp_median은 최근 trade_months 기간 실거래 기준 (분석기간
@@ -629,7 +629,7 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
                                  tier_weight: float = DEFAULT_TIER_WEIGHT,
                                  prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
                                  dsr_cap_man: float | None = None,
-                                 trade_months: int = 3) -> pd.DataFrame:
+                                 trade_months: int = 2) -> pd.DataFrame:
     """🚀 투자수익 추구. 호재 + 선행지표 + 레버리지 + 상급지 등급으로 추천.
 
     종합점수 = catalyst_weight * 호재 + tier_weight * 상급지 + rest * 선행/정량지표.
