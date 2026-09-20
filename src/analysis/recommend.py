@@ -3,8 +3,12 @@
 전략:
 1. gap_investment     - 갭투자: 매매-전세=갭, 전세 끼고 매수 (대출 X)
 2. rental_yield       - 임대수익: 보증금+대출+자기자본, 월세로 캐시플로우
-3. buy_outright       - 자가매입: 시드+대출로 매수, 실거주 또는 단순 보유
-4. investment_focus   - 🚀 투자수익: 호재 점수 + 매수세 모멘텀 + 레버리지 = 미래 상승 노림수
+3. investment_focus   - 🚀 투자수익: 호재 점수 + 매수세 모멘텀 + 레버리지 = 미래 상승 노림수
+
+buy_outright(자가매입, "저평가 지역 우선" 기준)는 2026-09-20 제거됨 — 다중 시점
+백테스트에서 저평가 점수가 ρ=-0.61(음의 상관)로 기각됨(비싼 지역·대장 단지가
+더 오르는 '마태 효과' 확인, `src/ui/pages/backtest.py` 참고). 자가매입 수요는
+investment_focus(market+prestige) 점수로 흡수됨.
 
 모든 금액 단위는 '만원' (DB 원본 단위).
 """
@@ -245,15 +249,23 @@ def _trade_agg(
     df_t: pd.DataFrame,
     keys: list[str],
     trade_months: int | None = None,
+    fallback_months: int = 3,
 ) -> pd.DataFrame:
     """trade_count는 전체 기간, trade_median·ppp_median은 최근 trade_months 기간으로 집계.
 
     분석기간(months) 전체의 median을 쓰면 그 기간 초반의 낮은 가격까지 섞여
     최근 급등을 놓친 "이미 지나간 시세"를 추천가로 보여주게 된다 — trade_months로
     가격 기준일만 최근으로 좁히고, 거래건수 필터는 전체 기간 기준을 유지해 유동성
-    판단은 그대로 둔다. trade_months=None이거나 최근 구간에 거래가 없으면 전체
-    기간 값으로 fallback (data.go.kr 특성상 최근 1~2개월은 신고 지연으로 거래가
-    적을 수 있음).
+    판단은 그대로 둔다.
+
+    (단지+평형) 조합에 trade_months 창 내 거래가 하나도 없으면(data.go.kr 특성상
+    최근 1개월은 신고 지연으로 특히 자주 발생) 곧장 분석기간 전체 median으로
+    fallback하지 않고, 중간에 fallback_months(기본 3개월) 창을 한 번 더 시도한다 —
+    분석기간이 12~24개월이면 그 median은 최근 급등 전 가격까지 섞여 현실과 괴리가
+    크기 때문에, 그보다는 3개월 median이 훨씬 현실에 가깝다. 3개월 창에도 거래가
+    없으면 그때 비로소 전체 기간 median으로 fallback한다. trade_months가 이미
+    fallback_months 이상이면 이 중간 단계는 건너뛴다(더 짧은 trade_months 창의
+    부분집합이라 무조건 비어있어 재시도 의미가 없음).
     """
     full_agg = df_t.groupby(keys).agg(
         trade_median_full=("deal_amount", "median"),
@@ -266,6 +278,17 @@ def _trade_agg(
         ppp_median=("price_per_pyeong", "median"),
     )
     result = full_agg.join(recent_agg, how="left")
+
+    if fallback_months and (trade_months is None or trade_months < fallback_months):
+        fb_agg = _recent_window(df_t, fallback_months).groupby(keys).agg(
+            trade_median_fb=("deal_amount", "median"),
+            ppp_median_fb=("price_per_pyeong", "median"),
+        )
+        result = result.join(fb_agg, how="left")
+        result["trade_median"] = result["trade_median"].fillna(result["trade_median_fb"])
+        result["ppp_median"] = result["ppp_median"].fillna(result["ppp_median_fb"])
+        result = result.drop(columns=["trade_median_fb", "ppp_median_fb"])
+
     result["trade_median"] = result["trade_median"].fillna(result["trade_median_full"])
     result["ppp_median"] = result["ppp_median"].fillna(result["ppp_median_full"])
     return result.drop(columns=["trade_median_full", "ppp_median_full"])
@@ -562,64 +585,6 @@ def recommend_rental_yield(seed_man: int, months: int = 12, area_tol: float = 5.
     return j
 
 
-def recommend_buy_outright(seed_man: int, months: int = 12, area_tol: float = 5.0,
-                            min_trade_deals: int = 50,
-                            ownership: str = "무주택",
-                            first_time_buyer: bool = False,
-                            use_loan: bool = True,
-                            dsr_cap_man: float | None = None,
-                            trade_months: int = 1) -> pd.DataFrame:
-    """자가매입형. (시드 + 지역별 LTV 대출)로 살 수 있는 매물 + 저평가된 순.
-
-    trade_median·ppp_median은 최근 trade_months 기간 실거래 기준 (분석기간
-    months 전체 median이 아님) — gap/rental 전략과 동일한 _trade_agg 사용.
-    """
-    df_t, _ = _load_recent(months)
-    if df_t.empty:
-        return pd.DataFrame()
-    df_t = _bucketize(df_t, area_tol)
-
-    _tm = trade_months if trade_months < months else None
-    region_avg_ppp = _recent_window(df_t, _tm).groupby("region_code")["price_per_pyeong"].median()
-
-    _keys = ["region_code", "apt_name", "area_bucket"]
-    g = _trade_agg(df_t, _keys, trade_months=_tm).reset_index()
-    if g.empty:
-        return g
-
-    # LTV + 한도cap + DSR 적용 대출
-    if use_loan:
-        res = vectorized_loan_equity(g["trade_median"], g["region_code"],
-                                       ownership, first_time_buyer, dsr_cap_man)
-        g["ltv_%"] = res["ltv_pct"]
-        g["zone"] = res["zone"]
-        g["loan_capacity"] = res["loan_capacity"]
-        g["required_equity"] = res["required_equity"]
-    else:
-        g["ltv_%"] = 0.0
-        g["zone"] = g["region_code"].apply(get_zone)
-        g["loan_capacity"] = 0.0
-        g["required_equity"] = g["trade_median"]
-    g["max_buy_price"] = g["trade_median"]
-
-    g = g[
-        (g["required_equity"] <= seed_man)
-        & (g["trade_count"] >= min_trade_deals)
-    ].copy()
-    if g.empty:
-        return g
-
-    g["region_median_ppp"] = g["region_code"].map(region_avg_ppp)
-    g["value_ratio"] = (g["ppp_median"] / g["region_median_ppp"] * 100).round(2)  # % (낮을수록 저평가)
-    g["score"] = (
-        (1 - g["value_ratio"].rank(pct=True)) * 0.6
-        + g["trade_count"].rank(pct=True) * 0.4
-    ) * 100
-    g["score"] = g["score"].round(1)
-    g = g.sort_values("score", ascending=False).reset_index(drop=True)
-    return g
-
-
 def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float = 5.0,
                                  min_trade_deals: int = 50, min_growth_deals: int = 2,
                                  ownership: str = "무주택",
@@ -816,8 +781,6 @@ def region_summary(rec_df: pd.DataFrame, region_map: dict[str, str],
         agg_kw["best_yield_%"] = (metric_col, "max")
     elif metric_col == "gap":
         agg_kw["min_gap"] = (metric_col, "min")
-    elif metric_col == "ppp_median":
-        agg_kw["min_trade"] = ("trade_median", "min")
     elif metric_col == "expected_roi_%":
         agg_kw["best_roi_%"] = (metric_col, "max")
         agg_kw["avg_growth_%"] = ("price_growth_%", "mean")
@@ -827,7 +790,7 @@ def region_summary(rec_df: pd.DataFrame, region_map: dict[str, str],
     by_region["avg_score"] = by_region["avg_score"].round(1)
     by_region = by_region.sort_values("opportunities", ascending=False).head(top_n)
     cols = ["region", "region_code", "opportunities", "unique_apts", "avg_score"]
-    for k in ("best_yield_%", "min_gap", "min_trade", "best_roi_%", "avg_growth_%"):
+    for k in ("best_yield_%", "min_gap", "best_roi_%", "avg_growth_%"):
         if k in by_region.columns:
             if k.endswith("_%"):
                 by_region[k] = by_region[k].round(2)
