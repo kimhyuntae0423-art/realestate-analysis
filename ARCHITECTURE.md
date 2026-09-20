@@ -32,26 +32,19 @@
 
 ## 알려진 잔여 항목 (일부러 안 건드림)
 
-- **2026-09-20**: "🏘️ 처분·매수 전략" 페이지를 사용자 요청으로 없앰 —
-  `src/ui/shared/sidebar_nav.py`의 메뉴 목록과 `src/ui/streamlit_app.py`의
-  라우팅(import + `elif page.startswith("🏘️")`)에서 제거해서 사이드바·앱에서
-  완전히 접근 불가능한 상태. 다만 백엔드 파일 삭제(`src/ui/pages/portfolio/`
-  패키지, `src/analysis/portfolio_strategy.py`, `src/analysis/cashflow_timeline.py`,
-  `scripts/replace_strategy_page.py`, `tests/unit/test_portfolio_strategy.py`,
-  `tests/unit/test_cashflow_timeline.py`)는 되돌리기 어려운 일괄 삭제라 별도
-  승인 없이는 수행하지 않음 — 코드는 저장소에 그대로 남아있고 어디서도
-  import되지 않는 죽은 코드 상태. 실제 파일 삭제까지 원하면 명시적으로 요청할 것.
 - ~~`src/ui/streamlit_app.py`가 5112줄 단일 파일~~ → 해소됨. `streamlit_app.py`(45줄) +
   `src/ui/pages/`(페이지별) + `src/ui/shared/`(공용 헬퍼)로 분리 완료.
   2026-09-09에 마지막 남은 `pages/portfolio.py`(1065줄)를 `pages/portfolio/` 패키지
   (입력 UI + 탭 5개 + 공용 컨텍스트)로 분리. 순수 이동이라 렌더 결과는 분리 전과
-  동일함을 4개 경로 × 767줄 출력 대조로 확인. (2026-09-20에 이 페이지 자체가
-  사용자 요청으로 라우팅에서 제거됨 — 위 항목 참고)
+  동일함을 4개 경로 × 767줄 출력 대조로 확인. **2026-09-20에 "🏘️ 처분·매수 전략"
+  페이지 자체가 사용자 요청으로 완전히 삭제됨** — `src/ui/shared/sidebar_nav.py`
+  메뉴·`src/ui/streamlit_app.py` 라우팅에서 제거 후, `src/ui/pages/portfolio/`
+  패키지 전체·`src/analysis/portfolio_strategy.py`·`src/analysis/cashflow_timeline.py`·
+  `scripts/replace_strategy_page.py`·관련 테스트 2개까지 저장소에서 삭제.
 - 300줄 초과가 남아 있는 UI 파일: `invest_compare.py`(656), `invest_recommend.py`(636),
   `backtest.py`(518), `region.py`(470). claude-supervisor 원칙4 기준으로는 여전히
   위반이지만, 각각 응집도 있는 단위(입력 폼 하나 / 탭 하나)라 더 쪼개면 인위적이
-  됨 — 별도 논의 대상. (`portfolio/inputs.py`·`portfolio/tab_payout.py`는
-  2026-09-20 페이지 제거로 목록에서 빠짐 — 파일 자체는 아직 저장소에 남아있음)
+  됨 — 별도 논의 대상.
 - `src/analysis/loan.py` 모듈 docstring이 "2025-10-15 대책" → "2026-07 대책(확정판)" 순서로
   두 블록 있는데, 실제로는 정책 변경 이력을 남겨둔 체인지로그 구조라 모순은 아님. 다만
   파일을 처음 읽는 사람이 첫 블록만 보고 구버전 LTV%를 재인용할 위험은 있음.
