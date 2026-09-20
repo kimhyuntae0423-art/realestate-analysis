@@ -1,10 +1,8 @@
 """src/analysis/recommend.py — 추천 엔진 핵심 검증.
 
 config 기반 순수 함수(manual_catalyst_score, region_tier_*)와,
-3대 추천 함수(recommend_gap_investment/rental_yield/investment_focus)의
+4대 추천 함수(recommend_gap_investment/rental_yield/buy_outright/investment_focus)의
 DB 기반 스모크 검증(필터·정렬·핵심 컬럼)을 다룬다.
-
-buy_outright(자가매입)는 2026-09-20 제거됨 — recommend.py 모듈 docstring 참고.
 """
 from __future__ import annotations
 
@@ -106,6 +104,19 @@ def test_recommend_rental_yield_computes_required_equity_and_sorts_desc():
     # use_loan=False → required_equity = trade - deposit = 40000-5000 = 35000
     assert row["required_equity"] == 35000
     assert row["annual_yield_%"] == round(100 * 12 / 35000 * 100, 2)
+
+
+def test_recommend_buy_outright_applies_ltv_loan():
+    trades = [_trade(d, region="11680", amount=100000, ppp=6000) for d in range(1, 6)]
+    upsert_trades(trades)
+
+    out = rec.recommend_buy_outright(seed_man=60000, months=12, min_trade_deals=5,
+                                      ownership="무주택", use_loan=True)
+    assert len(out) == 1
+    row = out.iloc[0]
+    # 규제지역(11680) 무주택 LTV 40%(2026-07 대책) → 대출 4억, 필요자기자본 6억
+    assert row["loan_capacity"] == 40000
+    assert row["required_equity"] == 60000
 
 
 def test_recommend_investment_focus_returns_scored_candidates():

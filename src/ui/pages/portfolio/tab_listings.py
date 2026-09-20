@@ -7,7 +7,7 @@ from config.settings import (
 )
 from src.ui.shared import (
     REGION_MAP, render_table, naver_land_url,
-    _cached_gap, _cached_yield, _cached_investment,
+    _cached_gap, _cached_yield, _cached_outright, _cached_investment,
 )
 from .context import PortfolioContext, _eok
 
@@ -31,9 +31,9 @@ def render(ctx: PortfolioContext):
     with st.container(border=True):
         rc1, rc2, rc3, rc4 = st.columns(4)
         rec_strategy = rc1.selectbox(
-            "전략", ["🚀 투자수익", "갭투자", "임대수익"],
+            "전략", ["🚀 투자수익", "갭투자", "임대수익", "자가매입"],
             key="port_rec_strat",
-            help="투자수익=레버리지 상승 노림 / 갭투자=전세끼고 / 임대수익=월세",
+            help="투자수익=레버리지 상승 노림 / 갭투자=전세끼고 / 임대수익=월세 / 자가매입=실거주",
         )
         rec_months  = rc2.slider("분석 기간 (개월)", 6, 36, 24, key="port_rec_mo")
         rec_min_deals = rc3.slider("최소 거래수",  10, 200, 30, step=10, key="port_rec_md")
@@ -55,8 +55,13 @@ def render(ctx: PortfolioContext):
                     seed_man_port, rec_months, rec_min_deals,
                     "무주택", False, dsr_cap_man_port,
                 )
-            else:  # 임대수익
+            elif rec_strategy == "임대수익":
                 rec_df = _cached_yield(
+                    seed_man_port, rec_months, rec_min_deals,
+                    "무주택", False, True, dsr_cap_man_port,
+                )
+            else:
+                rec_df = _cached_outright(
                     seed_man_port, rec_months, rec_min_deals,
                     "무주택", False, True, dsr_cap_man_port,
                 )

@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.database.repository import fetch_trades_df
 from src.analysis.recommend import (
-    recommend_gap_investment, recommend_rental_yield,
+    recommend_gap_investment, recommend_rental_yield, recommend_buy_outright,
     recommend_investment_focus, region_sentiment_summary,
 )
 from src.analysis.forecast import forecast_monthly_price
@@ -46,6 +46,18 @@ def _cached_yield(seed_man: int, months: int, min_deals: int,
     return recommend_rental_yield(
         seed_man, months=months,
         min_trade_deals=min_deals, min_rent_deals=min_deals,
+        ownership=ownership, first_time_buyer=first_time, use_loan=use_loan,
+        dsr_cap_man=dsr_cap_man, trade_months=trade_months,
+    )
+
+
+@st.cache_data(ttl=600, show_spinner="🔍 추천 계산 중...")
+def _cached_outright(seed_man: int, months: int, min_deals: int,
+                     ownership: str, first_time: bool, use_loan: bool,
+                     dsr_cap_man: float | None = None,
+                     trade_months: int = 1) -> pd.DataFrame:
+    return recommend_buy_outright(
+        seed_man, months=months, min_trade_deals=min_deals,
         ownership=ownership, first_time_buyer=first_time, use_loan=use_loan,
         dsr_cap_man=dsr_cap_man, trade_months=trade_months,
     )

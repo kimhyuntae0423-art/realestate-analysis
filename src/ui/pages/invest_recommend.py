@@ -11,7 +11,7 @@ from config.settings import DEFAULT_TIER_WEIGHT, DEFAULT_PRESTIGE_WEIGHT
 from src.analysis.location import is_kakao_ready, enrich_with_location
 from src.ui.shared import (
     REGION_MAP, render_table, render_df, naver_land_url,
-    _cached_gap, _cached_yield, _cached_investment,
+    _cached_gap, _cached_yield, _cached_outright, _cached_investment,
     _cached_region_sentiment, _cached_region_momentum, _render_market_timing_panel,
 )
 from src.ui.pages.invest_compare import _render_compare_view
@@ -169,6 +169,13 @@ def render_recommend_tab(inputs: dict):
         )
         rec = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man, trade_months)
         metric_col = "annual_yield_%"
+    else:  # 자가매입
+        st.info(
+            f"💡 **자가매입 전략**: 자기자본(시드 {seed_eok}억) + LTV 대출로 매수. "
+            "지역 평균 평당가 대비 저평가된 곳을 상위 배치."
+        )
+        rec = _cached_outright(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man, trade_months)
+        metric_col = "ppp_median"
 
     if rec.empty:
         st.warning(
@@ -569,12 +576,18 @@ def render_recommend_tab(inputs: dict):
                       "tier_label",
                       "area_bucket", "build_year",
                       "trade_count", "rent_count", "score"]
-    else:  # 임대수익
+    elif strategy == "임대수익":
         cols_order = ["naver_url", "rank", "region", "apt_name", "trade_median", "required_equity",
                       "area_bucket", "build_year",
                       "ltv_%", "loan_capacity",
                       "deposit_median", "monthly_median",
                       "annual_yield_%", "trade_count", "rent_count", "score"]
+    else:  # 자가매입
+        cols_order = ["naver_url", "rank", "region", "apt_name", "trade_median", "required_equity",
+                      "area_bucket", "build_year",
+                      "ltv_%", "loan_capacity",
+                      "ppp_median", "region_median_ppp", "value_ratio",
+                      "trade_count", "score"]
 
     # 지역모멘텀 우선 정렬 — 모멘텀 좋은 지역의 단지가 리스트 위쪽에 뜨도록
     # (같은 지역 안에서는 기존 score 순서 유지)
