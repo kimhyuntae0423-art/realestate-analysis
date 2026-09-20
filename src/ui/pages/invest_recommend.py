@@ -25,6 +25,7 @@ def render_recommend_tab(inputs: dict):
     use_loan = inputs["use_loan"]
     strategy = inputs["strategy"]
     months = inputs["months"]
+    trade_months = inputs.get("trade_months", min(3, months))
     min_deals = inputs["min_deals"]
     top_n = inputs["top_n"]
     catalyst_weight = inputs["catalyst_weight"]
@@ -101,6 +102,7 @@ def render_recommend_tab(inputs: dict):
             max_buy_reg_net=max_buy_reg_net,
             max_buy_nonreg_net=max_buy_nonreg_net,
             kb_ratio=kb_ratio,
+            trade_months=trade_months,
         )
         return
 
@@ -123,7 +125,7 @@ def render_recommend_tab(inputs: dict):
             )
         rec = _cached_investment(seed_man, months, min_deals,
                                   ownership, first_time, use_loan, catalyst_weight,
-                                  tier_weight, prestige_weight, dsr_cap_man)
+                                  tier_weight, prestige_weight, dsr_cap_man, trade_months)
         metric_col = "expected_roi_%"
 
         # 등록된 호재 보기
@@ -158,21 +160,21 @@ def render_recommend_tab(inputs: dict):
             f"(백테스트에서 역상관 확인되어 제외, 역전세 위험 판정용으로만 사용)\n\n"
             f"⚠️ **역전세 리스크**: 전세가율 90%↑ 위험 · 83%↑ 또는 전세가 하락 추세 주의"
         )
-        rec = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man)
+        rec = _cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man, trade_months)
         metric_col = "gap"
     elif strategy == "임대수익":
         st.info(
             f"💡 **임대수익 전략**: 자기자본 + 보증금 + LTV 대출로 매수, 월세로 수익. "
             "필요자기자본 = 매매가 − 보증금중위 − 대출가능액."
         )
-        rec = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
+        rec = _cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man, trade_months)
         metric_col = "annual_yield_%"
     else:  # 자가매입
         st.info(
             f"💡 **자가매입 전략**: 자기자본(시드 {seed_eok}억) + LTV 대출로 매수. "
             "지역 평균 평당가 대비 저평가된 곳을 상위 배치."
         )
-        rec = _cached_outright(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man)
+        rec = _cached_outright(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man, trade_months)
         metric_col = "ppp_median"
 
     if rec.empty:

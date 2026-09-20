@@ -21,7 +21,7 @@ def _render_compare_view(
     catalyst_weight: float, tier_weight: float, prestige_weight: float,
     dsr_cap_man, top_n: int, area_range, year_range,
     max_buy_reg_net: int = 0, max_buy_nonreg_net: int = 0,
-    kb_ratio: float = 1.0,
+    kb_ratio: float = 1.0, trade_months: int = 3,
 ):
     """3전략 동시 비교 — 겹치는 단지가 높은 확신도."""
     st.markdown("### 🔀 3전략 동시 비교")
@@ -58,11 +58,11 @@ def _render_compare_view(
     _prog = st.progress(0, text="🚀 투자수익 계산 중…")
     try:
         rec_inv = _filter_affordable(_cached_investment(seed_man, months, min_deals, ownership, first_time,
-                                      use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man))
+                                      use_loan, catalyst_weight, tier_weight, prestige_weight, dsr_cap_man, trade_months))
         _prog.progress(34, text="🏠 갭투자 계산 중…")
-        rec_gap = _filter_affordable(_cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man), is_gap=True)
+        rec_gap = _filter_affordable(_cached_gap(seed_man, months, min_deals, ownership, first_time, dsr_cap_man, trade_months), is_gap=True)
         _prog.progress(67, text="💰 임대수익 계산 중…")
-        rec_yld = _filter_affordable(_cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man))
+        rec_yld = _filter_affordable(_cached_yield(seed_man, months, min_deals, ownership, first_time, use_loan, dsr_cap_man, trade_months))
         _prog.progress(100, text="✅ 완료")
         _prog.empty()
     except MemoryError:

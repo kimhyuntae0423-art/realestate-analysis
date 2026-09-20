@@ -227,41 +227,48 @@ def _bucketize(df: pd.DataFrame, tol: float) -> pd.DataFrame:
     return df
 
 
+def _recent_window(df_t: pd.DataFrame, trade_months: int | None) -> pd.DataFrame:
+    """trade_months 이내 거래만 필터링 (가격 기준일을 최신 거래일로 잡음).
+
+    trade_months=None이거나 그 기간에 거래가 없으면 df_t 전체를 그대로 반환(fallback).
+    """
+    if trade_months is None:
+        return df_t
+    df_dt = df_t.copy()
+    df_dt["deal_date"] = pd.to_datetime(df_dt["deal_date"])
+    cutoff = df_dt["deal_date"].max() - pd.DateOffset(months=trade_months)
+    recent = df_dt[df_dt["deal_date"] >= cutoff]
+    return recent if not recent.empty else df_t
+
+
 def _trade_agg(
     df_t: pd.DataFrame,
     keys: list[str],
     trade_months: int | None = None,
 ) -> pd.DataFrame:
-    """trade_count는 전체 기간, trade_median은 최근 trade_months 기간으로 분리 집계.
+    """trade_count는 전체 기간, trade_median·ppp_median은 최근 trade_months 기간으로 집계.
 
-    trade_months=None 이면 전체 기간 그대로 사용.
-    최근 기간에 거래 없으면 전체 기간 median으로 fallback.
+    분석기간(months) 전체의 median을 쓰면 그 기간 초반의 낮은 가격까지 섞여
+    최근 급등을 놓친 "이미 지나간 시세"를 추천가로 보여주게 된다 — trade_months로
+    가격 기준일만 최근으로 좁히고, 거래건수 필터는 전체 기간 기준을 유지해 유동성
+    판단은 그대로 둔다. trade_months=None이거나 최근 구간에 거래가 없으면 전체
+    기간 값으로 fallback (data.go.kr 특성상 최근 1~2개월은 신고 지연으로 거래가
+    적을 수 있음).
     """
     full_agg = df_t.groupby(keys).agg(
         trade_median_full=("deal_amount", "median"),
+        ppp_median_full=("price_per_pyeong", "median"),
         trade_count=("deal_amount", "count"),
         build_year=("build_year", "max"),
     )
-
-    if trade_months is None:
-        full_agg["trade_median"] = full_agg["trade_median_full"]
-        return full_agg.drop(columns=["trade_median_full"])
-
-    df_dt = df_t.copy()
-    df_dt["deal_date"] = pd.to_datetime(df_dt["deal_date"])
-    recent_cutoff = df_dt["deal_date"].max() - pd.DateOffset(months=trade_months)
-    df_recent = df_dt[df_dt["deal_date"] >= recent_cutoff]
-
-    if df_recent.empty:
-        full_agg["trade_median"] = full_agg["trade_median_full"]
-        return full_agg.drop(columns=["trade_median_full"])
-
-    price_agg = df_recent.groupby(keys).agg(
+    recent_agg = _recent_window(df_t, trade_months).groupby(keys).agg(
         trade_median=("deal_amount", "median"),
+        ppp_median=("price_per_pyeong", "median"),
     )
-    result = full_agg.join(price_agg, how="left")
+    result = full_agg.join(recent_agg, how="left")
     result["trade_median"] = result["trade_median"].fillna(result["trade_median_full"])
-    return result.drop(columns=["trade_median_full"])
+    result["ppp_median"] = result["ppp_median"].fillna(result["ppp_median_full"])
+    return result.drop(columns=["trade_median_full", "ppp_median_full"])
 
 
 def _compute_growth_signals(months: int, area_tol: float = 5.0) -> pd.DataFrame:
@@ -560,21 +567,23 @@ def recommend_buy_outright(seed_man: int, months: int = 12, area_tol: float = 5.
                             ownership: str = "무주택",
                             first_time_buyer: bool = False,
                             use_loan: bool = True,
-                            dsr_cap_man: float | None = None) -> pd.DataFrame:
-    """자가매입형. (시드 + 지역별 LTV 대출)로 살 수 있는 매물 + 저평가된 순."""
+                            dsr_cap_man: float | None = None,
+                            trade_months: int = 3) -> pd.DataFrame:
+    """자가매입형. (시드 + 지역별 LTV 대출)로 살 수 있는 매물 + 저평가된 순.
+
+    trade_median·ppp_median은 최근 trade_months 기간 실거래 기준 (분석기간
+    months 전체 median이 아님) — gap/rental 전략과 동일한 _trade_agg 사용.
+    """
     df_t, _ = _load_recent(months)
     if df_t.empty:
         return pd.DataFrame()
     df_t = _bucketize(df_t, area_tol)
 
-    region_avg_ppp = df_t.groupby("region_code")["price_per_pyeong"].median()
+    _tm = trade_months if trade_months < months else None
+    region_avg_ppp = _recent_window(df_t, _tm).groupby("region_code")["price_per_pyeong"].median()
 
-    g = df_t.groupby(["region_code", "apt_name", "area_bucket"]).agg(
-        trade_median=("deal_amount", "median"),
-        ppp_median=("price_per_pyeong", "median"),
-        trade_count=("deal_amount", "count"),
-        build_year=("build_year", "max"),
-    ).reset_index()
+    _keys = ["region_code", "apt_name", "area_bucket"]
+    g = _trade_agg(df_t, _keys, trade_months=_tm).reset_index()
     if g.empty:
         return g
 
@@ -619,7 +628,8 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
                                  catalyst_weight: float = DEFAULT_CATALYST_WEIGHT,
                                  tier_weight: float = DEFAULT_TIER_WEIGHT,
                                  prestige_weight: float = DEFAULT_PRESTIGE_WEIGHT,
-                                 dsr_cap_man: float | None = None) -> pd.DataFrame:
+                                 dsr_cap_man: float | None = None,
+                                 trade_months: int = 3) -> pd.DataFrame:
     """🚀 투자수익 추구. 호재 + 선행지표 + 레버리지 + 상급지 등급으로 추천.
 
     종합점수 = catalyst_weight * 호재 + tier_weight * 상급지 + rest * 선행/정량지표.
@@ -631,6 +641,11 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
       - 단순 가격모멘텀:           15%
       - 예상 ROI(레버리지):        10%
       - 거래활성도:                10%
+
+    trade_median·ppp_median(→ expected_gain 등의 가격 기준)은 최근 trade_months
+    기간 실거래 기준 — 분석기간 months(기본 24개월) 전체 median을 쓰면 그 기간
+    초반 가격까지 섞여 최근 급등을 반영 못한 "이미 지나간 시세"가 추천가로
+    나온다. gap/rental/자가매입 전략과 동일한 _trade_agg 사용.
     """
     df_t, _ = _load_recent(months)
     if df_t.empty:
@@ -638,11 +653,9 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
     df_t = _bucketize(df_t, area_tol)
     this_year = date.today().year
 
-    g = df_t.groupby(["region_code", "apt_name", "area_bucket"]).agg(
-        trade_median=("deal_amount", "median"),
-        ppp_median=("price_per_pyeong", "median"),
-        trade_count=("deal_amount", "count"),
-        build_year=("build_year", "max"),
+    _keys = ["region_code", "apt_name", "area_bucket"]
+    g = _trade_agg(
+        df_t, _keys, trade_months=trade_months if trade_months < months else None
     ).reset_index()
 
     growth = _compute_growth_signals(months, area_tol)
