@@ -16,7 +16,7 @@ def _sidebar_nav() -> str:
         st.markdown("#### 🏠 메뉴")
         page = st.radio(
             "페이지",
-            ["💰 나의 한도", "🚀 투자 추천", "💎 저평가 매물", "📊 지역 분석",
+            ["💰 나의 한도", "🚀 투자 추천", "📊 지역 분석",
              "🚦 시장 진단", "🔬 전략 백테스트", "🧪 실험실"],
             label_visibility="collapsed",
             key="nav_page",

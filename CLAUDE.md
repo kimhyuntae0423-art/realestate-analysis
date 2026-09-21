@@ -74,7 +74,7 @@ realestate-analysis/
 │   ├── utils/               # ca_bundle.py(사내망 SSL)·logger.py
 │   └── ui/
 │       ├── streamlit_app.py # 라우팅만 (42줄)
-│       ├── pages/           # 페이지별 화면 (invest·region·backtest·lab·undervalued 등)
+│       ├── pages/           # 페이지별 화면 (invest·region·backtest·lab 등)
 │       └── shared/          # 공용 헬퍼 (cache·format·columns_spec·sidebar_nav 등)
 ├── scripts/
 │   ├── init_db.py           # DB 초기화

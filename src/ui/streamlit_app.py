@@ -16,7 +16,6 @@ ROOT = APP_ROOT
 from src.ui.shared import _sidebar_nav
 from src.ui.pages.map_signals import page_market_signals
 from src.ui.pages.capacity import page_my_capacity
-from src.ui.pages.undervalued import page_undervalued
 from src.ui.pages.region import page_region
 from src.ui.pages.backtest import page_strategy_backtest
 from src.ui.pages.invest import page_invest
@@ -30,8 +29,6 @@ def main():
         page_my_capacity()
     elif page.startswith("🚀"):
         page_invest()
-    elif page.startswith("💎"):
-        page_undervalued()
     elif page.startswith("📊"):
         page_region()
     elif page.startswith("🚦"):

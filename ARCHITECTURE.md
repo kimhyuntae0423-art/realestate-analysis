@@ -43,7 +43,7 @@
   메뉴·`src/ui/streamlit_app.py` 라우팅에서 제거 후, `src/ui/pages/portfolio/`
   패키지 전체·`src/analysis/portfolio_strategy.py`·`src/analysis/cashflow_timeline.py`·
   `scripts/replace_strategy_page.py`·관련 테스트 2개까지 저장소에서 삭제.
-- 300줄 초과가 남아 있는 UI 파일: `invest_compare.py`(656), `invest_recommend.py`(636),
+- 300줄 초과가 남아 있는 UI 파일: `invest_compare.py`(473, 2026-09-21 저평가 매물 탭 삭제로 656→473), `invest_recommend.py`(636),
   `backtest.py`(518), `region.py`(470). claude-supervisor 원칙4 기준으로는 여전히
   위반이지만, 각각 응집도 있는 단위(입력 폼 하나 / 탭 하나)라 더 쪼개면 인위적이
   됨 — 별도 논의 대상.
