@@ -251,7 +251,7 @@ PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 
 | 로컬 DB 크기 | 593MB |
 | Supabase 복제본 | 456MB (한도 500MB) |
 | 매크로 타이밍 | score 61.4, **coverage 1.0, missing 없음** — ECOS 키가 살아 있어 5개 신호 전부 채워짐 |
-| 실험실 가설 | 19개 (지지 4 / 기각 1 / 불확실 14) |
+| 실험실 가설 | 정기 재검증 18개 (지지 4 / 기각 1 / 불확실 13). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
 | 테스트 | 262개 전부 통과 |
 
 `population_flow`·`supply_schedule`이 0행인 이유: 전자는 `KOSIS_API_KEY` 미발급, 후자는

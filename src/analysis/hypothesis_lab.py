@@ -186,7 +186,6 @@ def get_all_hypotheses() -> list:
     """
     from src.analysis import hypothesis_tests as t
     from src.analysis import hypothesis_tests_cycles as c
-    from src.analysis import hypothesis_tests_spillover as sp
     from src.analysis import hypothesis_tests_valuation as v
     from src.analysis import hypothesis_tests_kb as k
     from src.analysis import hypothesis_tests_ecos as e
@@ -199,7 +198,8 @@ def get_all_hypotheses() -> list:
         c.test_large_units_lead_small_units,
         c.test_price_level_mean_reversion,
         c.test_regulation_balloon_effect,
-        sp.test_dongtan_spillover_to_adjacent,
+        # hypothesis_tests_spillover.test_dongtan_spillover_to_adjacent 는 결론이 나서
+        # 제외(2026-09-21) — 결론과 제외 이유는 그 모듈 docstring 참고
         v.test_jeonse_ratio_leads_price,
         v.test_supply_leads_price_decline,
         v.test_population_migration_leads_price,
