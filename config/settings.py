@@ -73,6 +73,13 @@ DEFAULT_PRESTIGE_WEIGHT = 0.30
 # 배경지표(장기 0.30)만 남거나 KB(0.35) 하나만 남는 경우는 걸러진다.
 MARKET_TIMING_MIN_COVERAGE = 0.60
 
+# ── 지역 동조 분석 필터 (co_movement.py::residual_growth_matrix) ──
+# 월 추적거래가 적은 지역의 월 성장률은 잡음이 커서 동조 상관을 오염시킨다.
+# 2026-09-21 실측: 86개 시군구 중 "월 20건 이상인 달이 24개월 이상"을 만족하는 곳이
+# 80개 — 이 기준으로 걸러도 대상 지역은 거의 줄지 않고, 40건으로 올리면 69~74개로 준다.
+CO_MOVEMENT_MIN_DEALS = 20
+CO_MOVEMENT_MIN_MONTHS = 24
+
 # ── 매수심리(sentiment) 지표 기본값 (recommend.py::_buyer_sentiment_signals) ──
 # 2026-08 매직넘버 정리: 클립 범위·가중치를 하드코딩에서 이전. 값 자체는 불변.
 SENTIMENT_VOL_CLIP = (0.0, 3.0)

@@ -19,6 +19,7 @@ from src.analysis.supply import supply_for_region, supply_pressure_score
 from src.ui.shared import (
     REGIONS, REGION_MAP, render_table, render_df,
     _cached_forecast, _cached_region_sentiment, _cached_region_momentum,
+    _render_co_movement_panel,
 )
 
 
@@ -100,6 +101,9 @@ def page_region():
     # 🔬 지역 상세 진단 (매수심리·호재·공급 등 종합)
     with st.expander("🔬 지역 상세 진단 (매수심리·호재·공급)", expanded=True):
         _render_region_detail(code)
+
+    with st.expander("🔗 같이 움직이는 지역 (전국 추세 제거 후)"):
+        _render_co_movement_panel(code)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         ["📈 추이", "🏢 단지", "↔ 갭분석", "💰 수익률", "🔥 상승률", "💎 적정가"]

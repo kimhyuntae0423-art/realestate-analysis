@@ -64,7 +64,8 @@ realestate-analysis/
 │   ├── analysis/            # 분석 로직 — 아래 3계열
 │   │   ├── (시세·추천)      # price_trend·gap_analysis·yield_calc·ranking·recommend·
 │   │   │                    #   region_momentum·fair_value·fair_value_reverse·forecast
-│   │   ├── (신호·거시)      # forward_signals·macro·market_timing·supply·location·scenario
+│   │   ├── (신호·거시)      # forward_signals·macro·market_timing·supply·location·scenario·
+│   │   │                    #   co_movement(지역 동조)
 │   │   ├── (검증)           # backtest·gap_backtest·hypothesis_lab +
 │   │   │                    #   hypothesis_tests{,_cycles,_ecos,_ecos_rate,_kb,
 │   │   │                    #   _valuation,_spillover}
@@ -83,7 +84,7 @@ realestate-analysis/
 │   ├── run_backtest.py      # 백테스트 실행
 │   ├── quarterly_strategy_check.py # 전략 분기 재검증
 │   └── backfill_*.py / import_kosis_csv.py / export_summary.py
-├── tests/                   # 262개 (pytest)
+├── tests/                   # 269개 (pytest)
 └── .env                     # API 키 (로컬 전용, git 제외)
 ```
 
@@ -252,7 +253,7 @@ PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 
 | Supabase 복제본 | 456MB (한도 500MB) |
 | 매크로 타이밍 | score 61.4, **coverage 1.0, missing 없음** — ECOS 키가 살아 있어 5개 신호 전부 채워짐 |
 | 실험실 가설 | 정기 재검증 18개 (지지 4 / 기각 1 / 불확실 13). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
-| 테스트 | 262개 전부 통과 |
+| 테스트 | 269개 전부 통과 |
 
 `population_flow`·`supply_schedule`이 0행인 이유: 전자는 `KOSIS_API_KEY` 미발급, 후자는
 KOSIS가 시군구 단위 API를 안 줘서 CSV 수동 업로드만 가능. 둘 다 `recommend.py`의 점수

@@ -102,3 +102,11 @@ def _cached_region_momentum(months: int) -> pd.DataFrame:
 def _cached_market_timing() -> dict:
     from src.analysis.market_timing import market_timing_signal
     return market_timing_signal()
+
+
+# 전 지역 실거래 전체를 읽어 단지 추적 성장률을 만드는 무거운 계산이라 1시간 캐시.
+# 지역별 순위(co_moving_regions)는 이 결과로 즉시 계산되므로 캐시하지 않는다.
+@st.cache_data(ttl=3600, show_spinner="🔗 지역 동조 분석 중 (전 지역 실거래 로드)...")
+def _cached_co_movement_base() -> tuple[pd.DataFrame, pd.Series]:
+    from src.analysis.co_movement import build_co_movement_base
+    return build_co_movement_base()

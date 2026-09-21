@@ -8,6 +8,7 @@ from src.ui.shared.cache import (
     _cached_forecast, _cached_gap, _cached_yield,
     _cached_outright, _cached_investment, _cached_region_sentiment,
     _cached_all_trades, _cached_region_momentum, _cached_market_timing,
+    _cached_co_movement_base,
 )
 from src.ui.shared.columns_spec import COL_SPEC
 from src.ui.shared.format import (
@@ -18,3 +19,4 @@ from src.ui.shared.data_refresh import _data_freshness, _refresh_recent_data
 from src.ui.shared.sidebar_nav import _sidebar_nav
 from src.ui.shared.personal_inputs import _personal_inputs_block
 from src.ui.shared.market_timing_panel import _render_market_timing_panel
+from src.ui.shared.co_movement_panel import _render_co_movement_panel
