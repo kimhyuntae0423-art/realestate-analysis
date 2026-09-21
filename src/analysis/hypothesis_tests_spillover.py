@@ -72,10 +72,15 @@ def test_dongtan_spillover_to_adjacent(
 
     cutoff = date.today() - timedelta(days=30 * months)
     codes = [leader_region] + list(followers.keys())
-    df = pd.concat(
-        [fetch_trades_df(region_code=c, date_from=cutoff) for c in codes],
-        ignore_index=True,
-    )
+    # 거래가 없는 지역은 fetch_trades_df가 전 컬럼 object dtype인 빈 프레임을 주고,
+    # 그걸 concat에 섞으면 price_per_pyeong까지 object로 승격돼 growth가 object가 되고
+    # 아래 spearmanr이 numpy 내부에서 터진다 -> 빈 프레임은 concat 전에 제외한다.
+    # (후보 지역 중 일부만 데이터가 없는 건 정상 상황이라 "데이터 없음"으로 보고돼야 함)
+    frames = [f for f in (fetch_trades_df(region_code=c, date_from=cutoff) for c in codes)
+              if not f.empty]
+    if not frames:
+        return _empty_result(**meta)
+    df = pd.concat(frames, ignore_index=True)
     if df.empty:
         return _empty_result(**meta)
 
