@@ -2,6 +2,9 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 SQLAlchemy>=2.0.0
 psycopg2-binary>=2.9.0
+# 배포 Streamlit 의 DATABASE_URL 은 postgresql+psycopg (psycopg 3) 방언이다.
+# 로컬 수집·동기화는 postgresql (psycopg2) 를 쓰므로 둘 다 필요하다.
+psycopg[binary]>=3.2
 pandas>=2.1.0
 numpy>=1.26.0
 openpyxl>=3.1.0
