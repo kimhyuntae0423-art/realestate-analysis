@@ -18,10 +18,14 @@ ON CONFLICT 대상일 뿐 조회에는 안 쓰이므로 제거해서 385MB 로 �
      (region_code, deal_date, apt_name, area_m2, floor, deposit, monthly_rent);
  단 195MB 가 다시 늘어 한도를 넘는다.)
 
+## 복제 범위
+
+로컬 전체가 아니라 최근 SYNC_MONTHS 개월만 복제한다 — 무료 한도 500MB 때문이다.
+창의 하한은 sync_from() 하나로 정하고, 업로드와 창 밖 삭제가 그 값을 공유한다.
+
 ## 사용법
     python -m scripts.migrate_to_supabase              # 차이나는 달만 동기화
     python -m scripts.migrate_to_supabase --full       # 전체 재적재
-    python -m scripts.migrate_to_supabase --keep-months 24   # 24개월치만 유지(오래된 달 삭제)
 """
 import sys
 from pathlib import Path
@@ -33,6 +37,7 @@ import argparse
 import csv
 import io
 import sqlite3
+from datetime import date
 
 from sqlalchemy import create_engine, text
 
@@ -47,6 +52,14 @@ SQLITE_PATH = ROOT / "data" / "processed" / "realestate.db"
 MONTHLY_TABLES = ("apt_trade", "apt_rent")
 # 통째로 갈아끼우는 소형 테이블
 SMALL_TABLES = ("ecos_series", "kb_price_series", "kb_sentiment_index")
+# 로컬 DB 에는 2021-08 부터 있지만 전부 올리면 743MB 로 무료 한도(500MB)를 넘어
+# 읽기 전용이 된다(2026-09-21 사고). 그래서 최근 N 개월만 복제한다.
+#
+# 하한을 고정 날짜로 두면 시간이 갈수록 창이 넓어져 같은 사고가 다시 난다
+# (2024-06 고정 기준 385MB, 주당 6MB 증가 → 4~5개월 뒤 다시 한도).
+# 그래서 "오늘 기준 최근 N 개월"로 굴린다 — 창 너비가 일정하니 용량도 평형이다.
+# 백테스트 최소 요건이 24개월이므로 여유를 둬 28개월(약 385MB).
+SYNC_MONTHS = 28
 
 
 def _sqlite():
@@ -87,6 +100,19 @@ def _insert_rows(pg, table, cols, rows):
         raw.close()
 
 
+def sync_from(today: date | None = None) -> tuple[int, int]:
+    """복제 창의 하한 (년, 월) — 이 달부터 Supabase 로 올린다.
+
+    업로드(sync_monthly)와 창 밖 삭제(prune)가 **반드시 같은 하한**을 써야 한다.
+    둘이 어긋나면 한쪽이 올린 달을 다른 쪽이 지우고 다음 주에 또 올리는 왕복이
+    생긴다 — 예전 `--keep-months` 옵션이 정확히 그랬다(고정 하한 2024-06 +
+    롤링 삭제 24개월 → 2024-06~09 가 매주 재전송·재삭제).
+    """
+    today = today or date.today()
+    n = today.year * 12 + (today.month - 1) - (SYNC_MONTHS - 1)
+    return n // 12, n % 12 + 1
+
+
 def _month_bounds(y: int, m: int) -> tuple[str, str]:
     """[해당 월 1일, 다음 달 1일) — deal_date 인덱스를 타는 범위 조건용."""
     ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
@@ -95,8 +121,10 @@ def _month_bounds(y: int, m: int) -> tuple[str, str]:
 
 def sync_monthly(con, pg, table, full: bool) -> int:
     """로컬과 건수가 다른 달만 삭제 후 재삽입. 반환: 넣은 행 수."""
+    lower = sync_from()
     local = {(r[0], r[1]): r[2] for r in con.execute(
-        f"SELECT deal_year, deal_month, COUNT(*) FROM {table} GROUP BY 1, 2")}
+        f"SELECT deal_year, deal_month, COUNT(*) FROM {table} GROUP BY 1, 2")
+        if (r[0], r[1]) >= lower}
     if full:
         target = sorted(local)
     else:
@@ -147,20 +175,23 @@ def sync_small(con, pg, table) -> int:
     return len(rows)
 
 
-def prune(pg, keep_months: int):
-    """오래된 달을 지워 무료 한도 안에 유지. keep_months 개월치만 남긴다."""
-    from datetime import date
-    today = date.today()
-    cutoff = today.year * 12 + today.month - keep_months
+def prune(pg):
+    """복제 창 밖으로 밀려난 오래된 달을 원격에서 지운다.
+
+    하한은 sync_monthly 와 같은 sync_from() 이다(그 docstring 참고).
+    deal_year/deal_month 에는 인덱스가 없으므로 인덱스가 있는 deal_date 로 지운다.
+    """
+    y, m = sync_from()
+    lo = f"{y:04d}-{m:02d}-01"
     for table in MONTHLY_TABLES:
         with pg.begin() as conn:
             n = conn.execute(text(
-                f"DELETE FROM {table} WHERE (deal_year * 12 + deal_month) < :c"
-            ), {"c": cutoff}).rowcount
-        log.info("[%s] 오래된 %d행 삭제 (최근 %d개월 유지)", table, n or 0, keep_months)
+                f"DELETE FROM {table} WHERE deal_date < :lo"), {"lo": lo}).rowcount
+        log.info("[%s] 창 밖 %d행 삭제 (%s 이전, 최근 %d개월 유지)",
+                 table, n or 0, lo, SYNC_MONTHS)
 
 
-def run_sync(full: bool = False, keep_months: int = 0) -> int:
+def run_sync(full: bool = False) -> int:
     """동기화 본체. argparse 를 타지 않으므로 다른 스크립트에서 직접 부를 수 있다.
 
     scheduled_refresh.py 가 `--months 3` 같은 자기 인자를 달고 실행되는데,
@@ -179,8 +210,7 @@ def run_sync(full: bool = False, keep_months: int = 0) -> int:
             total += sync_monthly(con, pg, t, full)
         for t in SMALL_TABLES:
             total += sync_small(con, pg, t)
-        if keep_months > 0:
-            prune(pg, keep_months)
+        prune(pg)
 
         with pg.connect() as conn:
             size = conn.execute(text(
@@ -194,10 +224,8 @@ def run_sync(full: bool = False, keep_months: int = 0) -> int:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="차이 비교 없이 전체 재적재")
-    ap.add_argument("--keep-months", type=int, default=0,
-                    help="0보다 크면 그 개월수만 남기고 오래된 달 삭제")
     args = ap.parse_args()
-    return run_sync(full=args.full, keep_months=args.keep_months)
+    return run_sync(full=args.full)
 
 
 if __name__ == "__main__":

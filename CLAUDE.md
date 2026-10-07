@@ -205,12 +205,28 @@ python -m src.reports.excel_report --region 11680 --output report.xlsx
 동기화는 `scripts/migrate_to_supabase.py::run_sync()`이고 `scheduled_refresh.py` 말미에
 붙어 있다. 제약이 없으니 `ON CONFLICT`를 못 써서, 건수가 다른 달만 통째로 지우고 다시
 넣는다(중복 제거는 로컬 SQLite가 이미 함). 실패해도 로컬 결과는 유효하므로 예외를 삼킨다.
-주 1회 접속이 생기므로 Supabase 무료플랜의 "7일 미사용 자동 정지"도 함께 막힌다.
 
-⚠️ **용량 주의**: 2026-09-21 동기화 후 Supabase **456MB / 한도 500MB**. 9/14에 450MB였으니
-주당 약 6MB씩 늘고 있어 **7~8주 내 한도에 닿는다.** 그때는 `--keep-months 24`로 전환한다
-(약 343MB로 고정, 백테스트 최소 요건 24개월은 유지됨). 이 수치는 갱신 로그 말미의
-"Supabase 크기" 줄에서 매번 확인할 수 있다.
+**빈 프로젝트에 다시 세울 때는 `scripts/bootstrap_supabase.py`를 먼저 돌린다.**
+`migrate_to_supabase.py`는 테이블이 있다고 전제하고 데이터만 밀어넣는다. 그리고
+`Base.metadata.create_all`은 `uq_trade`/`uq_rent`를 같이 만드는데 이 둘이 195MB라
+만들자마자 한도를 넘긴다 — 부트스트랩이 생성 직후 그 둘을 제거한다.
+
+⚠️ **"주 1회 동기화 접속이 자동 정지도 막는다"는 더 이상 사실이 아니다.** 그 접속은
+PC가 켜져 있어야 생긴다. 2026-09-22·09-29 정기 갱신이 연속으로 누락되자 7일 무활동으로
+프로젝트가 **실제로 자동 정지됐다**(2026-10-07 확인, 정지되면 호스트 DNS까지 내려가
+배포 앱이 통째로 죽는다). 그래서 PC와 무관한 경로로 분리했다 —
+`.github/workflows/supabase_keepalive.yml`이 월·목에 `SELECT 1`만 날린다.
+저장소 시크릿 `SUPABASE_DATABASE_URL`이 필요하고, GitHub은 저장소가 60일 조용하면
+예약 워크플로를 꺼버리므로 오래 손대지 않았으면 Actions 탭을 확인할 것.
+
+**복제 범위는 롤링 창이다 (2026-10-07 변경).** `migrate_to_supabase.SYNC_MONTHS = 28`,
+하한은 `sync_from()` 하나로 정하고 **업로드와 창 밖 삭제가 같은 값을 공유한다.**
+창 너비가 일정하므로 용량도 385MB 안팎에서 평형을 유지한다.
+
+이전 구조(고정 하한 + `--keep-months` 옵션)는 쓰면 안 된다. 고정 하한 2024-06 에
+`--keep-months 24`를 걸면 prune 이 2024-09 이전을 지우는데 업로드는 2024-06 이후를
+올리므로, 2024-06~09가 **매주 재전송·재삭제되는 왕복**이 생긴다. 그래서 옵션을 없앴다
+(`tests/unit/test_migrate_to_supabase.py`가 이 불변식을 잠근다).
 
 `SUPABASE_DATABASE_URL`은 `DATABASE_URL`과 분리돼 있다 — PC의 수집·분석은 계속 로컬
 SQLite에 하고 동기화 대상만 따로 지정하기 위함이다. 배포 앱 쪽 키는 로컬 `.env`가 아니라
