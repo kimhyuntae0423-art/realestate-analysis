@@ -108,10 +108,6 @@ COL_SPEC = {
     "jeonse_quality_score": ("전세가율적정점수", "pct"),
     "jeonse_risk":          ("역전세리스크", "txt"),
     "leverage_mult":        ("갭레버리지(배)", "pct"),
-    "supply_pressure_score": ("입주물량점수(역)", "pct"),
-    "supply_units_12mo":   ("12개월입주물량(호)", "raw_int"),
-    "population_score":    ("인구순유입점수", "pct"),
-    "net_inflow_12mo":     ("12개월순유입(명)", "raw_int"),
     # 적정가 분석
     "jeonse_median":    ("전세환산중위가", "ueok"),
     "fair_value":       ("적정가(역산)", "ueok"),

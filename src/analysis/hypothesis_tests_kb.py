@@ -15,7 +15,7 @@ from scipy.stats import spearmanr
 from sqlalchemy import select
 
 from src.database.repository import session_scope
-from src.database.models import SupplySchedule, KbSentimentIndex, KbPriceSeries
+from src.database.models import KbSentimentIndex, KbPriceSeries
 from src.analysis.hypothesis_lab import HypothesisResult, _empty_result, reindex_monthly
 from src.analysis.hypothesis_tests_valuation import SUPPLY_SIDO_NAMES
 
@@ -37,46 +37,6 @@ def _kb_price_growth_panel() -> pd.DataFrame:
     g = reindex_monthly(g, ["sido"], "ym").sort_values(["sido", "ym"])
     g["growth"] = g.groupby("sido")["value"].pct_change()
     return g
-
-
-# ─── 13. 입주물량(공급과잉) 효과 — KB 가격 기준 ─────────────────────────
-def test_supply_leads_price_decline_kb() -> HypothesisResult:
-    sido_label = "·".join(SUPPLY_SIDO_NAMES.values())
-    meta = dict(
-        id="supply_glut_kb_price",
-        title=f"입주물량(공급과잉) 효과 — KB 가격 기준 (시/도: {sido_label})",
-        claim="입주물량이 몰리는 시기·지역일수록 KB 중위가격 기준으로도 다음달 가격이 덜 오른다",
-        method="시/도 단위 월별 입주물량(supply_schedule, KOSIS 실적) vs 다음달 KB 중위가격 "
-               "변화율의 Spearman 상관 — supply_glut(우리 ppp 기준)의 KB 가격판 재현",
-        expected_sign=-1,
-        caveats="supply_glut과 신호(공급)는 동일, 가격만 KB 공식 중위가격으로 교체한 교차검증. "
-                "결과가 같으면 신뢰도 강화, 다르면 원래 가설의 ppp 계산(구성 효과 등 노이즈) "
-                "재검토 필요. KB 가격은 시/도 단위 집계값이라 우리 ppp보다 해상도는 낮지만 "
-                "표본구성 변화(어떤 단지가 팔렸는지)에 덜 민감함.",
-    )
-    growth_df = _kb_price_growth_panel()
-    if growth_df.empty:
-        return _empty_result(**meta)
-    growth_df = growth_df[["sido", "ym", "growth"]].dropna()
-
-    with session_scope() as s:
-        rows = s.execute(select(SupplySchedule.region_code, SupplySchedule.move_in_date,
-                                 SupplySchedule.units)).all()
-    supply_df = pd.DataFrame(rows, columns=["sido", "move_in_date", "units"])
-    supply_df = supply_df[supply_df["sido"].isin(SUPPLY_SIDO_NAMES)]
-    if supply_df.empty:
-        return _empty_result(**meta)
-    supply_df = supply_df.copy()
-    supply_df["ym"] = pd.to_datetime(supply_df["move_in_date"]).dt.to_period("M")
-    supply_g = supply_df.groupby(["sido", "ym"])["units"].sum().reset_index()
-    supply_g["ym"] = supply_g["ym"] + 1  # 이번달 입주물량을 다음달 라벨로 이동(선행 정렬)
-
-    merged = growth_df.merge(supply_g, on=["sido", "ym"], how="inner")
-    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(merged) < 2:
-        return _empty_result(**meta)
-    rho, _ = spearmanr(merged["units"], merged["growth"])
-    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
 
 
 # ─── 14. KB 매수우위지수 선행 — KB 가격 기준 ────────────────────────────

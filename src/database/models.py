@@ -82,42 +82,6 @@ class AptRent(Base):
     )
 
 
-class SupplySchedule(Base):
-    """시군구별 입주 예정 물량 (KOSIS/HUG 수집)."""
-    __tablename__ = "supply_schedule"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    region_code = Column(String(5), index=True, nullable=False)
-    move_in_date = Column(Date, index=True, nullable=False)  # 입주월 1일
-    units = Column(Integer, nullable=False)                  # 입주 호수
-    source = Column(String(50))                              # kosis / hug / manual
-    note = Column(String(200))
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("region_code", "move_in_date", "source",
-                         name="uq_supply"),
-    )
-
-
-class PopulationFlow(Base):
-    """시군구별 월별 인구 순유입 (KOSIS 주민등록 인구이동)."""
-    __tablename__ = "population_flow"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    region_code = Column(String(5), index=True, nullable=False)
-    flow_date = Column(Date, index=True, nullable=False)     # 해당월 1일
-    inflow = Column(Integer, default=0)                       # 전입
-    outflow = Column(Integer, default=0)                      # 전출
-    net_inflow = Column(Integer, nullable=False)              # 전입 - 전출
-    source = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("region_code", "flow_date", name="uq_popflow"),
-    )
-
-
 class KbSentimentIndex(Base):
     """시/도별 월간 KB 매수우위지수 (KB부동산 데이터허브)."""
     __tablename__ = "kb_sentiment_index"

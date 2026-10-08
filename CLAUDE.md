@@ -81,10 +81,11 @@ realestate-analysis/
 │   ├── collect_data.py      # 일괄 데이터 수집
 │   ├── scheduled_refresh.py # 정기 갱신 본체 (작업 스케줄러가 .bat 경유로 호출)
 │   ├── migrate_to_supabase.py # 로컬 SQLite → Supabase 단방향 동기화
+│   ├── bootstrap_supabase.py # 빈 Supabase 프로젝트에 스키마 세우기
 │   ├── run_backtest.py      # 백테스트 실행
 │   ├── quarterly_strategy_check.py # 전략 분기 재검증
-│   └── backfill_*.py / import_kosis_csv.py / export_summary.py
-├── tests/                   # 269개 (pytest)
+│   └── backfill_*.py / export_summary.py
+├── tests/                   # 264개 (pytest)
 └── .env                     # API 키 (로컬 전용, git 제외)
 ```
 
@@ -102,11 +103,14 @@ realestate-analysis/
 | 한국은행 ECOS | 기준금리·기대인플레·M1/M2·주담대잔액, 부동산원 실거래가지수(`kab_apt_price_idx_*`) | `src/collectors/ecos.py`, `.env` `ECOS_API_KEY` | 정상 (`ecos_series`, 11개 시리즈) |
 | KB 부동산 | 가격지수(`kb_price_series`), 매수우위지수(`kb_sentiment_index`) | `src/collectors/kb_price.py`, `src/collectors/kb_sentiment.py` | 정상 (키 불필요) |
 | 카카오 로컬 API | 좌표 변환·입지 점수 | `src/collectors/kakao_api.py` | 정상 |
-| 통계청 KOSIS | 인구이동(`population_flow`) | `scripts/backfill_population_api.py`, `scripts/import_kosis_csv.py` | 정상 — 키 발급 완료, 14,450행 |
 
-위 5개 중 국토부·ECOS·KB·KOSIS 인구이동은 `scripts/scheduled_refresh.py`가 주 1회 자동
-재수집한다. 입주물량(`supply_schedule`, 3,187행)은 KOSIS가 시군구 단위 API를 안 줘서
-CSV 수동 업로드만 가능 — 자동화 불가라 정기 갱신에서 빠져 있다.
+위 4개 전부 `scripts/scheduled_refresh.py`가 주 1회 자동 재수집한다.
+
+🚫 **통계청 KOSIS 수집은 2026-10-08에 영구 중단했다 — 되살리지 말 것.** 인구이동
+(`population_flow`)·입주물량(`supply_schedule`) 테이블과 수집기(`backfill_population_api.py`,
+`import_kosis_csv.py`), 그 데이터로 돌던 가설 3개·신호 함수 2개를 전부 삭제했다. 근거는
+아래 "삭제된 지표" 절 참고. `.env`에 `KOSIS_API_KEY`가 남아 있어도 이 용도로는 쓰지 않는다.
+두 테이블이 "없다/0행이다"를 결함으로 보고 복구를 제안하지 말 것 — 의도된 삭제다.
 
 ### 신뢰성 위계 (분석 시 우선순위)
 1. 국토부 실거래가 (실제 계약 데이터) → 2. 한국부동산원 시세지수 →
@@ -264,31 +268,40 @@ PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 
 | `apt_trade` / `apt_rent` | 1,011,307 / 3,190,610행 |
 | `ecos_series` | 1,060행 / 11개 시리즈 (`base_rate`, `expected_inflation`, `m1_eop_raw`, `m2_eop_raw`, `m2_eop_sa`, `mortgage_loan_eop`, `kab_apt_price_idx_00/11/26/28/41`) |
 | `kb_price_series` / `kb_sentiment_index` | 1,064 / 252행 |
-| `population_flow` / `supply_schedule` | 14,450행 (2021-08~2026-08) / 3,187행 (2010-07~2026-03) |
-| 로컬 DB 크기 | 1,275MB |
+| 로컬 DB 크기 | 1,275MB (테이블 6개: `apt_trade`·`apt_rent`·`collection_log`·`ecos_series`·`kb_price_series`·`kb_sentiment_index`) |
 | Supabase 복제본 | **일시정지 상태 — 복구 대기** (2026-10-07 확인). 복구 후 재측정할 것 |
 | 매크로 타이밍 | score 61.4, **coverage 1.0, missing 없음** — ECOS 키가 살아 있어 5개 신호 전부 채워짐 |
-| 실험실 가설 | 정기 재검증 18개 (지지 11 / 기각 2 / 불확실 5, 2026-10-06 실행). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
-| 테스트 | 274개 전부 통과 |
+| 실험실 가설 | 정기 재검증 **15개** (2026-10-08에 3개 삭제, 아래 참고). 마지막 18개 실행은 2026-10-06 (지지 11 / 기각 2 / 불확실 5). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
+| 테스트 | 264개 전부 통과 |
 
 숫자를 갱신할 때는 로그가 아니라 DB를 직접 세어서 쓸 것 — 이 표가 2026-09-21 기준으로
 한참 틀어져 있었다(실거래 기간 28→62개월, 전월세 1.33M→3.19M행).
 
-**`recommend.py` 가 두 보조 지표를 점수 산식에서 빼는 근거는 "데이터 부재"가 아니다.**
-한때 그렇게 적혀 있었으나 사실이 아니다 — `population_flow`·`supply_schedule` 둘 다
-데이터가 있고, 이에 의존하는 가설 3개도 정상적으로 표본을 낸다. 실제 근거는 상관이
-약하거나 부호가 반대라는 것이다(2026-10-06 실행 기준):
+## 삭제된 지표 — 입주물량·인구이동 (2026-10-08)
 
-| 가설 | n | Spearman ρ | 기대 부호 |
-|---|---|---|---|
-| `supply_glut` | 212 | -0.015 | - (부호는 맞으나 노이즈 수준) |
-| `supply_glut_kb_price` | 228 | -0.095 | - (셋 중 가장 강하나 여전히 약함) |
-| `population_migration` | 3,598 | -0.016 | **+ (부호 반대)** |
+🚫 **되살리지 말 것.** 사용자 명시 결정이다.
 
-즉 `recommend.py:805`의 "ρ 약하거나 역상관" 주석이 맞다. 다만 두 지표는 **화면에는
-표시되므로**(`supply_pressure_score`·`population_score`, 비면 `fillna(50.0)` 중립값)
-Supabase 복제본에 빠져 있으면 배포 앱만 중립값을 보여주는 불일치가 생긴다 —
-그래서 2026-10-08에 `SMALL_TABLES`에 넣었다.
+**무엇을 지웠나**: `population_flow`·`supply_schedule` 테이블과 모델, KOSIS 수집기 2개,
+신호 함수 2개(`forward_signals.supply_pressure`·`population_inflow`), 가설 3개
+(`supply_glut`·`supply_glut_kb_price`·`population_migration`), UI 컬럼 4개,
+Supabase 복제 대상 등록.
+
+**왜**: 세 가설이 2026-08-12~10-06 **22회 실행 내내 전부 "🟡 불확실"**이었다. ρ 부호까지
+뒤집혔다(`supply_glut` +0.041→−0.015, `population_migration` +0.008→−0.016) — 노이즈다.
+`supply_glut_kb_price`는 ρ가 −0.0954, n=228로 **소수 4자리까지 고정**이었는데,
+`supply_schedule`이 수동 CSV(2026-05-23 업로드, 데이터 2026-03까지)라 입력이 안 변하기
+때문이다. 즉 다시 돌려도 영원히 같은 값이 나온다. `recommend.py` 종합점수 산식에는
+원래부터 안 들어가 있었고(근거: ρ 약하거나 역상관), 화면에만 표시되고 있었다.
+
+**남긴 것**: 과거 판정은 `data/experiments/hypothesis_log.json`에 그대로 있고 실험실
+화면의 "판정 이력"에서 계속 보인다(이 화면은 로그에서만 렌더링하므로 등록 해제와 무관).
+삭제 직전 데이터는 `data/raw/kosis/_deleted_20261008_*.csv`로 덤프해 뒀다(git 제외,
+외장하드에만 있음). 원천 CSV `supply_sido_사용검사실적_20260523.csv`도 그대로 둔다.
+수집기 코드는 git 히스토리에 있다.
+
+⚠️ **혼동 주의**: 지역분석 화면의 "공급압박"은 **다른 파이프라인**이다 —
+`config/supply.json` 기반 `src/analysis/supply.py::supply_pressure_score()`로 살아 있다.
+이름이 비슷하다고 같이 지우거나, 없어진 줄 알고 다시 만들지 말 것.
 
 숫자를 갱신할 때는 `logs/scheduled_refresh.log` 말미가 아니라 DB를 직접 세어서 쓸 것
 (로그의 "N행 교체"는 Supabase에 밀어넣은 최근 3개월치이지 전체 행수가 아니다).

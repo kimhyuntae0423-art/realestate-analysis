@@ -9,8 +9,6 @@ import pytest
 
 from src.analysis import forward_signals as fs
 from src.database.repository import upsert_trades, upsert_rents
-from src.database.models import SupplySchedule, PopulationFlow
-from src.database.repository import session_scope
 
 AS_OF = pd.Timestamp("2026-06-01").date()
 
@@ -65,31 +63,6 @@ def test_jeonse_ratio_acceleration_detects_rising_ratio():
     row = out.iloc[0]
     assert row["jeonse_accel_%p"] > 0
     assert row["jeonse_accel_score"] > 50
-
-
-def test_supply_pressure_scores_inversely_to_units():
-    with session_scope() as s:
-        s.add(SupplySchedule(region_code="11680", move_in_date=AS_OF, units=0, source="test"))
-        s.add(SupplySchedule(region_code="11650", move_in_date=AS_OF, units=10000, source="test"))
-    out = fs.supply_pressure(as_of=AS_OF)
-    assert not out.empty
-    low_supply = out[out["region_code"] == "11680"].iloc[0]["supply_pressure_score"]
-    high_supply = out[out["region_code"] == "11650"].iloc[0]["supply_pressure_score"]
-    assert low_supply == 100.0
-    assert high_supply == 0.0
-
-
-def test_population_inflow_scores_around_midpoint_at_zero_net():
-    with session_scope() as s:
-        s.add(PopulationFlow(region_code="11680", flow_date=AS_OF,
-                              inflow=100, outflow=100, net_inflow=0, source="test"))
-        s.add(PopulationFlow(region_code="11650", flow_date=AS_OF,
-                              inflow=1000, outflow=0, net_inflow=1000, source="test"))
-    out = fs.population_inflow(as_of=AS_OF)
-    zero_net = out[out["region_code"] == "11680"].iloc[0]["population_score"]
-    positive_net = out[out["region_code"] == "11650"].iloc[0]["population_score"]
-    assert zero_net == 50.0
-    assert positive_net > 50.0
 
 
 def test_region_market_score_ranks_by_median_ppp():

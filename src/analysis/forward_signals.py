@@ -8,8 +8,12 @@
 시그널 목록:
   1. relative_strength       단지/평형 가격모멘텀 vs 시군구 평균
   2. jeonse_ratio_acceleration  전세가율 가속도 (매매 전환 신호)
-  3. supply_pressure         입주물량 압력 (역지표) - 데이터 있을 때만
-  4. population_inflow       시군구별 인구 순유입 - 데이터 있을 때만
+
+입주물량 압력(supply_pressure)·인구 순유입(population_inflow) 두 시그널은
+2026-10-08에 삭제했다 — 원천 데이터(supply_schedule·population_flow) 수집을
+중단했고, 두 신호 모두 점수 산식에 쓰이지 않으면서 상관도 노이즈 수준이었다.
+지역분석 화면의 "공급압박"은 config/supply.json 기반의 별개 함수
+(src.analysis.supply.supply_pressure_score)이며 그대로 유지된다.
 """
 from __future__ import annotations
 from datetime import date, timedelta
@@ -145,86 +149,6 @@ def jeonse_ratio_acceleration(
                        "jeonse_accel_%p", "jeonse_accel_score"]]
 
 
-# ─── 3. 입주물량 압력 (역지표, KOSIS/HUG 데이터 필요) ───────────────
-
-def supply_pressure(as_of: date | None = None, lookahead_months: int = 12) -> pd.DataFrame:
-    """시군구별 입주물량 압력. 호수 ↑ → 점수 ↓ (역지표, 0~100).
-
-    데이터 소스 우선순위:
-      1. SupplySchedule 5자리(시군구) 직접 등록값
-      2. SupplySchedule 2자리(시도) × 시군구 인구 가중치 (population_flow 전입 share)
-
-    KOSIS는 시군구 입주물량을 제공하지 않아 시도 단위로 받아 분배함.
-    사용검사실적은 향후 예정이 아닌 '직전 12개월' 실적이므로 lookback으로 동작.
-
-    주의: src.analysis.supply.supply_pressure_score() 는 이름이 비슷하지만
-    극성이 반대(점수 ↑ = 압박 ↑)이고 config/supply.json 수동 등록 기반의 별도 함수다.
-    서로 다른 파이프라인이므로 혼용하지 말 것.
-    """
-    try:
-        from src.database.models import SupplySchedule, PopulationFlow, SessionLocal
-        from sqlalchemy import select
-    except ImportError:
-        return pd.DataFrame()
-
-    as_of = as_of or date.today()
-    # 사용검사실적은 과거 12개월 누적을 가까운 미래 압력의 proxy로 사용
-    start = as_of - timedelta(days=30 * lookahead_months)
-    try:
-        with SessionLocal() as s:
-            q = select(SupplySchedule).where(
-                SupplySchedule.move_in_date >= start,
-                SupplySchedule.move_in_date <= as_of,
-            )
-            df = pd.read_sql(q, s.bind)
-            pq = select(PopulationFlow).where(
-                PopulationFlow.flow_date >= start,
-                PopulationFlow.flow_date <= as_of,
-            )
-            pdf = pd.read_sql(pq, s.bind)
-    except Exception:
-        return pd.DataFrame()
-    if df.empty:
-        return pd.DataFrame()
-
-    df["code_len"] = df["region_code"].str.len()
-    direct = (df[df["code_len"] == 5]
-              .groupby("region_code")["units"].sum()
-              .rename("supply_units_12mo").reset_index())
-    sido = (df[df["code_len"] == 2]
-            .groupby("region_code")["units"].sum()
-            .rename("sido_units_12mo").reset_index()
-            .rename(columns={"region_code": "sido"}))
-
-    # 시도 단위만 있는 경우 시군구로 분배. population_flow 전입을 가중치로 사용.
-    fallback = pd.DataFrame()
-    if not sido.empty and not pdf.empty:
-        pdf = pdf[pdf["region_code"].str.len() == 5].copy()
-        pdf["sido"] = pdf["region_code"].str[:2]
-        # 시군구 12mo 전입 합 (양수 보장: 최소 1 처리)
-        w = pdf.groupby(["sido", "region_code"])["inflow"].sum().rename("inflow_12mo").reset_index()
-        w["inflow_12mo"] = w["inflow_12mo"].clip(lower=1)
-        # 시도 내 시군구 share
-        sido_total = w.groupby("sido")["inflow_12mo"].transform("sum")
-        w["weight"] = w["inflow_12mo"] / sido_total
-        fallback = w.merge(sido, on="sido", how="inner")
-        fallback["supply_units_12mo"] = (fallback["sido_units_12mo"] * fallback["weight"]).round(0)
-        fallback = fallback[["region_code", "supply_units_12mo"]]
-        # 직접 등록값이 있는 시군구는 fallback에서 제외
-        if not direct.empty:
-            fallback = fallback[~fallback["region_code"].isin(direct["region_code"])]
-
-    g = pd.concat([direct, fallback], ignore_index=True) if not fallback.empty else direct
-    if g.empty:
-        return g
-
-    # 1만호 → 0점 (강한 압박), 0호 → 100점 (압박 없음)
-    g["supply_pressure_score"] = (
-        100 - (g["supply_units_12mo"].clip(0, 10000) / 10000 * 100)
-    ).round(1)
-    return g
-
-
 # ─── 6. 시군구 시장가치 (평당가 백분위) ─────────────────────────────
 
 def region_market_score(
@@ -336,38 +260,3 @@ def apt_prestige_score(
     if "dong" in apt.columns:
         out_cols = out_cols + ["dong"]
     return apt[out_cols]
-
-
-# ─── 4. 인구 순유입 (KOSIS 데이터 필요) ────────────────────────────
-
-def population_inflow(as_of: date | None = None, lookback_months: int = 12) -> pd.DataFrame:
-    """시군구별 최근 N개월 순유입 인구 (전입 - 전출).
-
-    데이터는 src.database.models.PopulationFlow (있다면) 또는 fallback empty.
-    """
-    try:
-        from src.database.models import PopulationFlow, SessionLocal
-        from sqlalchemy import select
-    except ImportError:
-        return pd.DataFrame()
-
-    as_of = as_of or date.today()
-    start = as_of - timedelta(days=30 * lookback_months)
-    try:
-        with SessionLocal() as s:
-            q = select(PopulationFlow).where(
-                PopulationFlow.flow_date >= start,
-                PopulationFlow.flow_date <= as_of,
-            )
-            df = pd.read_sql(q, s.bind)
-    except Exception:
-        return pd.DataFrame()
-    if df.empty:
-        return pd.DataFrame()
-
-    g = df.groupby("region_code")["net_inflow"].sum().rename("net_inflow_12mo").reset_index()
-    # ±5천명 → 0~100 점수 (대도시 기준 보정)
-    g["population_score"] = (
-        (g["net_inflow_12mo"].clip(-5000, 5000) + 5000) / 10000 * 100
-    ).round(1)
-    return g

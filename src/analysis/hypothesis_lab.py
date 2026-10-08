@@ -201,10 +201,11 @@ def get_all_hypotheses() -> list:
         # hypothesis_tests_spillover.test_dongtan_spillover_to_adjacent 는 결론이 나서
         # 제외(2026-09-21) — 결론과 제외 이유는 그 모듈 docstring 참고
         v.test_jeonse_ratio_leads_price,
-        v.test_supply_leads_price_decline,
-        v.test_population_migration_leads_price,
+        # 입주물량(supply_glut·supply_glut_kb_price)·인구이동(population_migration) 가설 3개는
+        # 2026-10-08 삭제. 22회 실행 내내 전부 "불확실"이었고 ρ 부호까지 뒤집혔다(노이즈).
+        # 원천 데이터(supply_schedule·population_flow) 수집도 같이 중단했다 —
+        # 과거 판정은 hypothesis_log.json 에 남아 실험실 "판정 이력"에서 계속 보인다.
         v.test_buyer_sentiment_leads_price,
-        k.test_supply_leads_price_decline_kb,
         k.test_buyer_sentiment_leads_price_kb,
         e.test_money_supply_leads_price,
         e.test_price_leads_money_supply,

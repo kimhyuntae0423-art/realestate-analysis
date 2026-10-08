@@ -14,12 +14,14 @@ from scipy.stats import spearmanr
 from sqlalchemy import select
 
 from src.database.repository import fetch_trades_df, fetch_rents_df, session_scope
-from src.database.models import SupplySchedule, PopulationFlow, KbSentimentIndex
+from src.database.models import KbSentimentIndex
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.hypothesis_lab import (HypothesisResult, _empty_result,
                                           region_growth_via_unit_tracking, jeonse_ratio_via_unit_matching)
 
-# supply_schedule은 시/도(2자리) 단위. 실거래 DB에 해당 시/도가 있는 경우만 검증 가능.
+# 시/도(2자리) 단위 가설이 쓰는 대상 광역. 실거래 DB에 데이터가 있는 곳만 검증 가능하다.
+# (이름은 입주물량 가설에서 유래했으나 그 가설은 2026-10-08 삭제됐고, 지금은 KB
+#  매수우위지수 가설이 같은 필터를 쓴다)
 SUPPLY_SIDO_NAMES = {"11": "서울", "41": "경기", "28": "인천", "26": "부산"}
 
 
@@ -79,101 +81,6 @@ def test_jeonse_ratio_leads_price(months: int = 60, min_deals: int = 5,
     return HypothesisResult(statistic=float(rho), n=len(merged), explored=explored, **meta)
 
 
-# ─── 10. 입주물량(공급과잉) 효과 ───────────────────────────────────────
-def test_supply_leads_price_decline(months: int = 60, area_tol: float = 5.0,
-                                     min_unit_deals: int = 1) -> HypothesisResult:
-    sido_label = "·".join(SUPPLY_SIDO_NAMES.values())
-    meta = dict(
-        id="supply_glut",
-        title=f"입주물량(공급과잉) 효과 (시/도 단위: {sido_label})",
-        claim="입주물량이 몰리는 시기·지역일수록 가격이 하락한다",
-        method=f"시/도 단위({sido_label}) 월별 입주물량(supply_schedule, KOSIS 실적)과 단지+평형 "
-               f"추적 매매가 성장률(구성효과 제거)을 시/도로 집계 — 이번달 입주물량(t) vs 다음달 "
-               f"가격 변화율(t+1)의 Spearman 상관, 최근 {months}개월. 음수면 공급 많을수록 "
-               "다음달 덜 오른다는 뜻(가설 지지)",
-        expected_sign=-1,
-        caveats="supply_schedule은 시/도(광역) 단위라 시군구 세부 공급 편차를 반영 못함. "
-                "원천 KOSIS 수집기는 이미 폐기돼(API 응답 문제로 이번 세션에 삭제) 2026-03 "
-                "이후 데이터는 갱신되지 않음. 실거래 DB에 있는 4개 광역으로만 검증 가능. "
-                "지역 전체 중위가 기준 성장률은 KB 공식 가격지수와 상관이 거의 없었음(rho=-0.1 "
-                "안팎) — 단지+평형 추적 방식으로 성장률을 계산해 구성효과를 줄임.",
-    )
-    df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
-    if df_trade.empty:
-        return _empty_result(**meta)
-    df_trade = df_trade.copy()
-    df_trade["sido"] = df_trade["region_code"].str[:2]
-    df_trade = df_trade[df_trade["sido"].isin(SUPPLY_SIDO_NAMES)]
-    if df_trade.empty:
-        return _empty_result(**meta)
-    trade_g = region_growth_via_unit_tracking(df_trade, ["sido"], area_tol, min_unit_deals)
-    if trade_g.empty:
-        return _empty_result(**meta)
-
-    with session_scope() as s:
-        rows = s.execute(select(SupplySchedule.region_code, SupplySchedule.move_in_date,
-                                 SupplySchedule.units)).all()
-    supply_df = pd.DataFrame(rows, columns=["sido", "move_in_date", "units"])
-    supply_df = supply_df[supply_df["sido"].isin(SUPPLY_SIDO_NAMES)]
-    if supply_df.empty:
-        return _empty_result(**meta)
-    supply_df = supply_df.copy()
-    supply_df["ym"] = pd.to_datetime(supply_df["move_in_date"]).dt.to_period("M")
-    supply_g = supply_df.groupby(["sido", "ym"])["units"].sum().reset_index()
-    supply_g["ym"] = supply_g["ym"] + 1  # 이번달 입주물량을 다음달 라벨로 이동(선행 정렬)
-
-    growth_df = trade_g[["sido", "ym", "growth"]].dropna()
-    merged = growth_df.merge(supply_g, on=["sido", "ym"], how="inner")
-    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(merged) < 2:
-        return _empty_result(**meta)
-    rho, _ = spearmanr(merged["units"], merged["growth"])
-    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
-
-
-# ─── 11. 인구이동 선행 ─────────────────────────────────────────────────
-def test_population_migration_leads_price(months: int = 60, area_tol: float = 5.0,
-                                            min_unit_deals: int = 1) -> HypothesisResult:
-    meta = dict(
-        id="population_migration",
-        title="인구이동 선행",
-        claim="순유입 인구가 늘어나는 지역일수록 가격이 먼저 오른다",
-        method=f"시군구x월 패널. population_flow의 순유입(전입-전출)과 단지+평형 추적 매매가 "
-               f"성장률(구성효과 제거) — 이번달 순유입(t) vs 다음달 가격 변화율(t+1)의 "
-               f"Spearman 상관, 최근 {months}개월",
-        expected_sign=1,
-        caveats="population_flow는 2021-08부터 시작(2024-05 이전 구간은 이번 세션에 KOSIS API로 "
-                "추가 백필) — 다른 5년치 가설보다는 데이터 이력이 짧음. 순유입이 가격을 미는 게 "
-                "아니라 이미 오르는 지역으로 사람이 몰리는 역방향 인과일 수 있어 해석 주의. "
-                "지역 전체 중위가 기준 성장률 대신 단지+평형 추적 방식(구성효과 제거)으로 계산.",
-    )
-    df_trade = fetch_trades_df(date_from=date.today() - timedelta(days=30 * months))
-    if df_trade.empty:
-        return _empty_result(**meta)
-    trade_g = region_growth_via_unit_tracking(df_trade, ["region_code"], area_tol, min_unit_deals)
-    if trade_g.empty:
-        return _empty_result(**meta)
-
-    with session_scope() as s:
-        rows = s.execute(select(PopulationFlow.region_code, PopulationFlow.flow_date,
-                                 PopulationFlow.net_inflow)).all()
-    flow_df = pd.DataFrame(rows, columns=["region_code", "flow_date", "net_inflow"])
-    if flow_df.empty:
-        return _empty_result(**meta)
-    flow_df = flow_df.copy()
-    flow_df["ym"] = pd.to_datetime(flow_df["flow_date"]).dt.to_period("M")
-    flow_g = flow_df.groupby(["region_code", "ym"])["net_inflow"].sum().reset_index()
-    flow_g["ym"] = flow_g["ym"] + 1  # 이번달 순유입을 다음달 라벨로 이동(선행 정렬)
-
-    growth_df = trade_g[["region_code", "ym", "growth"]].dropna()
-    merged = growth_df.merge(flow_g, on=["region_code", "ym"], how="inner")
-    merged = merged.replace([np.inf, -np.inf], np.nan).dropna()
-    if len(merged) < 2:
-        return _empty_result(**meta)
-    rho, _ = spearmanr(merged["net_inflow"], merged["growth"])
-    return HypothesisResult(statistic=float(rho), n=len(merged), **meta)
-
-
 # ─── 12. KB 매수우위지수 선행 ───────────────────────────────────────────
 def test_buyer_sentiment_leads_price(months: int = 60, area_tol: float = 5.0,
                                       min_unit_deals: int = 1) -> HypothesisResult:
@@ -188,7 +95,7 @@ def test_buyer_sentiment_leads_price(months: int = 60, area_tol: float = 5.0,
         expected_sign=1,
         caveats="recommend.py의 자체 매수심리 proxy(_buyer_sentiment_signals)와는 별개 지표 — "
                 "이건 KB가 공인중개사 설문으로 직접 발표하는 실제 지수, 자체 proxy와의 정확도 "
-                "비교는 하지 않음(별도 가설로 가능). 시/도 단위라 해상도 거침(supply_glut과 동일한 한계). "
+                "비교는 하지 않음(별도 가설로 가능). 시/도(광역) 단위라 시군구 세부 편차는 못 잡음. "
                 "지역 전체 중위가 기준으로 계산했을 땐 KB 가격 기준 재현 버전(buyer_sentiment_"
                 "leads_price_kb)과 정반대 결론이 나왔었음 — 단지+평형 추적으로 성장률을 다시 계산.",
     )

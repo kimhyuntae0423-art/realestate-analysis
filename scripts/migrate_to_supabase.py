@@ -51,13 +51,7 @@ SQLITE_PATH = ROOT / "data" / "processed" / "realestate.db"
 # 월 파티션이 있는 테이블(deal_year/deal_month 기준으로 비교·교체)
 MONTHLY_TABLES = ("apt_trade", "apt_rent")
 # 통째로 갈아끼우는 소형 테이블
-#
-# population_flow / supply_schedule 은 오래 0행이라 빠져 있었는데, 그 사이 데이터가
-# 들어오면서(14,450 / 3,187행) 로컬과 배포 앱이 다른 숫자를 보여주게 됐다 —
-# recommend.py 가 두 테이블을 읽어 공급압박·인구순유입 컬럼을 만들고, 비면
-# fillna(50.0) 중립값을 채우기 때문이다(2026-10-08 추가).
-SMALL_TABLES = ("ecos_series", "kb_price_series", "kb_sentiment_index",
-                "population_flow", "supply_schedule")
+SMALL_TABLES = ("ecos_series", "kb_price_series", "kb_sentiment_index")
 
 # 로컬 전용 — 수집 이력이라 배포 앱이 읽지 않는다
 LOCAL_ONLY_TABLES = ("collection_log",)

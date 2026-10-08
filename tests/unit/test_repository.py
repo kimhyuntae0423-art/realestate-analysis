@@ -6,11 +6,11 @@ from datetime import date
 import pandas as pd
 
 from src.database.repository import (
-    upsert_trades, upsert_rents, upsert_population_flow, upsert_kb_sentiment, upsert_kb_price_series,
+    upsert_trades, upsert_rents, upsert_kb_sentiment, upsert_kb_price_series,
     fetch_trades_df, fetch_rents_df, log_collection,
 )
 from src.database.models import (
-    CollectionLog, PopulationFlow, KbSentimentIndex, KbPriceSeries, SessionLocal,
+    CollectionLog, KbSentimentIndex, KbPriceSeries, SessionLocal,
 )
 
 
@@ -53,25 +53,6 @@ def test_upsert_trades_large_batch_does_not_hit_sqlite_variable_limit():
 
     # 동일 배치 재삽입 -> 청크 경계와 무관하게 전부 중복 판정(0건)돼야 함
     assert upsert_trades(rows) == 0
-
-
-def _population_row(region="11680", d=date(2025, 6, 1), inflow=100, outflow=80, source="test"):
-    return {"region_code": region, "flow_date": d, "inflow": inflow, "outflow": outflow,
-            "net_inflow": inflow - outflow, "source": source}
-
-
-def test_upsert_population_flow_deduplicates_by_region_and_date():
-    row = _population_row()
-    n1 = upsert_population_flow([row])
-    n2 = upsert_population_flow([row])  # 동일 (region_code, flow_date) 재삽입 -> 무시
-    assert n1 == 1
-    assert n2 == 0
-    with SessionLocal() as s:
-        assert s.query(PopulationFlow).count() == 1
-
-
-def test_upsert_population_flow_empty_list_is_noop():
-    assert upsert_population_flow([]) == 0
 
 
 def _kb_sentiment_row(region="11", d=date(2025, 6, 1), sentiment_index=100.0):

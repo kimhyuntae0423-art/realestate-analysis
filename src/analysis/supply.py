@@ -47,9 +47,9 @@ def supply_pressure_score(region_code: str, lookahead_months: int = 12) -> float
     이 함수는 '공급 부담 지수'이므로 가격 상승 점수에 반대로 작용.
     선형 스케일: n/50, 5000호 이상은 100점 상한 (예: 1000호=20점, 3000호=60점).
 
-    주의: src.analysis.forward_signals.supply_pressure() 는 이름이 비슷하지만
-    극성이 반대(점수 ↑ = 압박 ↓)이고 DB(SupplySchedule) 기반의 별도 함수다.
-    서로 다른 파이프라인이므로 혼용하지 말 것.
+    이름이 비슷한 DB 기반 함수 forward_signals.supply_pressure() 가 따로 있었으나
+    (극성이 반대였다) 2026-10-08에 원천 데이터 수집과 함께 삭제됐다. 지금은 입주물량
+    관련 지표가 이 함수 하나뿐이다 — 되살려 중복을 만들지 말 것.
     """
     n = supply_for_region(region_code, lookahead_months)
     if n <= 0:

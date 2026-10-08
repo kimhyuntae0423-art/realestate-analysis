@@ -72,8 +72,9 @@ def test_prune_cutoff_equals_upload_lower_bound():
 def test_every_model_table_is_either_replicated_or_declared_local_only():
     """새 테이블이 생겼을 때 복제 여부를 정하지 않고 지나치는 걸 막는다.
 
-    population_flow·supply_schedule 이 오래 0행이라 복제 대상에서 빠져 있었고,
-    나중에 데이터가 들어오자 배포 앱만 중립값(50.0)을 보여주는 불일치가 생겼다.
+    예전에 population_flow·supply_schedule 이 0행이던 시절 복제 대상에서 빠진 채
+    잊혀졌다가, 데이터가 들어오자 배포 앱만 중립값(50.0)을 보여주는 불일치가 됐다
+    (두 테이블은 2026-10-08에 수집째로 삭제됨).
     """
     from src.database.models import Base
 

@@ -24,8 +24,7 @@ from src.database.repository import fetch_trades_df, fetch_rents_df
 from src.analysis.gap_analysis import to_jeonse_equiv
 from src.analysis.loan import get_ltv_pct, get_zone, vectorized_loan_equity
 from src.analysis.forward_signals import (
-    apt_relative_strength, jeonse_ratio_acceleration,
-    supply_pressure, population_inflow, apt_prestige_score,
+    apt_relative_strength, jeonse_ratio_acceleration, apt_prestige_score,
     region_market_score,
 )
 
@@ -775,20 +774,6 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
     g["jeonse_accel_score"] = g.get(
         "jeonse_accel_score", pd.Series(50.0, index=g.index)).fillna(50.0)
 
-    sp = supply_pressure()
-    if not sp.empty:
-        g = g.merge(sp[["region_code", "supply_pressure_score"]],
-                    on="region_code", how="left")
-    g["supply_pressure_score"] = g.get(
-        "supply_pressure_score", pd.Series(50.0, index=g.index)).fillna(50.0)
-
-    pop = population_inflow()
-    if not pop.empty:
-        g = g.merge(pop[["region_code", "population_score"]],
-                    on="region_code", how="left")
-    g["population_score"] = g.get(
-        "population_score", pd.Series(50.0, index=g.index)).fillna(50.0)
-
     # ── 단지 prestige (시군구 내 대장 점수) + dong 정보 ──
     pres = apt_prestige_score(months=months, area_tol=area_tol)
     if not pres.empty:
@@ -802,7 +787,9 @@ def recommend_investment_focus(seed_man: int, months: int = 12, area_tol: float 
     # ── 종합점수 (2026-05 단순화) ──
     # 다중 시점 백테스트(3 윈도우 평균 ρ +0.62) 결과
     # 가장 단순한 'market + prestige' 조합이 가장 정확. tier·호재·선행지표는 보조용.
-    #   - tier·jeonse_accel·population·supply_pressure: 점수 산식에서 제외 (ρ 약하거나 역상관)
+    #   - tier·jeonse_accel: 점수 산식에서 제외 (ρ 약하거나 역상관)
+    #     (population·supply_pressure 도 같은 이유로 제외돼 있었고, 2026-10-08에
+    #      원천 데이터 수집과 함께 아예 삭제됨)
     #   - 호재: region_score 안에서 슬라이더로 가산만 (저평가+호재 발굴 도구)
     tw = max(0.0, min(1.0, tier_weight))            # region_score 비중 (default 0.7)
     pw = max(0.0, min(1.0, prestige_weight))        # prestige 비중 (default 0.3)

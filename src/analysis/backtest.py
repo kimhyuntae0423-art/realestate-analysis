@@ -32,8 +32,7 @@ from src.analysis.recommend import (
     _jeonse_quality_score, _jeonse_risk_label,
 )
 from src.analysis.forward_signals import (
-    apt_relative_strength, jeonse_ratio_acceleration,
-    supply_pressure, population_inflow, apt_prestige_score,
+    apt_relative_strength, jeonse_ratio_acceleration, apt_prestige_score,
     region_market_score,
 )
 
@@ -253,8 +252,8 @@ def _apt_backtest_base(
     """apt_backtest의 가중치-무관 부분(신호 계산 + 정답지 merge)만 한 번 계산.
 
     grid_search_apt가 가중치 조합마다 이 무거운 계산을 반복하지 않도록 분리했다
-    (2026-07-20). catalyst/tier/market/rs/jeonse_accel/supply_pressure/population/
-    prestige/sentiment/train_growth/actual_growth를 전부 포함한 df를 반환하며, region_score와
+    (2026-07-20). catalyst/tier/market/rs/jeonse_accel/prestige/sentiment/
+    train_growth/actual_growth를 전부 포함한 df를 반환하며, region_score와
     score는 가중치에 따라 달라지므로 여기서 계산하지 않는다.
     """
     today = date.today()
@@ -291,20 +290,6 @@ def _apt_backtest_base(
     g["jeonse_accel_score"] = g.get("jeonse_accel_score",
         pd.Series(50.0, index=g.index)).fillna(50.0)
 
-    sp = supply_pressure(as_of=as_of)
-    if not sp.empty:
-        g = g.merge(sp[["region_code", "supply_pressure_score"]],
-                    on="region_code", how="left")
-    g["supply_pressure_score"] = g.get("supply_pressure_score",
-        pd.Series(50.0, index=g.index)).fillna(50.0)
-
-    pop = population_inflow(as_of=as_of)
-    if not pop.empty:
-        g = g.merge(pop[["region_code", "population_score"]],
-                    on="region_code", how="left")
-    g["population_score"] = g.get("population_score",
-        pd.Series(50.0, index=g.index)).fillna(50.0)
-
     pres = apt_prestige_score(as_of=as_of, months=train_months, area_tol=area_tol)
     if not pres.empty:
         g = g.merge(pres[keys + ["prestige_score"]], on=keys, how="left")
@@ -338,8 +323,8 @@ def _apt_backtest_score(
     recommend.py::recommend_investment_focus()의 실제(2026-05 단순화) 공식과 동일:
     region_score(=market_score 단독 + 호재 가산, tier는 안 섞음) × tw
     + prestige_score × pw, tw/pw는 합이 1이 되게 정규화.
-    rs_score·jeonse_accel·supply_pressure·population·train_growth는 점수 산식에서
-    제외됨(ρ 약하거나 역상관) — component_corr 진단용으로만 유지.
+    rs_score·jeonse_accel·train_growth는 점수 산식에서 제외됨(ρ 약하거나 역상관)
+    — component_corr 진단용으로만 유지.
     """
     cw_amp = max(0.0, min(1.0, catalyst_weight))
     region_score = (g["market_score"] + g["catalyst"] * cw_amp).clip(upper=100)
@@ -365,8 +350,6 @@ def _apt_backtest_score(
         "train_growth": _spearman(g["train_growth"], g["actual_growth"]),
         "rs_score": _spearman(g["rs_score"], g["actual_growth"]),
         "jeonse_accel": _spearman(g["jeonse_accel_score"], g["actual_growth"]),
-        "supply_pressure": _spearman(g["supply_pressure_score"], g["actual_growth"]),
-        "population": _spearman(g["population_score"], g["actual_growth"]),
         "sentiment": _spearman(g["sentiment_score"], g["actual_growth"]),
     }
     return BacktestResult(
