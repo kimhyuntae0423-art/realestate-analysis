@@ -16,6 +16,11 @@ on:
     # 월·목 03:00 UTC (KST 12:00) — 최대 간격 4일로 7일 한도에 여유를 둔다
     - cron: "0 3 * * 1,4"
   workflow_dispatch:
+    inputs:
+      max_stale_days:
+        description: "신선도 한계(일). 감시가 실제로 걸리는지 시험하려면 1 로 낮춰 돌려볼 것"
+        required: false
+        default: "10"
 
 jobs:
   ping:
@@ -29,7 +34,8 @@ jobs:
           # 정기 갱신은 주 1회라 정상 상태의 최대 지연은 7일 안쪽이다.
           # 놓친 실행을 따라잡느라(StartWhenAvailable) 며칠 밀리는 건 정상이므로
           # 여유를 둬 10일. 2026-09 장애는 15일이었으니 그 전에 걸린다.
-          MAX_STALE_DAYS: "10"
+          # 예약 실행에는 inputs 가 없으므로 그때는 10 이 쓰인다.
+          MAX_STALE_DAYS: ${{ inputs.max_stale_days || '10' }}
         run: |
           if [ -z "$SUPABASE_DATABASE_URL" ]; then
             echo "::error::SUPABASE_DATABASE_URL 시크릿이 없다 — 저장소 Settings > Secrets 에 등록할 것"
