@@ -183,6 +183,20 @@ python -m src.reports.excel_report --region 11680 --output report.xlsx
 배포 Streamlit은 같은 `src/ui/streamlit_app.py`를 돌리지만 Supabase를 읽는다
 (`DATABASE_URL`을 Streamlit Cloud secrets로 주입). 코드는 하나이고 데이터 출처만 다르다.
 
+**배포 주소**: https://realestate-analysis-p6jdtbkpo6u245ekj4cy4d.streamlit.app/
+
+⚠️ **이 앱은 조회자 인증이 걸려 있어 에이전트가 직접 열어볼 수 없다.** 로그인 없는 요청은
+`/`도 `/_stcore/stream`도 303으로 `share.streamlit.io/-/auth/app`에 튕긴다(`/healthz`만
+인증 없이 `{"status":"ok"}`를 주는데, 이건 컨테이너가 떴다는 뜻일 뿐 앱이 정상 렌더링
+된다는 증거가 아니다 — 스크립트 예외는 웹소켓으로만 전달되므로 HTTP 200 과 공존한다).
+→ 배포 앱 상태 확인이 필요하면 사용자에게 화면을 봐 달라고 요청하거나, 임시로 공개
+전환을 받아야 한다. 혼자 "200이니 정상"이라고 결론내지 말 것.
+
+배포 쪽 `DATABASE_URL` secret 은 `postgresql+psycopg://`(psycopg 3) 방언이라
+`requirements.txt`에 `psycopg[binary]`가 있어야 한다. 로컬 수집·동기화는
+`postgresql://`(psycopg2)를 쓰므로 둘 다 필요하다 — 2026-10-07에 psycopg 3 가 빠져
+있어서 배포 앱이 `ModuleNotFoundError: psycopg`로 기동 실패했다.
+
 ---
 
 ## 운영 구성 (2026-09-21 기준 — 로컬 수집 + 클라우드 조회 복제본)
