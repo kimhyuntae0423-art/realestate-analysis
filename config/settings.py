@@ -33,6 +33,13 @@ DATABASE_URL = _get_secret("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'process
 SUPABASE_DATABASE_URL = _get_secret("SUPABASE_DATABASE_URL")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+# 정기 갱신이 실패했을 때 카카오톡으로 알리는 데 쓰는 외부 스크립트.
+# 카카오 토큰 갱신·보관은 전부 저쪽이 한다 — 같은 계정 토큰을 두 곳에서 굴리면
+# 한쪽이 무효화되므로 이 저장소는 토큰을 다루지 않고 호출만 한다.
+# 외장하드 드라이브 문자가 바뀌면 KAKAO_SENDER_PS1 환경변수로 덮어쓸 것.
+KAKAO_SENDER_PS1 = Path(os.getenv(
+    "KAKAO_SENDER_PS1", r"G:\클로드\카카오알림\send-kakao.ps1"))
+
 RAW_DIR = ROOT / "data" / "raw"
 REPORT_DIR = ROOT / "data" / "reports"
 LOG_DIR = ROOT / "logs"

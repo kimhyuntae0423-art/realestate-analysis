@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import argparse
-from datetime import date
+from datetime import date, datetime
 
 from src.collectors.molit_api import MolitCollector
 from src.collectors.kb_price import KbPriceCollector
@@ -34,6 +34,7 @@ from src.database.repository import (
 from src.analysis.hypothesis_lab import run_all_and_log
 from src.utils.ca_bundle import ensure_ca_bundle
 from src.utils.logger import get_logger
+from src.utils.notify import notify_refresh_failure
 
 log = get_logger(__name__)
 
@@ -113,6 +114,10 @@ def main():
     # CERTIFICATE_VERIFY_FAILED 로 실패한다 (2026-05 수집 중단 원인).
     ensure_ca_bundle()
 
+    # 단계별 실패를 모아 마지막에 한 번만 알린다. 2026-09 에 Supabase 동기화가
+    # 2주 내리 실패했는데 로그에만 남아서 아무도 몰랐다 — 그래서 붙인 장치다.
+    failures: list[str] = []
+
     init_db()
     log.info("=== 정기 데이터 갱신 시작 ===")
     summary = refresh_trades(args.months)
@@ -120,32 +125,56 @@ def main():
               summary["trade"], summary["rent"], len(summary["errors"]))
     for err in summary["errors"][:10]:
         log.warning("수집 오류: %s", err)
+    if summary["errors"]:
+        failures.append(f"실거래 수집 오류 {len(summary['errors'])}건 "
+                        f"(첫 건: {summary['errors'][0]})")
 
     kb_ecos = refresh_kb_ecos(args.months)
     log.info("KB/ECOS 갱신: KB %d건, ECOS %d건, 오류 %d건",
               kb_ecos["kb"], kb_ecos["ecos"], len(kb_ecos["errors"]))
     for err in kb_ecos["errors"]:
         log.warning("수집 오류: %s", err)
+    if kb_ecos["errors"]:
+        failures.append(f"KB/ECOS 수집 오류 {len(kb_ecos['errors'])}건 "
+                        f"(첫 건: {kb_ecos['errors'][0]})")
 
     log.info("=== 가설 재검증 시작 ===")
-    results = run_all_and_log()
-    for r in results:
-        stat_str = f"{r.statistic:.4f}" if r.statistic == r.statistic else "NaN"
-        log.info("%s | %s | n=%d | stat=%s", r.id, r.verdict, r.n, stat_str)
+    try:
+        results = run_all_and_log()
+        for r in results:
+            stat_str = f"{r.statistic:.4f}" if r.statistic == r.statistic else "NaN"
+            log.info("%s | %s | n=%d | stat=%s", r.id, r.verdict, r.n, stat_str)
+    except Exception as e:
+        log.exception("가설 재검증 실패")
+        failures.append(f"가설 재검증 실패: {e}")
 
-    # 배포 Streamlit 이 읽는 클라우드 복제본에 반영. 이 접속이 주 1회 발생하므로
-    # Supabase 무료 플랜의 "7일 미사용 시 자동 정지"도 함께 막힌다.
-    # 실패해도 로컬 갱신 결과는 유효하므로 전체를 중단시키지 않는다.
+    # 배포 Streamlit 이 읽는 클라우드 복제본에 반영.
+    # 실패해도 로컬 갱신 결과는 유효하므로 전체를 중단시키지 않는다 —
+    # 대신 아래에서 반드시 알린다(조용히 넘어가지 않게).
     log.info("=== Supabase 동기화 시작 ===")
     try:
         from scripts.migrate_to_supabase import run_sync
         rc = run_sync()
         log.info("Supabase 동기화 종료 rc=%s", rc)
-    except Exception:
+        if rc != 0:
+            failures.append(f"Supabase 동기화 비정상 종료 rc={rc}")
+    except Exception as e:
         log.exception("Supabase 동기화 실패 — 로컬 데이터는 정상")
+        failures.append(f"Supabase 동기화 실패: {e}")
 
-    log.info("=== 정기 갱신 완료 ===")
+    if failures:
+        notify_refresh_failure(
+            failures, datetime.now().strftime("%Y-%m-%d %H:%M"))
+    log.info("=== 정기 갱신 완료 === (실패 %d건)", len(failures))
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # 여기까지 왔다면 단계별 집계도 못 하고 죽은 것이다 — 그래도 알린다.
+        # (알림까지 실패하면 notify 쪽이 삼키고 로그만 남긴다)
+        log.exception("정기 갱신이 중단됐다")
+        notify_refresh_failure([f"정기 갱신 중단: {type(e).__name__}: {e}"],
+                                datetime.now().strftime("%Y-%m-%d %H:%M"))
+        raise
