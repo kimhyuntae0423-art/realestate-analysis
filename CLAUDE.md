@@ -196,6 +196,7 @@ python -m src.reports.excel_report --region 11680 --output report.xlsx
 `requirements.txt`에 `psycopg[binary]`가 있어야 한다. 로컬 수집·동기화는
 `postgresql://`(psycopg2)를 쓰므로 둘 다 필요하다 — 2026-10-07에 psycopg 3 가 빠져
 있어서 배포 앱이 `ModuleNotFoundError: psycopg`로 기동 실패했다.
+2026-10-08 `psycopg[binary]` 추가분 반영 후 앱 정상 기동 확인(사용자 확인).
 
 ---
 
