@@ -223,6 +223,11 @@ PC가 켜져 있어야 생긴다. 2026-09-22·09-29 정기 갱신이 연속으�
 저장소 시크릿 `SUPABASE_DATABASE_URL`이 필요하고, GitHub은 저장소가 60일 조용하면
 예약 워크플로를 꺼버리므로 오래 손대지 않았으면 Actions 탭을 확인할 것.
 
+⚠️ **여유가 31MB뿐이다 (469/500MB).** 롤링 창이라 매주 한 달이 들어오고 한 달이 나가서
+총량은 평형이지만, DELETE 한 자리는 즉시 반환되지 않고 다음 삽입이 재사용한다(동기화
+직후 456→469MB로 뛴 이유). 더 여유가 필요하면 `SYNC_MONTHS`를 26으로 줄인다
+(약 440MB, 백테스트 최소 요건 24개월은 유지).
+
 **복제 범위는 롤링 창이다 (2026-10-07 변경).** `migrate_to_supabase.SYNC_MONTHS = 28`,
 하한은 `sync_from()` 하나로 정하고 **업로드와 창 밖 삭제가 같은 값을 공유한다.**
 창 너비가 일정하므로 용량도 385MB 안팎에서 평형을 유지한다.
@@ -269,7 +274,7 @@ PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 
 | `ecos_series` | 1,060행 / 11개 시리즈 (`base_rate`, `expected_inflation`, `m1_eop_raw`, `m2_eop_raw`, `m2_eop_sa`, `mortgage_loan_eop`, `kab_apt_price_idx_00/11/26/28/41`) |
 | `kb_price_series` / `kb_sentiment_index` | 1,064 / 252행 |
 | 로컬 DB 크기 | 1,275MB (테이블 6개: `apt_trade`·`apt_rent`·`collection_log`·`ecos_series`·`kb_price_series`·`kb_sentiment_index`) |
-| Supabase 복제본 | **일시정지 상태 — 복구 대기** (2026-10-07 확인). 복구 후 재측정할 것 |
+| Supabase 복제본 | **469MB / 한도 500MB** (2026-10-08 복구·재동기화 직후). 복제 창 2024-07~2026-10, 매매 586,567 / 전월세 1,305,736행 — 로컬 창 안 행수와 일치 확인 |
 | 매크로 타이밍 | score 61.4, **coverage 1.0, missing 없음** — ECOS 키가 살아 있어 5개 신호 전부 채워짐 |
 | 실험실 가설 | 정기 재검증 **15개** (2026-10-08에 3개 삭제, 아래 참고). 마지막 18개 실행은 2026-10-06 (지지 11 / 기각 2 / 불확실 5). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
 | 테스트 | 264개 전부 통과 |
