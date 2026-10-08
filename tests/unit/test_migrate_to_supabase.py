@@ -24,12 +24,25 @@ class _FakePG:
         yield _Conn()
 
 
+def _months_between(lo: tuple[int, int], today: date) -> int:
+    """하한(lo)부터 today 까지 양끝 포함 개월 수."""
+    return (today.year * 12 + today.month) - (lo[0] * 12 + lo[1]) + 1
+
+
 def test_sync_from_is_a_rolling_window():
-    assert m.sync_from(date(2026, 10, 7)) == (2024, 7)
+    # SYNC_MONTHS 를 튜닝해도 깨지지 않도록 값이 아니라 성질을 검증한다
+    for today in (date(2026, 10, 7), date(2026, 11, 1), date(2026, 1, 15)):
+        lo = m.sync_from(today)
+        assert _months_between(lo, today) == m.SYNC_MONTHS
+        assert 1 <= lo[1] <= 12  # 연 경계에서 월이 0 이나 13 으로 새지 않는다
+
     # 한 달 지나면 창도 한 달 밀린다 — 고정 하한이면 이 단언이 깨진다
-    assert m.sync_from(date(2026, 11, 1)) == (2024, 8)
-    # 연 경계에서 월이 0 이나 13 으로 새지 않는지
-    assert m.sync_from(date(2026, 1, 15)) == (2023, 10)
+    y, mo = m.sync_from(date(2026, 10, 7))
+    nxt = (y, mo + 1) if mo < 12 else (y + 1, 1)
+    assert m.sync_from(date(2026, 11, 7)) == nxt
+
+    # 백테스트 최소 요건(24개월)을 밑돌면 안 된다
+    assert m.SYNC_MONTHS >= 24
 
 
 def test_sync_monthly_skips_months_before_the_window():
