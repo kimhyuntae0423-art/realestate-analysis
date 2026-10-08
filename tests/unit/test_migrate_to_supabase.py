@@ -69,6 +69,18 @@ def test_prune_cutoff_equals_upload_lower_bound():
     assert pg.deleted == [expected] * len(m.MONTHLY_TABLES)
 
 
+def test_every_model_table_is_either_replicated_or_declared_local_only():
+    """새 테이블이 생겼을 때 복제 여부를 정하지 않고 지나치는 걸 막는다.
+
+    population_flow·supply_schedule 이 오래 0행이라 복제 대상에서 빠져 있었고,
+    나중에 데이터가 들어오자 배포 앱만 중립값(50.0)을 보여주는 불일치가 생겼다.
+    """
+    from src.database.models import Base
+
+    declared = set(m.MONTHLY_TABLES) | set(m.SMALL_TABLES) | set(m.LOCAL_ONLY_TABLES)
+    assert set(Base.metadata.tables) == declared
+
+
 def test_keep_months_option_is_gone():
     """--keep-months 는 충돌의 원인이었으므로 되살아나면 안 된다."""
     import inspect

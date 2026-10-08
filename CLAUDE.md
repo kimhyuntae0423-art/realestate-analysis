@@ -102,11 +102,11 @@ realestate-analysis/
 | 한국은행 ECOS | 기준금리·기대인플레·M1/M2·주담대잔액, 부동산원 실거래가지수(`kab_apt_price_idx_*`) | `src/collectors/ecos.py`, `.env` `ECOS_API_KEY` | 정상 (`ecos_series`, 11개 시리즈) |
 | KB 부동산 | 가격지수(`kb_price_series`), 매수우위지수(`kb_sentiment_index`) | `src/collectors/kb_price.py`, `src/collectors/kb_sentiment.py` | 정상 (키 불필요) |
 | 카카오 로컬 API | 좌표 변환·입지 점수 | `src/collectors/kakao_api.py` | 정상 |
-| 통계청 KOSIS | 인구이동(`population_flow`) | `scripts/backfill_population_api.py`, `scripts/import_kosis_csv.py` | **미동작** — `KOSIS_API_KEY` 미발급, 0행 |
+| 통계청 KOSIS | 인구이동(`population_flow`) | `scripts/backfill_population_api.py`, `scripts/import_kosis_csv.py` | 정상 — 키 발급 완료, 14,450행 |
 
-위 5개 중 국토부·ECOS·KB는 `scripts/scheduled_refresh.py`가 주 1회 자동 재수집한다.
-입주물량(`supply_schedule`)은 KOSIS가 시군구 단위 API를 안 줘서 CSV 수동 업로드만 가능 —
-자동화 불가라 정기 갱신에서 빠져 있다.
+위 5개 중 국토부·ECOS·KB·KOSIS 인구이동은 `scripts/scheduled_refresh.py`가 주 1회 자동
+재수집한다. 입주물량(`supply_schedule`, 3,187행)은 KOSIS가 시군구 단위 API를 안 줘서
+CSV 수동 업로드만 가능 — 자동화 불가라 정기 갱신에서 빠져 있다.
 
 ### 신뢰성 위계 (분석 시 우선순위)
 1. 국토부 실거래가 (실제 계약 데이터) → 2. 한국부동산원 시세지수 →
@@ -256,26 +256,39 @@ PEM으로 내보내 `REQUESTS_CA_BUNDLE`에 물린다. `verify=False`는 쓰지 
 `Missing Authority Key Identifier`로 거부해서 CA 번들을 아무리 잘 만들어도 실패한다.
 `.venv`를 다시 만들 일이 있으면 반드시 `py -3.12 -m venv .venv`.
 
-**검증 상태 (2026-09-21 정기 갱신 직후 실측)**
+**검증 상태 (2026-10-08 로컬 DB 직접 실측)**
 
 | 항목 | 값 |
 |---|---|
-| 실거래 기간 | 2024-06-01 ~ 2026-09-19 (약 28개월) |
-| `apt_trade` / `apt_rent` | 604,913 / 1,334,163행 |
-| `ecos_series` | 622행 / 11개 시리즈 (`base_rate`, `expected_inflation`, `m1_eop_raw`, `m2_eop_raw`, `m2_eop_sa`, `mortgage_loan_eop`, `kab_apt_price_idx_00/11/26/28/41`) |
-| `kb_price_series` / `kb_sentiment_index` | 225 / 52행 |
-| `population_flow` / `supply_schedule` | **0행** (아래 참고) |
-| 로컬 DB 크기 | 593MB |
-| Supabase 복제본 | 456MB (한도 500MB) |
+| 실거래 기간 | 2021-08 ~ 2026-10 (약 62개월, 최신 거래일 2026-10-05) |
+| `apt_trade` / `apt_rent` | 1,011,307 / 3,190,610행 |
+| `ecos_series` | 1,060행 / 11개 시리즈 (`base_rate`, `expected_inflation`, `m1_eop_raw`, `m2_eop_raw`, `m2_eop_sa`, `mortgage_loan_eop`, `kab_apt_price_idx_00/11/26/28/41`) |
+| `kb_price_series` / `kb_sentiment_index` | 1,064 / 252행 |
+| `population_flow` / `supply_schedule` | 14,450행 (2021-08~2026-08) / 3,187행 (2010-07~2026-03) |
+| 로컬 DB 크기 | 1,275MB |
+| Supabase 복제본 | **일시정지 상태 — 복구 대기** (2026-10-07 확인). 복구 후 재측정할 것 |
 | 매크로 타이밍 | score 61.4, **coverage 1.0, missing 없음** — ECOS 키가 살아 있어 5개 신호 전부 채워짐 |
-| 실험실 가설 | 정기 재검증 18개 (지지 4 / 기각 1 / 불확실 13). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
-| 테스트 | 269개 전부 통과 |
+| 실험실 가설 | 정기 재검증 18개 (지지 11 / 기각 2 / 불확실 5, 2026-10-06 실행). 동탄 스필오버 가설은 결론이 나서 기록용으로만 유지(`hypothesis_tests_spillover.py` docstring) |
+| 테스트 | 274개 전부 통과 |
 
-`population_flow`·`supply_schedule`이 0행인 이유: 전자는 `KOSIS_API_KEY` 미발급, 후자는
-KOSIS가 시군구 단위 API를 안 줘서 CSV 수동 업로드만 가능. 둘 다 `recommend.py`의 점수
-산식에서 제외돼 있어 추천 결과에는 영향 없음. 이 둘에 의존하는 가설 3개
-(`supply_glut`, `supply_glut_kb_price`, `population_migration`)는 항상 n=0으로 나온다 —
-버그가 아니라 데이터 부재다.
+숫자를 갱신할 때는 로그가 아니라 DB를 직접 세어서 쓸 것 — 이 표가 2026-09-21 기준으로
+한참 틀어져 있었다(실거래 기간 28→62개월, 전월세 1.33M→3.19M행).
+
+**`recommend.py` 가 두 보조 지표를 점수 산식에서 빼는 근거는 "데이터 부재"가 아니다.**
+한때 그렇게 적혀 있었으나 사실이 아니다 — `population_flow`·`supply_schedule` 둘 다
+데이터가 있고, 이에 의존하는 가설 3개도 정상적으로 표본을 낸다. 실제 근거는 상관이
+약하거나 부호가 반대라는 것이다(2026-10-06 실행 기준):
+
+| 가설 | n | Spearman ρ | 기대 부호 |
+|---|---|---|---|
+| `supply_glut` | 212 | -0.015 | - (부호는 맞으나 노이즈 수준) |
+| `supply_glut_kb_price` | 228 | -0.095 | - (셋 중 가장 강하나 여전히 약함) |
+| `population_migration` | 3,598 | -0.016 | **+ (부호 반대)** |
+
+즉 `recommend.py:805`의 "ρ 약하거나 역상관" 주석이 맞다. 다만 두 지표는 **화면에는
+표시되므로**(`supply_pressure_score`·`population_score`, 비면 `fillna(50.0)` 중립값)
+Supabase 복제본에 빠져 있으면 배포 앱만 중립값을 보여주는 불일치가 생긴다 —
+그래서 2026-10-08에 `SMALL_TABLES`에 넣었다.
 
 숫자를 갱신할 때는 `logs/scheduled_refresh.log` 말미가 아니라 DB를 직접 세어서 쓸 것
 (로그의 "N행 교체"는 Supabase에 밀어넣은 최근 3개월치이지 전체 행수가 아니다).
