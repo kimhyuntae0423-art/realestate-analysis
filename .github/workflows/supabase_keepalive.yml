@@ -1,4 +1,4 @@
-name: Supabase 자동정지 방지
+name: Supabase 자동정지 방지 · 신선도 감시
 
 # Supabase 무료 플랜은 7일간 활동이 없으면 프로젝트를 자동 일시정지한다.
 # 정지되면 호스트 DNS 까지 내려가 배포 Streamlit 이 통째로 죽는다.
@@ -23,9 +23,13 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Supabase 접속
+      - name: Supabase 접속 · 신선도 점검
         env:
           SUPABASE_DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+          # 정기 갱신은 주 1회라 정상 상태의 최대 지연은 7일 안쪽이다.
+          # 놓친 실행을 따라잡느라(StartWhenAvailable) 며칠 밀리는 건 정상이므로
+          # 여유를 둬 10일. 2026-09 장애는 15일이었으니 그 전에 걸린다.
+          MAX_STALE_DAYS: "10"
         run: |
           if [ -z "$SUPABASE_DATABASE_URL" ]; then
             echo "::error::SUPABASE_DATABASE_URL 시크릿이 없다 — 저장소 Settings > Secrets 에 등록할 것"
@@ -43,3 +47,24 @@ jobs:
             *) echo "::error::접속 문자열이 postgresql:// 로 시작하지 않는다 (길이 ${#URL})"; exit 1 ;;
           esac
           psql "$URL" -Atc "SELECT 'alive ' || now()"
+
+          # ── 신선도 감시 ──────────────────────────────────────────────
+          # 주간 정기 갱신은 이 PC 의 작업 스케줄러가 돌린다. PC 가 꺼져 있으면
+          # 실행 자체가 건너뛰어지고, 그러면 스크립트 안에 넣은 실패 알림도 당연히
+          # 안 온다 — 2026-09-22·09-29 가 그랬고 2주를 아무도 몰랐다.
+          # 그래서 PC 와 무관한 여기서 "데이터가 최근에 적재됐는지"를 본다.
+          #
+          # deal_date 는 신고 지연이 섞여 기준으로 못 쓴다. created_at(로컬 삽입 시각)
+          # 이 정확하다 — 갱신이 안 돌았거나 동기화가 실패하면 이 값이 안 움직인다.
+          LAG=$(psql "$URL" -Atc \
+            "SELECT floor(extract(epoch from now() - max(created_at))/86400)::int FROM apt_trade")
+          if [ -z "$LAG" ]; then
+            echo "::error::신선도를 읽지 못했다 (apt_trade 가 비었거나 조회 실패)"
+            exit 1
+          fi
+          echo "마지막 적재 이후 ${LAG}일 (한계 ${MAX_STALE_DAYS}일)"
+          if [ "$LAG" -gt "$MAX_STALE_DAYS" ]; then
+            echo "::error::복제본이 ${LAG}일째 갱신되지 않았다 — 주간 정기 갱신이 안 돌았거나 Supabase 동기화가 계속 실패하고 있다. logs/scheduled_refresh.log 와 작업 스케줄러 'RealEstate Weekly Refresh' 를 확인할 것"
+            exit 1
+          fi
+          echo "신선도 정상"
