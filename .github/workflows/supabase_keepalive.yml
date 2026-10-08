@@ -31,7 +31,15 @@ jobs:
             echo "::error::SUPABASE_DATABASE_URL 시크릿이 없다 — 저장소 Settings > Secrets 에 등록할 것"
             exit 1
           fi
+          # 시크릿을 등록한 셸에 따라 끝에 CR/개행이 섞여 들어올 수 있다.
+          # 그대로 psql 에 넘기면 URL 을 못 알아보고 로컬 소켓으로 붙으려다 죽는다
+          # (2026-10-08 실제로 겪음). 공백류를 먼저 털어낸다.
+          URL="$(printf '%s' "$SUPABASE_DATABASE_URL" | tr -d '[:space:]')"
           # SQLAlchemy 방언 접두사가 붙어 있으면 psql 이 못 읽으므로 떼어낸다
-          URL="${SUPABASE_DATABASE_URL/postgresql+psycopg2:/postgresql:}"
+          URL="${URL/postgresql+psycopg2:/postgresql:}"
           URL="${URL/postgresql+psycopg:/postgresql:}"
+          case "$URL" in
+            postgresql://*|postgres://*) ;;
+            *) echo "::error::접속 문자열이 postgresql:// 로 시작하지 않는다 (길이 ${#URL})"; exit 1 ;;
+          esac
           psql "$URL" -Atc "SELECT 'alive ' || now()"
